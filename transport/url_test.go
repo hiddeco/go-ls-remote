@@ -1,0 +1,79 @@
+package transport
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestParseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want URL // Raw is filled in by the assertion from in.
+	}{
+		{
+			name: "https no port",
+			in:   "https://github.com/torvalds/linux.git",
+			want: URL{Scheme: "https", Host: "github.com", Path: "/torvalds/linux.git"},
+		},
+		{
+			name: "http with port",
+			in:   "http://example.com:8080/repo",
+			want: URL{Scheme: "http", Host: "example.com", Port: "8080", Path: "/repo"},
+		},
+		{
+			name: "https with userinfo",
+			in:   "https://alice:secret@example.com/repo.git",
+			want: URL{Scheme: "https", User: "alice:secret", Host: "example.com", Path: "/repo.git"},
+		},
+		{
+			name: "https with port and userinfo",
+			in:   "https://user@example.com:443/repo",
+			want: URL{Scheme: "https", User: "user", Host: "example.com", Port: "443", Path: "/repo"},
+		},
+		{
+			name: "ssh RFC form",
+			in:   "ssh://git@example.com:2222/repo.git",
+			want: URL{Scheme: "ssh", User: "git", Host: "example.com", Port: "2222", Path: "/repo.git"},
+		},
+		{
+			name: "git daemon",
+			in:   "git://example.com:9418/repo.git",
+			want: URL{Scheme: "git", Host: "example.com", Port: "9418", Path: "/repo.git"},
+		},
+		{
+			name: "scheme uppercased is normalised",
+			in:   "HTTPS://example.com/repo",
+			want: URL{Scheme: "https", Host: "example.com", Path: "/repo"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseURL(tt.in)
+			require.NoError(t, err)
+			want := tt.want
+			want.Raw = tt.in
+			assert.Equal(t, &want, got)
+		})
+	}
+}
+
+func TestParseURL_errors(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want error
+	}{
+		{"empty input", "", ErrEmptyURL},
+		{"unsupported scheme", "svn://example.com/repo", ErrUnsupportedScheme},
+		{"unknown form (no scheme, no slash)", "garbage", ErrUnrecognizedURL},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseURL(tt.in)
+			require.ErrorIs(t, err, tt.want)
+		})
+	}
+}
