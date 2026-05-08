@@ -1,11 +1,29 @@
 package objfmt
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// writeMinPack writes a one-object pack to a temporary file: the
+// 12-byte `PACK\x00\x00\x00\x02 + nrObjects=1` header, then `body`,
+// then a 20-byte zero trailer. The trailer is not a real SHA-1 — these
+// helpers exist for [Pack.ReadHeader] tests that never call
+// [Pack.VerifyChecksum] — but it satisfies [OpenPack]'s minimum-length
+// check.
+func writeMinPack(t *testing.T, body []byte) string {
+	t.Helper()
+	hdr := make([]byte, 12)
+	copy(hdr, "PACK")
+	binary.BigEndian.PutUint32(hdr[4:8], 2)
+	binary.BigEndian.PutUint32(hdr[8:12], 1)
+	buf := append(hdr, body...)
+	buf = append(buf, trailerPad(20)...)
+	return writeBytes(t, t.TempDir(), "synthetic.pack", buf)
+}
 
 func TestPack_ReadHeader(t *testing.T) {
 	t.Run("decodes a single-byte non-delta header", func(t *testing.T) {
@@ -87,19 +105,22 @@ func TestPack_ReadHeader(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("rejects an OFS_DELTA whose base lands past the delta", func(t *testing.T) {
-		// A hand-crafted OFS_DELTA whose offset varint encodes a
-		// huge value forces `at - off` to be non-positive, which
-		// `get_delta_base` flags as "out of bound".
-		p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+	t.Run("rejects an OFS_DELTA whose base lands at or past the delta", func(t *testing.T) {
+		// Hand-crafted single-object pack with an OFS_DELTA at offset
+		// 12. The first header byte 0x60 encodes type=6 (OFS_DELTA),
+		// size=0, no continuation. The OFS varint 0x0c encodes the
+		// offset 12 with no continuation, so `OfsBase = 12 - 12 = 0`
+		// and `get_delta_base`'s `base_offset <= 0` guard
+		// (`packfile.c::1290`) fires.
+		path := writeMinPack(t, []byte{0x60, 0x0c})
+
+		p, err := OpenPack(path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
-		// Calling ReadHeader at the base blob's offset (12) — a
-		// non-delta blob — must NOT be flagged as out-of-bound; the
-		// guard only fires on delta types.
-		hdr, err := p.ReadHeader(12)
-		require.NoError(t, err)
-		assert.Equal(t, TypeBlob, hdr.Type)
+		_, err = p.ReadHeader(12)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "OFS_DELTA base offset out of range")
 	})
 }
