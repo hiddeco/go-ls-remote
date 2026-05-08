@@ -52,6 +52,21 @@ func TestReader_ReadPacket(t *testing.T) {
 			wantKind: ResponseEnd,
 			wantData: "",
 		},
+		{
+			name:    "truncated length prefix",
+			input:   "000",
+			wantErr: io.ErrUnexpectedEOF,
+		},
+		{
+			name:    "truncated payload (none follows)",
+			input:   "0008",
+			wantErr: io.ErrUnexpectedEOF,
+		},
+		{
+			name:    "truncated payload (partial)",
+			input:   "0008x",
+			wantErr: io.ErrUnexpectedEOF,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,4 +127,50 @@ func TestReader_ReadPacket_invalidLength(t *testing.T) {
 	_, err := r.ReadPacket()
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "0003")
+}
+
+// TestReader_ReadPacket_invalidHex verifies that a non-hex length
+// prefix is rejected. The canonical implementation in `pkt-line.c`
+// also rejects non-hex on read.
+func TestReader_ReadPacket_invalidHex(t *testing.T) {
+	r := NewReader(strings.NewReader("zzzzhello"))
+	_, err := r.ReadPacket()
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "hex")
+}
+
+// TestReader_ReadPacket_maxPayload exercises the largest payload size
+// the format permits, exactly [MaxPayload] bytes. The on-wire length
+// prefix is `fff0` (= 65520 = MaxPayload + 4).
+func TestReader_ReadPacket_maxPayload(t *testing.T) {
+	payload := strings.Repeat("a", MaxPayload)
+	r := NewReader(strings.NewReader("fff0" + payload))
+
+	pkt, err := r.ReadPacket()
+	require.NoError(t, err)
+	assert.Equal(t, Data, pkt.Kind)
+	assert.Equal(t, MaxPayload, len(pkt.Data))
+	assert.Equal(t, payload, string(pkt.Data))
+}
+
+// TestReader_ReadPacket_bufferAliasingContract pins the documented
+// behaviour that [Packet.Data] aliases the [Reader]'s internal buffer
+// and is invalidated by the next [Reader.ReadPacket] call.
+//
+// Two packets with the same payload size — so the buffer is reused
+// without growth — let us observe in-place overwrite: the slice
+// retained from the first packet, after a second read, points at the
+// same memory now holding the second packet's bytes.
+func TestReader_ReadPacket_bufferAliasingContract(t *testing.T) {
+	r := NewReader(strings.NewReader("0007hi\n0007by\n"))
+
+	p1, err := r.ReadPacket()
+	require.NoError(t, err)
+	keep := p1.Data // intentionally retain across the next call
+
+	_, err = r.ReadPacket()
+	require.NoError(t, err)
+
+	assert.Equal(t, "by\n", string(keep),
+		"buffer was not reused in place; aliasing contract requires reuse for same-size payloads")
 }
