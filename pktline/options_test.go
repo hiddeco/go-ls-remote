@@ -125,3 +125,26 @@ func Test_kindToTracerKind(t *testing.T) {
 		})
 	}
 }
+
+// Test_kindToTracerKind_exhaustive pins the contract that every
+// defined [Kind] constant maps to a valid (non-zero) [trace.PacketKind].
+// A new [Kind] added without an arm in [kindToTracerKind] will panic
+// here rather than silently emit a zero kind through the tracer.
+func Test_kindToTracerKind_exhaustive(t *testing.T) {
+	for _, k := range []Kind{Data, Flush, Delim, ResponseEnd} {
+		got := kindToTracerKind(k)
+		assert.NotZerof(t, uint8(got),
+			"kindToTracerKind(%d) returned zero; missing switch arm?", k)
+	}
+}
+
+// Test_kindToTracerKind_panic verifies the panic contract for an
+// out-of-range Kind value. The conversion is package-internal and only
+// fed values produced by the package itself, but the panic guards
+// against a future caller that adds a new constant without updating
+// the switch.
+func Test_kindToTracerKind_panic(t *testing.T) {
+	assert.PanicsWithValue(t, "pktline: unhandled Kind 99", func() {
+		kindToTracerKind(Kind(99))
+	})
+}

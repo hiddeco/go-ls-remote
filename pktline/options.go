@@ -1,6 +1,10 @@
 package pktline
 
-import "github.com/hiddeco/go-ls-remote/trace"
+import (
+	"fmt"
+
+	"github.com/hiddeco/go-ls-remote/trace"
+)
 
 // ReaderOption configures a [Reader] at construction time. Apply
 // options by passing them to [NewReader].
@@ -69,6 +73,13 @@ func WithWriterTracerURL(t trace.Tracer, dir trace.Direction, url string) Writer
 // [trace.PacketKind]. The two enums are deliberately separate to keep
 // the trace package free of pktline imports (which would create a
 // cycle); this helper is the boundary at which the conversion happens.
+//
+// kindToTracerKind panics on a Kind value that is not one of the
+// constants defined in this package. Callers within the package only
+// pass internally-produced Kind values, so a panic here indicates a
+// programming error: a new Kind constant added without extending this
+// switch. An exhaustive test in [Test_kindToTracerKind_exhaustive]
+// catches that omission at build time.
 func kindToTracerKind(k Kind) trace.PacketKind {
 	switch k {
 	case Data:
@@ -79,7 +90,6 @@ func kindToTracerKind(k Kind) trace.PacketKind {
 		return trace.PacketDelim
 	case ResponseEnd:
 		return trace.PacketResponseEnd
-	default:
-		return 0
 	}
+	panic(fmt.Sprintf("pktline: unhandled Kind %d", k))
 }
