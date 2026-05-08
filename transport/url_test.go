@@ -70,6 +70,16 @@ func TestParseURL(t *testing.T) {
 			in:   "git@host:22:repo.git",
 			want: URL{Scheme: "ssh", User: "git", Host: "host", Path: "/22:repo.git"},
 		},
+		{
+			name: "file scheme absolute",
+			in:   "file:///srv/repos/foo.git",
+			want: URL{Scheme: "file", Path: "/srv/repos/foo.git"},
+		},
+		{
+			name: "bare absolute path",
+			in:   "/srv/repos/foo.git",
+			want: URL{Scheme: "file", Path: "/srv/repos/foo.git"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -91,6 +101,7 @@ func TestParseURL_errors(t *testing.T) {
 		{"empty input", "", ErrEmptyURL},
 		{"unsupported scheme", "svn://example.com/repo", ErrUnsupportedScheme},
 		{"unknown form (no scheme, no slash)", "garbage", ErrUnrecognizedURL},
+		{"relative path", "relative/path", ErrUnrecognizedURL},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

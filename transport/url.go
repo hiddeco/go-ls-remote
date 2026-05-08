@@ -88,6 +88,16 @@ func ParseURL(s string) (*URL, error) {
 		return u, nil
 	}
 
+	// Bare absolute path → `file` scheme. Canonical Git treats this as
+	// `file://...` in `connect.c::url_is_local`. Relative paths fall
+	// through and are rejected as unrecognised — they are ambiguous
+	// with scp-style URLs missing the colon and with garbage inputs.
+	if strings.HasPrefix(s, "/") {
+		u.Scheme = "file"
+		u.Path = s
+		return u, nil
+	}
+
 	// scp-style: `[user@]host:path`. Per `connect.c::parse_connect_url`
 	// the first `:` outside an IPv6 bracket and before any `/` is the
 	// host/path separator; scp-style has no port, so `host:22:rest`
