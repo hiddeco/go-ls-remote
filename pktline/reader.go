@@ -82,6 +82,18 @@ func NewReader(src io.Reader, opts ...ReaderOption) *Reader {
 // emits a [trace.PacketEvent] before the packet is returned. Errors
 // do not emit events.
 func (r *Reader) ReadPacket() (Packet, error) {
+	p, err := r.readPacket()
+	if err != nil {
+		return Packet{}, err
+	}
+	r.emit(p)
+	return p, nil
+}
+
+// readPacket performs the codec work and returns the decoded packet
+// without emitting tracer events; [Reader.ReadPacket] is the public
+// wrapper that adds tracing on success.
+func (r *Reader) readPacket() (Packet, error) {
 	if _, err := io.ReadFull(r.src, r.hdr[:]); err != nil {
 		return Packet{}, err
 	}
@@ -93,11 +105,11 @@ func (r *Reader) ReadPacket() (Packet, error) {
 
 	switch length {
 	case 0:
-		return r.emit(Packet{Kind: Flush}), nil
+		return Packet{Kind: Flush}, nil
 	case 1:
-		return r.emit(Packet{Kind: Delim}), nil
+		return Packet{Kind: Delim}, nil
 	case 2:
-		return r.emit(Packet{Kind: ResponseEnd}), nil
+		return Packet{Kind: ResponseEnd}, nil
 	}
 	if length < 4 {
 		return Packet{}, fmt.Errorf("%w: %04x", ErrInvalidLength, length)
@@ -118,12 +130,11 @@ func (r *Reader) ReadPacket() (Packet, error) {
 		}
 		return Packet{}, err
 	}
-	return r.emit(Packet{Kind: Data, Data: r.buf}), nil
+	return Packet{Kind: Data, Data: r.buf}, nil
 }
 
-// emit reports p to the configured tracer (if any) and returns p
-// unchanged so call sites can pass it through inline.
-func (r *Reader) emit(p Packet) Packet {
+// emit reports p to the configured tracer, if one is wired in.
+func (r *Reader) emit(p Packet) {
 	if r.tracer != nil {
 		r.tracer.OnEvent(trace.PacketEvent{
 			Time:      time.Now(),
@@ -133,7 +144,6 @@ func (r *Reader) emit(p Packet) Packet {
 			Kind:      kindToTracerKind(p.Kind),
 		})
 	}
-	return p
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. The
