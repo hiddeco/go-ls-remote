@@ -3,6 +3,7 @@ package trace
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 // NewWriterTracer returns a [Tracer] that pretty-prints events to w in a
@@ -30,17 +31,17 @@ func (t *writerTracer) OnEvent(e Event) {
 	switch ev := e.(type) {
 	case PacketEvent:
 		fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
-			ev.Time.Format("15:04:05.000"),
+			ev.Time.Format(time.RFC3339Nano),
 			directionGlyph(ev.Direction),
 			kindLabel(ev.Kind),
 			len(ev.Bytes))
 	case HTTPEvent:
 		fmt.Fprintf(t.w, "%s http %s %s -> %d (%s)\n",
-			ev.Time.Format("15:04:05.000"),
+			ev.Time.Format(time.RFC3339Nano),
 			ev.Method, ev.URL, ev.Status, ev.Duration)
 	case NegotiateEvent:
 		fmt.Fprintf(t.w, "%s negotiate v=%d agent=%q caps=%v\n",
-			ev.Time.Format("15:04:05.000"),
+			ev.Time.Format(time.RFC3339Nano),
 			ev.Version, ev.ServerAgent, ev.Capabilities)
 	case CommandEvent:
 		phase := "start"
@@ -48,13 +49,13 @@ func (t *writerTracer) OnEvent(e Event) {
 			phase = "end"
 		}
 		fmt.Fprintf(t.w, "%s command %s %s dur=%s err=%v\n",
-			ev.Time.Format("15:04:05.000"),
+			ev.Time.Format(time.RFC3339Nano),
 			ev.Name, phase, ev.Duration, ev.Err)
 	default:
 		// Forward-compatible default: prints any third-party Event type
 		// using its Go-syntax representation.
 		fmt.Fprintf(t.w, "%s event %T %+v\n",
-			ev.When().Format("15:04:05.000"), ev, ev)
+			ev.When().Format(time.RFC3339Nano), ev, ev)
 	}
 }
 
