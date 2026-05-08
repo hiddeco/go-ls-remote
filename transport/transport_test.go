@@ -11,8 +11,11 @@ import (
 )
 
 // fakeTransport is a minimal [Transport] implementation used as a test
-// fixture across this and other transport-package tests.
+// fixture across this and other transport-package tests. The id field
+// distinguishes otherwise-equivalent instances in tests that need to
+// observe replacement semantics.
 type fakeTransport struct {
+	id      string
 	schemes []string
 }
 
