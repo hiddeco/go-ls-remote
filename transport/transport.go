@@ -85,15 +85,19 @@ type Conn interface {
 	// Command issues a v2 command and returns a reader over its
 	// response. The returned reader streams the response pkt-lines.
 	//
-	// Errors with the protocol-mismatch sentinel (defined at the
-	// lsremote layer) when the negotiated version is not v2. caps
-	// are the capabilities the client wants to enable for this
-	// command (for example `agent` or `object-format`), echoed
-	// back to the server in the capability-list portion of the
-	// request. args are the command-specific arguments.
+	// Returns the protocol-mismatch sentinel (defined at the lsremote
+	// layer) when the negotiated version is not v2. caps are the
+	// capabilities the client wants to enable for this command (for
+	// example `agent` or `object-format`), echoed back to the server
+	// in the capability-list portion of the request. args are the
+	// command-specific arguments.
 	Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error)
 
-	// Close releases any underlying resources. Calling Close on an
-	// already-closed Conn must be a no-op that returns nil.
+	// Close releases any underlying resources.
+	//
+	// Implementations must make Close idempotent: a second or later
+	// call after the first must be a no-op that returns nil.
+	// Higher-level Sessions may rely on this when their own teardown
+	// races with an explicit Close from the caller.
 	Close() error
 }

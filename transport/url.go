@@ -162,8 +162,11 @@ func scpSeparator(s string) (int, bool) {
 // parseAuthorityPath parses `[user[:pass]@]host[:port]/path` into u.
 // An empty path is allowed and yields u.Path == "".
 func parseAuthorityPath(u *URL, s string) error {
-	// Userinfo, if any, ends at the last `@` before any `/`.
-	if at := strings.LastIndex(splitBeforeSlash(s), "@"); at >= 0 {
+	// Userinfo, if any, ends at the last `@` before any `/`. Confine
+	// the search to the authority portion so that a stray `@` in the
+	// path doesn't get mistaken for a userinfo separator.
+	authority, _, _ := strings.Cut(s, "/")
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
 		u.User = s[:at]
 		s = s[at+1:]
 	}
@@ -202,11 +205,4 @@ func parseAuthorityPath(u *URL, s string) error {
 		return fmt.Errorf("%w: %q", ErrMissingHost, u.Raw)
 	}
 	return nil
-}
-
-// splitBeforeSlash returns s up to the first `/`, or all of s if none.
-// Used to constrain `@` searches to the authority portion of an RFC URL.
-func splitBeforeSlash(s string) string {
-	before, _, _ := strings.Cut(s, "/")
-	return before
 }

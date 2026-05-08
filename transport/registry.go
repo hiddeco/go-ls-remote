@@ -1,6 +1,10 @@
 package transport
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
+)
 
 // Registry is an explicit map of URL scheme to [Transport]. The library
 // never registers transports via `init()` side effects; callers compose
@@ -10,8 +14,15 @@ import "strings"
 // A nil *Registry is not usable; pass a non-nil instance even when
 // empty.
 //
-// Registry is safe for concurrent reads after construction. Concurrent
-// [Registry.Register] calls require external synchronisation.
+// # Concurrency
+//
+// Registry is safe for concurrent reads after construction:
+// [Registry.Lookup] and [Registry.Schemes] may be called from any
+// number of goroutines. [Registry.Register] writes the underlying map,
+// so concurrent Register calls — or any Register concurrent with
+// Lookup or Schemes — require external synchronisation. The intended
+// pattern is to populate the Registry once at start-up and treat it
+// as read-only thereafter.
 type Registry struct {
 	byScheme map[string]Transport
 }
@@ -48,11 +59,7 @@ func (r *Registry) Lookup(scheme string) (Transport, bool) {
 // Schemes returns all registered scheme names, in lowercase. The
 // returned slice is freshly allocated; callers may sort or append to
 // it without affecting the Registry. Order of the returned slice is
-// unspecified.
+// unspecified — Go's map-iteration order is randomised on each call.
 func (r *Registry) Schemes() []string {
-	out := make([]string, 0, len(r.byScheme))
-	for s := range r.byScheme {
-		out = append(out, s)
-	}
-	return out
+	return slices.Collect(maps.Keys(r.byScheme))
 }
