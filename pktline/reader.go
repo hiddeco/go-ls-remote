@@ -88,12 +88,9 @@ func (r *Reader) ReadPacket() (Packet, error) {
 		return r.emit(Packet{Kind: Delim}), nil
 	case 2:
 		return r.emit(Packet{Kind: ResponseEnd}), nil
-	case 3:
-		return Packet{}, fmt.Errorf("pktline: invalid length 0003 (reserved)")
 	}
-
 	if length < 4 {
-		return Packet{}, fmt.Errorf("pktline: length %d below header size", length)
+		return Packet{}, fmt.Errorf("pktline: invalid length %04x", length)
 	}
 	payloadLen := length - 4
 	if payloadLen > MaxPayload {
