@@ -45,3 +45,21 @@ func TestTracer(t *testing.T) {
 	asTracer.OnEvent(fakeEvent{t: time.Unix(0, 0)})
 	assert.Len(t, tr.got, 1)
 }
+
+func TestPacketKind(t *testing.T) {
+	tests := []struct {
+		name string
+		k    PacketKind
+		want uint8
+	}{
+		{"data", PacketData, 1},
+		{"flush", PacketFlush, 2},
+		{"delim", PacketDelim, 3},
+		{"response-end", PacketResponseEnd, 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, uint8(tt.k))
+		})
+	}
+}
