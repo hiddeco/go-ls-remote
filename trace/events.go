@@ -10,11 +10,15 @@ import "time"
 // retaining the bytes across calls must copy, e.g. with [bytes.Clone].
 //
 // Bytes is nil for control packets (Kind values other than [PacketData]).
+//
+// Field order is chosen so 8-byte-aligned fields cluster ahead of the
+// single-byte Direction and Kind, packing the struct without inter-
+// field padding.
 type PacketEvent struct {
 	Time      time.Time
-	Direction Direction
 	URL       string // remote URL the packet belongs to; credentials redacted
 	Bytes     []byte // payload bytes for data packets; nil for control packets
+	Direction Direction
 	Kind      PacketKind
 }
 
