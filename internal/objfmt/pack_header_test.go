@@ -198,10 +198,11 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects an OFS_DELTA offset varint that overflows", func(t *testing.T) {
 		// At offset 12 the peek slice is large enough to hold a full
-		// nine-byte continuation chain. After eight iterations the
-		// accumulated offset has grown to roughly 2^63, so the next
-		// `(off << 7)` shifts a 1 into the sign bit and the
-		// `next < off` guard fires.
+		// nine-byte continuation chain. The accumulated offset grows
+		// by ~7 bits per byte, so the eighth iteration produces an
+		// `off` of roughly `1 << 56`, and the next iteration's
+		// pre-shift guard (`off >= 1 << 56`) fires before the shift
+		// can wrap into the sign bit.
 		body := make([]byte, 10)
 		body[0] = 0x60 // type=OFS_DELTA, size=0
 		for i := 1; i < len(body); i++ {

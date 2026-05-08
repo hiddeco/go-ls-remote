@@ -133,6 +133,14 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 // significant 7 bits first) and adds one per continuation byte to
 // make the encoding unique. See `packfile.c::get_delta_base` lines
 // 1278-1292 for the reference implementation.
+//
+// The overflow guard mirrors canonical Git's `MSB(base_offset, 7)`
+// check (`packfile.c::1284`): reject the input as soon as the next
+// `<< 7` shift would lose data, rather than letting it wrap silently.
+// Canonical expresses the predicate over `uint64`; we use `int64`
+// throughout so the threshold is `1 << 56` (one bit lower than
+// canonical's `1 << 57`) to also catch the sign-bit flip that signed
+// arithmetic introduces.
 func readOfsBase(buf []byte) (int64, int, error) {
 	if len(buf) == 0 {
 		return 0, 0, fmt.Errorf("objfmt: empty OFS_DELTA offset: %w", ErrTruncated)
@@ -145,12 +153,11 @@ func readOfsBase(buf []byte) (int64, int, error) {
 			return 0, 0, fmt.Errorf("objfmt: OFS_DELTA offset overruns buffer: %w", ErrTruncated)
 		}
 		off++
-		c = buf[used]
-		next := (off << 7) | int64(c&0x7f)
-		if next < off {
+		if off >= 1<<56 {
 			return 0, 0, fmt.Errorf("objfmt: OFS_DELTA offset overflow: %w", ErrCorrupt)
 		}
-		off = next
+		c = buf[used]
+		off = (off << 7) | int64(c&0x7f)
 		used++
 	}
 	return off, used, nil
