@@ -2,6 +2,7 @@ package pktline
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -143,8 +144,17 @@ func Test_kindToTracerKind_exhaustive(t *testing.T) {
 // fed values produced by the package itself, but the panic guards
 // against a future caller that adds a new constant without updating
 // the switch.
+//
+// The assertion is a substring match rather than an exact string, so
+// the panic message can be reworded without breaking the test.
 func Test_kindToTracerKind_panic(t *testing.T) {
-	assert.PanicsWithValue(t, "pktline: unhandled Kind 99", func() {
-		kindToTracerKind(Kind(99))
-	})
+	defer func() {
+		r := recover()
+		require.NotNil(t, r, "kindToTracerKind should panic on an unknown Kind")
+		msg := fmt.Sprint(r)
+		assert.Contains(t, msg, "unhandled Kind", "panic message should explain the failure mode")
+		assert.Contains(t, msg, "99", "panic message should include the offending Kind value")
+	}()
+	kindToTracerKind(Kind(99))
+	t.Fatal("expected kindToTracerKind to panic")
 }
