@@ -29,11 +29,6 @@ func (i *Idx) FindOffset(h Hash) (int64, bool) {
 	}
 }
 
-// findOffsetV2 is implemented in `idx_v2.go`. The forward-reference
-// stub here keeps the build green while v1 lookups land first; it is
-// replaced (not duplicated) by the real implementation in Task 12.
-func (i *Idx) findOffsetV2(h Hash) (int64, bool) { return -1, false }
-
 // findOffsetV1 binary-searches the v1 main table within the slice
 // bounded by the fan-out.
 //
