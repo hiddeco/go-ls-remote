@@ -1,0 +1,70 @@
+package objfmt
+
+import (
+	"bytes"
+	"crypto/sha1"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"hash"
+	"io"
+)
+
+// VerifyChecksum walks the entire pack and reports an error if its
+// trailing hash does not match a fresh hash of every preceding byte.
+//
+// The trailer is `algo.Size()` bytes wide — 20 for SHA-1, 32 for
+// SHA-256 — per the pack file layout in
+// `Documentation/gitformat-pack.adoc`. Verifying the trailer is
+// expensive (whole-file read) but it is the only way to prove the
+// pack body is intact end-to-end; callers should run it once at open
+// time for untrusted packs and lean on the OS page cache for any
+// subsequent random-access reads.
+func (p *Pack) VerifyChecksum() error {
+	hashLen := int64(p.algo.Size())
+	if hashLen == 0 {
+		return fmt.Errorf("objfmt: unsupported algo %v", p.algo)
+	}
+	totalLen := int64(p.r.Len())
+	if totalLen < hashLen+12 {
+		return errors.New("objfmt: pack file too short for trailer")
+	}
+
+	var h hash.Hash
+	switch p.algo {
+	case SHA1:
+		h = sha1.New()
+	case SHA256:
+		h = sha256.New()
+	default:
+		return fmt.Errorf("objfmt: unsupported algo %v", p.algo)
+	}
+
+	bodyEnd := totalLen - hashLen
+	const chunk = 1 << 20
+	buf := make([]byte, chunk)
+	for off := int64(0); off < bodyEnd; {
+		end := off + chunk
+		if end > bodyEnd {
+			end = bodyEnd
+		}
+		n, err := p.r.ReadAt(buf[:end-off], off)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("objfmt: read at %d: %w", off, err)
+		}
+		h.Write(buf[:n])
+		off += int64(n)
+		if n == 0 {
+			return fmt.Errorf("objfmt: zero-byte read at %d", off)
+		}
+	}
+
+	want := make([]byte, hashLen)
+	if _, err := p.r.ReadAt(want, bodyEnd); err != nil {
+		return fmt.Errorf("objfmt: read trailer: %w", err)
+	}
+	if !bytes.Equal(h.Sum(nil), want) {
+		return errors.New("objfmt: pack trailer mismatch")
+	}
+	return nil
+}
