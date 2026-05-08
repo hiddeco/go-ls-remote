@@ -22,7 +22,8 @@ import (
 // On clean stream termination — the underlying reader returns EOF
 // before any byte of a length prefix has been read — ReadPacket
 // returns [io.EOF]. A truncated length prefix or payload returns
-// [io.ErrUnexpectedEOF]. A malformed prefix returns a wrapped error.
+// [io.ErrUnexpectedEOF]. A malformed prefix wraps one of the codec
+// sentinels declared in this package.
 //
 // # Tracing
 //
@@ -65,8 +66,9 @@ func NewReader(src io.Reader, opts ...ReaderOption) *Reader {
 // or [ResponseEnd]) and a nil Data slice.
 //
 // At clean end-of-stream ReadPacket returns [io.EOF]. A truncated
-// length prefix or payload returns [io.ErrUnexpectedEOF]. A malformed
-// length prefix or out-of-range length returns a wrapped error.
+// length prefix or payload returns [io.ErrUnexpectedEOF]. Codec-level
+// failures wrap one of [ErrInvalidHex], [ErrInvalidLength], or
+// [ErrPayloadTooLarge]; callers match with [errors.Is].
 //
 // When a tracer is wired in via [WithReaderTracer], a successful read
 // emits a [trace.PacketEvent] before the packet is returned. Errors
@@ -90,11 +92,11 @@ func (r *Reader) ReadPacket() (Packet, error) {
 		return r.emit(Packet{Kind: ResponseEnd}), nil
 	}
 	if length < 4 {
-		return Packet{}, fmt.Errorf("pktline: invalid length %04x", length)
+		return Packet{}, fmt.Errorf("%w: %04x", ErrInvalidLength, length)
 	}
 	payloadLen := length - 4
 	if payloadLen > MaxPayload {
-		return Packet{}, fmt.Errorf("pktline: payload length %d exceeds MaxPayload (%d)", payloadLen, MaxPayload)
+		return Packet{}, fmt.Errorf("%w: %d > %d", ErrPayloadTooLarge, payloadLen, MaxPayload)
 	}
 
 	if cap(r.buf) < payloadLen {
@@ -144,7 +146,7 @@ func parseHexLength(b []byte) (int, error) {
 		case c >= 'A' && c <= 'F':
 			n = int(c-'A') + 10
 		default:
-			return 0, fmt.Errorf("pktline: invalid hex byte 0x%02x in length prefix", c)
+			return 0, fmt.Errorf("%w: 0x%02x", ErrInvalidHex, c)
 		}
 		v = v<<4 | n
 	}

@@ -125,7 +125,7 @@ func TestReader_ReadPacket_consecutive(t *testing.T) {
 func TestReader_ReadPacket_invalidLength(t *testing.T) {
 	r := NewReader(strings.NewReader("0003"))
 	_, err := r.ReadPacket()
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidLength)
 	assert.ErrorContains(t, err, "0003")
 }
 
@@ -135,8 +135,17 @@ func TestReader_ReadPacket_invalidLength(t *testing.T) {
 func TestReader_ReadPacket_invalidHex(t *testing.T) {
 	r := NewReader(strings.NewReader("zzzzhello"))
 	_, err := r.ReadPacket()
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "hex")
+	require.ErrorIs(t, err, ErrInvalidHex)
+}
+
+// TestReader_ReadPacket_payloadTooLarge verifies that a length prefix
+// announcing a payload one byte over [MaxPayload] is rejected before
+// any payload byte is read. On-wire `fff1` decodes to length 65521
+// and a payload of 65517 bytes (= MaxPayload + 1).
+func TestReader_ReadPacket_payloadTooLarge(t *testing.T) {
+	r := NewReader(strings.NewReader("fff1"))
+	_, err := r.ReadPacket()
+	require.ErrorIs(t, err, ErrPayloadTooLarge)
 }
 
 // TestReader_ReadPacket_maxPayload exercises the largest payload size

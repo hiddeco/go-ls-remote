@@ -81,8 +81,7 @@ func TestWriter_WritePacket_overflow(t *testing.T) {
 	w := NewWriter(&buf)
 
 	err := w.WritePacket(bytes.Repeat([]byte{'a'}, MaxPayload+1))
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "MaxPayload")
+	require.ErrorIs(t, err, ErrPayloadTooLarge)
 	assert.Zero(t, buf.Len(), "no bytes should be written when payload is over the limit")
 }
 

@@ -48,12 +48,12 @@ func NewWriter(dst io.Writer, opts ...WriterOption) *Writer {
 // WritePacket emits a single data packet whose payload is p. The empty
 // payload is permitted and emits the on-wire bytes `0004`.
 //
-// Returns an error if `len(p) > [MaxPayload]`. The underlying writer's
-// error is returned unchanged on a write failure; in either error
-// case, no [trace.PacketEvent] is emitted.
+// Returns a wrapped [ErrPayloadTooLarge] if `len(p) > [MaxPayload]`.
+// The underlying writer's error is returned unchanged on a write
+// failure; in either error case, no [trace.PacketEvent] is emitted.
 func (w *Writer) WritePacket(p []byte) error {
 	if len(p) > MaxPayload {
-		return fmt.Errorf("pktline: payload length %d exceeds MaxPayload (%d)", len(p), MaxPayload)
+		return fmt.Errorf("%w: %d > %d", ErrPayloadTooLarge, len(p), MaxPayload)
 	}
 	total := 4 + len(p)
 	if cap(w.out) < total {
