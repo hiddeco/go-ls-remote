@@ -123,4 +123,138 @@ func TestPack_ReadHeader(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "OFS_DELTA base offset out of range")
 	})
+
+	t.Run("rejects a pack header that overruns the peek buffer", func(t *testing.T) {
+		// Bytes 27..31 of the file are read as the type/size header
+		// when [Pack.ReadHeader] is called with `at=27`, since the
+		// peek slice is clamped by `r.Len() - at = 5`. All five bytes
+		// have the continuation bit set, so the size loop runs out of
+		// buffer before it can hit the `shift >= 64` overflow guard.
+		buf := make([]byte, 32)
+		copy(buf, "PACK")
+		binary.BigEndian.PutUint32(buf[4:8], 2)
+		binary.BigEndian.PutUint32(buf[8:12], 1)
+		for i := 27; i < 32; i++ {
+			buf[i] = 0xFF
+		}
+		path := writeBytes(t, t.TempDir(), "overrun.pack", buf)
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(27)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrTruncated)
+		assert.Contains(t, err.Error(), "pack header overruns buffer")
+	})
+
+	t.Run("rejects a pack header whose size shift overflows", func(t *testing.T) {
+		// Ten consecutive 0xFF bytes at offset 12: every iteration of
+		// the size loop bumps `shift` by 7, so after the tenth byte
+		// `shift = 4 + 9*7 = 67 >= 64` and the overflow guard fires.
+		body := make([]byte, 10)
+		for i := range body {
+			body[i] = 0xFF
+		}
+		path := writeMinPack(t, body)
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(12)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "pack header size overflow")
+	})
+
+	t.Run("rejects an OFS_DELTA offset that overruns the buffer", func(t *testing.T) {
+		// Read at offset 26 in a 32-byte file: the peek slice is six
+		// bytes. The first byte is type=6 (OFS_DELTA, 0x60); the
+		// remaining five bytes are 0xFF — every byte has the
+		// continuation bit set so `readOfsBase` runs out of buffer
+		// before the offset reaches the `next < off` overflow guard
+		// (which needs roughly eight iterations to wrap).
+		buf := make([]byte, 32)
+		copy(buf, "PACK")
+		binary.BigEndian.PutUint32(buf[4:8], 2)
+		binary.BigEndian.PutUint32(buf[8:12], 1)
+		buf[26] = 0x60
+		for i := 27; i < 32; i++ {
+			buf[i] = 0xFF
+		}
+		path := writeBytes(t, t.TempDir(), "ofs-overrun.pack", buf)
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(26)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrTruncated)
+		assert.Contains(t, err.Error(), "OFS_DELTA offset overruns buffer")
+	})
+
+	t.Run("rejects an OFS_DELTA offset varint that overflows", func(t *testing.T) {
+		// At offset 12 the peek slice is large enough to hold a full
+		// nine-byte continuation chain. After eight iterations the
+		// accumulated offset has grown to roughly 2^63, so the next
+		// `(off << 7)` shifts a 1 into the sign bit and the
+		// `next < off` guard fires.
+		body := make([]byte, 10)
+		body[0] = 0x60 // type=OFS_DELTA, size=0
+		for i := 1; i < len(body); i++ {
+			body[i] = 0xFF
+		}
+		path := writeMinPack(t, body)
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(12)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "OFS_DELTA offset")
+	})
+
+	t.Run("rejects a REF_DELTA header that overruns the buffer", func(t *testing.T) {
+		// Read the type/size header at offset 15 of a 32-byte file:
+		// the peek slice is 17 bytes. A single 0x70 type byte
+		// (REF_DELTA, size=0) consumes one byte, leaving 16 — short
+		// of the 20-byte SHA-1 base hash, so the REF_DELTA-specific
+		// overrun check fires.
+		buf := make([]byte, 32)
+		copy(buf, "PACK")
+		binary.BigEndian.PutUint32(buf[4:8], 2)
+		binary.BigEndian.PutUint32(buf[8:12], 1)
+		buf[15] = 0x70
+		path := writeBytes(t, t.TempDir(), "ref-overrun.pack", buf)
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(15)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrTruncated)
+		assert.Contains(t, err.Error(), "REF_DELTA base hash overruns buffer")
+	})
+
+	t.Run("rejects reserved object type 5", func(t *testing.T) {
+		// Header byte 0x50 encodes type bits 0b101 = 5, the reserved
+		// type that canonical Git rejects in
+		// `packfile.c::unpack_object_header_buffer`.
+		path := writeMinPack(t, []byte{0x50})
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		_, err = p.ReadHeader(12)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "unknown pack object type 5")
+	})
 }
