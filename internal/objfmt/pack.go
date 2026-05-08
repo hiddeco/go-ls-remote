@@ -45,7 +45,7 @@ type Pack struct {
 // error rather than constructing an obviously-invalid Pack.
 func OpenPack(path string, algo Algo) (*Pack, error) {
 	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v", algo)
+		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
 	}
 	r, err := openPackReader(path)
 	if err != nil {
@@ -53,7 +53,7 @@ func OpenPack(path string, algo Algo) (*Pack, error) {
 	}
 	if int64(r.Len()) < int64(12+algo.Size()) {
 		_ = r.Close()
-		return nil, fmt.Errorf("objfmt: pack file too short (%d bytes)", r.Len())
+		return nil, fmt.Errorf("objfmt: pack file too short (%d bytes): %w", r.Len(), ErrShortFile)
 	}
 	hdr := make([]byte, 12)
 	if _, err := r.ReadAt(hdr, 0); err != nil {
@@ -62,12 +62,12 @@ func OpenPack(path string, algo Algo) (*Pack, error) {
 	}
 	if string(hdr[:4]) != "PACK" {
 		_ = r.Close()
-		return nil, fmt.Errorf("objfmt: not a pack file (magic = %q)", hdr[:4])
+		return nil, fmt.Errorf("objfmt: not a pack file (magic = %q): %w", hdr[:4], ErrBadMagic)
 	}
 	ver := binary.BigEndian.Uint32(hdr[4:8])
 	if ver != 2 && ver != 3 {
 		_ = r.Close()
-		return nil, fmt.Errorf("objfmt: unsupported pack version %d (want 2 or 3)", ver)
+		return nil, fmt.Errorf("objfmt: unsupported pack version %d (want 2 or 3): %w", ver, ErrUnsupportedVersion)
 	}
 	nr := binary.BigEndian.Uint32(hdr[8:12])
 	return &Pack{r: r, algo: algo, ver: ver, nr: nr}, nil

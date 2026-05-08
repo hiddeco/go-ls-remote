@@ -1,7 +1,6 @@
 package objfmt
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -80,7 +79,7 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	}
 	buf = buf[:n]
 	if len(buf) == 0 {
-		return ObjectHeader{}, errors.New("objfmt: empty pack header")
+		return ObjectHeader{}, fmt.Errorf("objfmt: empty pack header: %w", ErrTruncated)
 	}
 
 	typeBits := (buf[0] >> 4) & 0x07
@@ -89,13 +88,13 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	used := 1
 	for buf[used-1]&0x80 != 0 {
 		if used >= len(buf) {
-			return ObjectHeader{}, errors.New("objfmt: pack header overruns buffer")
+			return ObjectHeader{}, fmt.Errorf("objfmt: pack header overruns buffer: %w", ErrTruncated)
 		}
 		size |= int64(buf[used]&0x7f) << shift
 		shift += 7
 		used++
 		if shift >= 64 {
-			return ObjectHeader{}, errors.New("objfmt: pack header size overflow")
+			return ObjectHeader{}, fmt.Errorf("objfmt: pack header size overflow: %w", ErrCorrupt)
 		}
 	}
 
@@ -109,20 +108,20 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 		}
 		hdr.DeltaRef.OfsBase = at - offset
 		if hdr.DeltaRef.OfsBase <= 0 || hdr.DeltaRef.OfsBase >= at {
-			return ObjectHeader{}, errors.New("objfmt: OFS_DELTA base offset out of range")
+			return ObjectHeader{}, fmt.Errorf("objfmt: OFS_DELTA base offset out of range: %w", ErrCorrupt)
 		}
 		used += advanced
 	case TypeRefDelta:
 		hashLen := p.algo.Size()
 		if used+hashLen > len(buf) {
-			return ObjectHeader{}, errors.New("objfmt: REF_DELTA base hash overruns buffer")
+			return ObjectHeader{}, fmt.Errorf("objfmt: REF_DELTA base hash overruns buffer: %w", ErrTruncated)
 		}
 		copy(hdr.DeltaRef.RefBase[:hashLen], buf[used:used+hashLen])
 		used += hashLen
 	case TypeCommit, TypeTree, TypeBlob, TypeTag:
 		// no extra header bytes
 	default:
-		return ObjectHeader{}, fmt.Errorf("objfmt: unknown pack object type %d", typeBits)
+		return ObjectHeader{}, fmt.Errorf("objfmt: unknown pack object type %d: %w", typeBits, ErrCorrupt)
 	}
 
 	hdr.BodyAt = at + int64(used)
@@ -136,20 +135,20 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 // 1278-1292 for the reference implementation.
 func readOfsBase(buf []byte) (int64, int, error) {
 	if len(buf) == 0 {
-		return 0, 0, errors.New("objfmt: empty OFS_DELTA offset")
+		return 0, 0, fmt.Errorf("objfmt: empty OFS_DELTA offset: %w", ErrTruncated)
 	}
 	c := buf[0]
 	off := int64(c & 0x7f)
 	used := 1
 	for c&0x80 != 0 {
 		if used >= len(buf) {
-			return 0, 0, errors.New("objfmt: OFS_DELTA offset overruns buffer")
+			return 0, 0, fmt.Errorf("objfmt: OFS_DELTA offset overruns buffer: %w", ErrTruncated)
 		}
 		off++
 		c = buf[used]
 		next := (off << 7) | int64(c&0x7f)
 		if next < off {
-			return 0, 0, errors.New("objfmt: OFS_DELTA offset overflow")
+			return 0, 0, fmt.Errorf("objfmt: OFS_DELTA offset overflow: %w", ErrCorrupt)
 		}
 		off = next
 		used++

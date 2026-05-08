@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"hash"
 )
@@ -20,10 +19,10 @@ import (
 func (m *Midx) VerifyChecksum() error {
 	hashLen := m.algo.Size()
 	if hashLen == 0 {
-		return fmt.Errorf("objfmt: unsupported algo %v", m.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", m.algo, ErrUnsupportedAlgo)
 	}
 	if len(m.data) < hashLen {
-		return errors.New("objfmt: midx too short for trailer")
+		return fmt.Errorf("objfmt: midx too short for trailer: %w", ErrShortFile)
 	}
 
 	var h hash.Hash
@@ -33,14 +32,14 @@ func (m *Midx) VerifyChecksum() error {
 	case SHA256:
 		h = sha256.New()
 	default:
-		return fmt.Errorf("objfmt: unsupported algo %v", m.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", m.algo, ErrUnsupportedAlgo)
 	}
 
 	body := m.data[:len(m.data)-hashLen]
 	trailer := m.data[len(m.data)-hashLen:]
 	h.Write(body)
 	if !bytes.Equal(h.Sum(nil), trailer) {
-		return errors.New("objfmt: midx trailer mismatch")
+		return fmt.Errorf("objfmt: midx trailer mismatch: %w", ErrChecksumMismatch)
 	}
 	return nil
 }

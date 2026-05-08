@@ -2,7 +2,6 @@ package objfmt
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 )
@@ -60,7 +59,7 @@ var idxV2Magic = [4]byte{0xff, 't', 'O', 'c'}
 // [SHA256] succeeds but every lookup will miss.
 func OpenIdx(path string, algo Algo) (*Idx, error) {
 	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v", algo)
+		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -69,11 +68,11 @@ func OpenIdx(path string, algo Algo) (*Idx, error) {
 	idx := &Idx{path: path, algo: algo, data: data}
 	if hasIdxV2MagicPrefix(data) {
 		if len(data) < idxV2HeaderLen {
-			return nil, errors.New("objfmt: idx truncated before version field")
+			return nil, fmt.Errorf("objfmt: idx truncated before version field: %w", ErrTruncated)
 		}
 		ver := binary.BigEndian.Uint32(data[4:8])
 		if ver != 2 {
-			return nil, fmt.Errorf("objfmt: unsupported idx version %d (want 1 or 2)", ver)
+			return nil, fmt.Errorf("objfmt: unsupported idx version %d (want 1 or 2): %w", ver, ErrUnsupportedVersion)
 		}
 		idx.ver = 2
 	} else {
@@ -110,27 +109,27 @@ func (i *Idx) parseHeader() error {
 		// SHA-1. v1 is SHA-1 only — see `gitformat-pack.adoc` lines
 		// 196-218.
 		if len(i.data) < 256*4 {
-			return errors.New("objfmt: idx v1 truncated before fan-out")
+			return fmt.Errorf("objfmt: idx v1 truncated before fan-out: %w", ErrTruncated)
 		}
 		i.count = binary.BigEndian.Uint32(i.data[255*4 : 256*4])
 		// 20 is hard-coded because v1 never stored SHA-256.
 		want := 256*4 + int(i.count)*(4+20) + 20 + 20
 		if len(i.data) < want {
-			return fmt.Errorf("objfmt: idx v1 truncated: have %d, want %d", len(i.data), want)
+			return fmt.Errorf("objfmt: idx v1 truncated: have %d, want %d: %w", len(i.data), want, ErrTruncated)
 		}
 	case 2:
 		fanoutEnd := idxV2HeaderLen + 256*4
 		if len(i.data) < fanoutEnd {
-			return errors.New("objfmt: idx v2 truncated before fan-out")
+			return fmt.Errorf("objfmt: idx v2 truncated before fan-out: %w", ErrTruncated)
 		}
 		i.count = binary.BigEndian.Uint32(i.data[fanoutEnd-4 : fanoutEnd])
 		// Minimum size with no large-offset overflow.
 		want := fanoutEnd + int(i.count)*hashLen + int(i.count)*4 + int(i.count)*4 + 2*hashLen
 		if len(i.data) < want {
-			return fmt.Errorf("objfmt: idx v2 truncated: have %d, want >= %d", len(i.data), want)
+			return fmt.Errorf("objfmt: idx v2 truncated: have %d, want >= %d: %w", len(i.data), want, ErrTruncated)
 		}
 	default:
-		return fmt.Errorf("objfmt: unsupported idx version %d", i.ver)
+		return fmt.Errorf("objfmt: unsupported idx version %d: %w", i.ver, ErrUnsupportedVersion)
 	}
 	return nil
 }

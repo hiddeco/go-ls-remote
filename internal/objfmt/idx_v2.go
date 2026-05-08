@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"hash"
 )
@@ -104,10 +103,10 @@ func (i *Idx) PackChecksum() Hash {
 func (i *Idx) VerifyChecksum() error {
 	hashLen := i.algo.Size()
 	if hashLen == 0 {
-		return fmt.Errorf("objfmt: unsupported algo %v", i.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", i.algo, ErrUnsupportedAlgo)
 	}
 	if len(i.data) < hashLen {
-		return errors.New("objfmt: idx too short for trailer")
+		return fmt.Errorf("objfmt: idx too short for trailer: %w", ErrShortFile)
 	}
 
 	// v1 only ever stored SHA-1 ids; the trailer is SHA-1 even when
@@ -123,14 +122,14 @@ func (i *Idx) VerifyChecksum() error {
 	case i.algo == SHA256:
 		h = sha256.New()
 	default:
-		return fmt.Errorf("objfmt: unsupported algo %v", i.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", i.algo, ErrUnsupportedAlgo)
 	}
 
 	body := i.data[:len(i.data)-hashLen]
 	trailer := i.data[len(i.data)-hashLen:]
 	h.Write(body)
 	if !bytes.Equal(h.Sum(nil), trailer) {
-		return errors.New("objfmt: idx trailer mismatch")
+		return fmt.Errorf("objfmt: idx trailer mismatch: %w", ErrChecksumMismatch)
 	}
 	return nil
 }

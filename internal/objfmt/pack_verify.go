@@ -23,11 +23,11 @@ import (
 func (p *Pack) VerifyChecksum() error {
 	hashLen := int64(p.algo.Size())
 	if hashLen == 0 {
-		return fmt.Errorf("objfmt: unsupported algo %v", p.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", p.algo, ErrUnsupportedAlgo)
 	}
 	totalLen := int64(p.r.Len())
 	if totalLen < hashLen+12 {
-		return errors.New("objfmt: pack file too short for trailer")
+		return fmt.Errorf("objfmt: pack file too short for trailer: %w", ErrShortFile)
 	}
 
 	var h hash.Hash
@@ -37,7 +37,7 @@ func (p *Pack) VerifyChecksum() error {
 	case SHA256:
 		h = sha256.New()
 	default:
-		return fmt.Errorf("objfmt: unsupported algo %v", p.algo)
+		return fmt.Errorf("objfmt: unsupported algo %v: %w", p.algo, ErrUnsupportedAlgo)
 	}
 
 	bodyEnd := totalLen - hashLen
@@ -64,7 +64,7 @@ func (p *Pack) VerifyChecksum() error {
 		return fmt.Errorf("objfmt: read trailer: %w", err)
 	}
 	if !bytes.Equal(h.Sum(nil), want) {
-		return errors.New("objfmt: pack trailer mismatch")
+		return fmt.Errorf("objfmt: pack trailer mismatch: %w", ErrChecksumMismatch)
 	}
 	return nil
 }

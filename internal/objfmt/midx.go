@@ -3,7 +3,6 @@ package objfmt
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 )
@@ -107,23 +106,23 @@ var (
 // consulted.
 func OpenMidx(path string, algo Algo) (*Midx, error) {
 	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v", algo)
+		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	if len(data) < midxHeaderSize+algo.Size() {
-		return nil, fmt.Errorf("objfmt: midx too short (%d bytes)", len(data))
+		return nil, fmt.Errorf("objfmt: midx too short (%d bytes): %w", len(data), ErrShortFile)
 	}
 	if !bytes.Equal(data[0:4], midxMagic[:]) {
-		return nil, fmt.Errorf("objfmt: not a midx (magic = %q)", data[0:4])
+		return nil, fmt.Errorf("objfmt: not a midx (magic = %q): %w", data[0:4], ErrBadMagic)
 	}
 
 	m := &Midx{path: path, algo: algo, data: data}
 	m.ver = uint32(data[4])
 	if m.ver != 1 && m.ver != 2 {
-		return nil, fmt.Errorf("objfmt: unsupported midx version %d (want 1 or 2)", m.ver)
+		return nil, fmt.Errorf("objfmt: unsupported midx version %d (want 1 or 2): %w", m.ver, ErrUnsupportedVersion)
 	}
 
 	hashVer := data[5]
@@ -132,13 +131,13 @@ func OpenMidx(path string, algo Algo) (*Midx, error) {
 		return nil, err
 	}
 	if hashVer != wantHashVer {
-		return nil, fmt.Errorf("objfmt: midx hash version %d does not match algo %v",
-			hashVer, algo)
+		return nil, fmt.Errorf("objfmt: midx hash version %d does not match algo %v: %w",
+			hashVer, algo, ErrAlgoMismatch)
 	}
 
 	numChunks := int(data[6])
 	if data[7] != 0 {
-		return nil, fmt.Errorf("objfmt: midx reserved byte non-zero (%d)", data[7])
+		return nil, fmt.Errorf("objfmt: midx reserved byte non-zero (%d): %w", data[7], ErrCorrupt)
 	}
 	m.numPacks = binary.BigEndian.Uint32(data[8:12])
 
@@ -164,7 +163,7 @@ func midxHashVersion(a Algo) (byte, error) {
 	case SHA256:
 		return 2, nil
 	default:
-		return 0, fmt.Errorf("objfmt: unsupported algo %v", a)
+		return 0, fmt.Errorf("objfmt: unsupported algo %v: %w", a, ErrUnsupportedAlgo)
 	}
 }
 
@@ -176,12 +175,12 @@ func midxHashVersion(a Algo) (byte, error) {
 // Mirrors `read_table_of_contents` in `chunk-format.c`.
 func (m *Midx) parseChunkTable(numChunks int) error {
 	if numChunks < 0 {
-		return errors.New("objfmt: negative midx chunk count")
+		return fmt.Errorf("objfmt: negative midx chunk count: %w", ErrCorrupt)
 	}
 	end := midxHeaderSize + (numChunks+1)*midxChunkTOCEntry
 	hashLen := m.algo.Size()
 	if end > len(m.data)-hashLen {
-		return fmt.Errorf("objfmt: midx chunk table overflows file (%d chunks)", numChunks)
+		return fmt.Errorf("objfmt: midx chunk table overflows file (%d chunks): %w", numChunks, ErrTruncated)
 	}
 	bodyEnd := int64(len(m.data) - hashLen)
 
@@ -203,30 +202,30 @@ func (m *Midx) parseChunkTable(numChunks int) error {
 	// the final chunk's body and so cannot exceed the body end.
 	last := entries[len(entries)-1]
 	if last.id != (chunkID{}) {
-		return fmt.Errorf("objfmt: midx chunk table missing terminator (id %x)", last.id)
+		return fmt.Errorf("objfmt: midx chunk table missing terminator (id %x): %w", last.id, ErrCorrupt)
 	}
 	if last.off > bodyEnd {
-		return fmt.Errorf("objfmt: midx chunk table overruns body (offset %d > %d)",
-			last.off, bodyEnd)
+		return fmt.Errorf("objfmt: midx chunk table overruns body (offset %d > %d): %w",
+			last.off, bodyEnd, ErrTruncated)
 	}
 	for i := 0; i < numChunks; i++ {
 		e := entries[i]
 		if e.id == (chunkID{}) {
-			return fmt.Errorf("objfmt: premature midx chunk terminator at index %d", i)
+			return fmt.Errorf("objfmt: premature midx chunk terminator at index %d: %w", i, ErrCorrupt)
 		}
 		next := entries[i+1].off
 		if next < e.off || next > bodyEnd {
-			return fmt.Errorf("objfmt: midx chunk %s out of range (%d..%d)",
-				e.id, e.off, next)
+			return fmt.Errorf("objfmt: midx chunk %s out of range (%d..%d): %w",
+				e.id, e.off, next, ErrCorrupt)
 		}
 		if _, dup := m.chunks[e.id]; dup {
-			return fmt.Errorf("objfmt: midx duplicate chunk %s", e.id)
+			return fmt.Errorf("objfmt: midx duplicate chunk %s: %w", e.id, ErrCorrupt)
 		}
 		m.chunks[e.id] = chunkExtent{off: e.off, len: next - e.off}
 	}
 	for _, required := range [...]chunkID{chunkPNAM, chunkOIDF, chunkOIDL, chunkOOFF} {
 		if _, ok := m.chunks[required]; !ok {
-			return fmt.Errorf("objfmt: midx missing required chunk %s", required)
+			return fmt.Errorf("objfmt: midx missing required chunk %s: %w", required, ErrCorrupt)
 		}
 	}
 	return nil
@@ -249,14 +248,14 @@ func (m *Midx) parsePackNames() error {
 		// to reach the next entry.
 		idx := bytes.IndexByte(body, 0)
 		if idx < 0 {
-			return errors.New("objfmt: midx pack-name chunk missing terminator")
+			return fmt.Errorf("objfmt: midx pack-name chunk missing terminator: %w", ErrCorrupt)
 		}
 		names = append(names, string(body[:idx]))
 		body = body[idx+1:]
 	}
 	if uint32(len(names)) != m.numPacks {
-		return fmt.Errorf("objfmt: midx pack-name count %d != header num_packs %d",
-			len(names), m.numPacks)
+		return fmt.Errorf("objfmt: midx pack-name count %d != header num_packs %d: %w",
+			len(names), m.numPacks, ErrCorrupt)
 	}
 	m.packNames = names
 	return nil
@@ -267,7 +266,7 @@ func (m *Midx) parsePackNames() error {
 func (m *Midx) parseFanout() error {
 	ext := m.chunks[chunkOIDF]
 	if ext.len != 256*4 {
-		return fmt.Errorf("objfmt: midx OIDF wrong size (%d, want 1024)", ext.len)
+		return fmt.Errorf("objfmt: midx OIDF wrong size (%d, want 1024): %w", ext.len, ErrCorrupt)
 	}
 	m.count = binary.BigEndian.Uint32(m.data[ext.off+255*4 : ext.off+256*4])
 
@@ -276,13 +275,13 @@ func (m *Midx) parseFanout() error {
 	oidl := m.chunks[chunkOIDL]
 	hashLen := int64(m.algo.Size())
 	if oidl.len != int64(m.count)*hashLen {
-		return fmt.Errorf("objfmt: midx OIDL size %d != count*%d", oidl.len, hashLen)
+		return fmt.Errorf("objfmt: midx OIDL size %d != count*%d: %w", oidl.len, hashLen, ErrCorrupt)
 	}
 	// And OOFF must hold count × 8 bytes (4-byte pack id + 4-byte
 	// offset, per `MIDX_CHUNK_OFFSET_WIDTH` in `midx.h`).
 	ooff := m.chunks[chunkOOFF]
 	if ooff.len != int64(m.count)*8 {
-		return fmt.Errorf("objfmt: midx OOFF size %d != count*8", ooff.len)
+		return fmt.Errorf("objfmt: midx OOFF size %d != count*8: %w", ooff.len, ErrCorrupt)
 	}
 	return nil
 }
