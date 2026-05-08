@@ -88,8 +88,65 @@ func ParseURL(s string) (*URL, error) {
 		return u, nil
 	}
 
-	// scp-style and bare-path forms join here in subsequent tasks.
+	// scp-style: `[user@]host:path`. Per `connect.c::parse_connect_url`
+	// the first `:` outside an IPv6 bracket and before any `/` is the
+	// host/path separator; scp-style has no port, so `host:22:rest`
+	// parses as host=`host`, path=`22:rest`.
+	if i, ok := scpSeparator(s); ok {
+		u.Scheme = "ssh"
+		hostPart := s[:i]
+		path := s[i+1:]
+		if at := strings.LastIndex(hostPart, "@"); at >= 0 {
+			u.User = hostPart[:at]
+			hostPart = hostPart[at+1:]
+		}
+		// IPv6 in scp-style requires brackets, since the unbracketed
+		// colons would each be candidate separators.
+		if strings.HasPrefix(hostPart, "[") && strings.HasSuffix(hostPart, "]") {
+			u.Host = hostPart[1 : len(hostPart)-1]
+		} else {
+			u.Host = hostPart
+		}
+		if u.Host == "" {
+			return nil, fmt.Errorf("%w: %q", ErrMissingHost, u.Raw)
+		}
+		u.Path = "/" + path
+		return u, nil
+	}
+
 	return nil, fmt.Errorf("%w: %q", ErrUnrecognizedURL, s)
+}
+
+// scpSeparator returns the index of the colon that separates host
+// from path in an scp-style URL, or (0, false) if s is not scp-style.
+//
+// scp-style requires:
+//
+//   - a colon to be present;
+//   - the colon to come before any `/` (an earlier `/` means it's a
+//     path, not scp-style);
+//   - the colon to be outside any bracketed IPv6 literal.
+func scpSeparator(s string) (int, bool) {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			depth++
+		case ']':
+			if depth > 0 {
+				depth--
+			}
+		case '/':
+			if depth == 0 {
+				return 0, false
+			}
+		case ':':
+			if depth == 0 {
+				return i, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // parseAuthorityPath parses `[user[:pass]@]host[:port]/path` into u.

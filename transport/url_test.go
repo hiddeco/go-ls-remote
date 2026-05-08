@@ -48,6 +48,28 @@ func TestParseURL(t *testing.T) {
 			in:   "HTTPS://example.com/repo",
 			want: URL{Scheme: "https", Host: "example.com", Path: "/repo"},
 		},
+		{
+			name: "scp-style with user",
+			in:   "git@github.com:torvalds/linux.git",
+			want: URL{Scheme: "ssh", User: "git", Host: "github.com", Path: "/torvalds/linux.git"},
+		},
+		{
+			name: "scp-style without user",
+			in:   "github.com:torvalds/linux.git",
+			want: URL{Scheme: "ssh", Host: "github.com", Path: "/torvalds/linux.git"},
+		},
+		{
+			name: "scp-style with bracketed IPv6",
+			in:   "git@[fe80::1]:repo.git",
+			want: URL{Scheme: "ssh", User: "git", Host: "fe80::1", Path: "/repo.git"},
+		},
+		{
+			name: "scp-style ignores apparent port (canonical Git behaviour)",
+			// `host:NN:rest` parses as host=`host`, path=`NN:rest` per
+			// connect.c::parse_connect_url; scp-style has no port.
+			in:   "git@host:22:repo.git",
+			want: URL{Scheme: "ssh", User: "git", Host: "host", Path: "/22:repo.git"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
