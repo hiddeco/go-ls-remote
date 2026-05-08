@@ -165,7 +165,9 @@ func (i *Idx) searchV2(h Hash) (uint32, bool) {
 	}
 	want := h[:hashLen]
 	for lo < hi {
-		mid := (lo + hi) / 2
+		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
+		// summands set bit 31; `lo + (hi-lo)/2` does not.
+		mid := lo + (hi-lo)/2
 		got := i.data[nameTable+int(mid)*hashLen : nameTable+(int(mid)+1)*hashLen]
 		switch bytes.Compare(want, got) {
 		case 0:

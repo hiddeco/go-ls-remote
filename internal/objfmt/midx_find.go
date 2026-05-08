@@ -89,7 +89,9 @@ func (m *Midx) searchOID(h Hash) (uint32, bool) {
 
 	want := h[:hashLen]
 	for lo < hi {
-		mid := (lo + hi) / 2
+		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
+		// summands set bit 31; `lo + (hi-lo)/2` does not.
+		mid := lo + (hi-lo)/2
 		base := oidl.off + int64(mid)*int64(hashLen)
 		got := m.data[base : base+int64(hashLen)]
 		switch bytes.Compare(want, got) {

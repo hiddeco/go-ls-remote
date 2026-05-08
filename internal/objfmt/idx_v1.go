@@ -58,7 +58,9 @@ func (i *Idx) findOffsetV1(h Hash) (int64, bool) {
 	tableStart := 256 * 4
 	want := h[:20]
 	for lo < hi {
-		mid := (lo + hi) / 2
+		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
+		// summands set bit 31; `lo + (hi-lo)/2` does not.
+		mid := lo + (hi-lo)/2
 		entry := i.data[tableStart+int(mid)*idxV1RecordSize:]
 		// `idxV1RecordSize` bytes: 4 offset + 20 name.
 		got := entry[4 : 4+20]
