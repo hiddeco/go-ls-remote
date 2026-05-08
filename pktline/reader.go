@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
+
+	"github.com/hiddeco/go-ls-remote/trace"
 )
 
 // Reader decodes pkt-lines from an underlying [io.Reader].
@@ -20,6 +23,12 @@ import (
 // before any byte of a length prefix has been read — ReadPacket
 // returns [io.EOF]. A truncated length prefix or payload returns
 // [io.ErrUnexpectedEOF]. A malformed prefix returns a wrapped error.
+//
+// # Tracing
+//
+// A Reader wired up via [WithReaderTracer] emits a [trace.PacketEvent]
+// for every packet read. Without a tracer, ReadPacket performs no
+// instrumentation work.
 type Reader struct {
 	src io.Reader
 
@@ -29,11 +38,22 @@ type Reader struct {
 
 	// hdr is a fixed scratch buffer for the 4-byte length prefix.
 	hdr [4]byte
+
+	// Tracer fields are nil/zero unless a [WithReaderTracer] or
+	// [WithReaderTracerURL] option is applied.
+	tracer   trace.Tracer
+	traceDir trace.Direction
+	traceURL string
 }
 
-// NewReader returns a [Reader] that decodes pkt-lines from src.
-func NewReader(src io.Reader) *Reader {
-	return &Reader{src: src}
+// NewReader returns a [Reader] that decodes pkt-lines from src,
+// applying the given options.
+func NewReader(src io.Reader, opts ...ReaderOption) *Reader {
+	r := &Reader{src: src}
+	for _, o := range opts {
+		o.applyReader(r)
+	}
+	return r
 }
 
 // ReadPacket reads the next pkt-line from the underlying reader.
@@ -47,6 +67,10 @@ func NewReader(src io.Reader) *Reader {
 // At clean end-of-stream ReadPacket returns [io.EOF]. A truncated
 // length prefix or payload returns [io.ErrUnexpectedEOF]. A malformed
 // length prefix or out-of-range length returns a wrapped error.
+//
+// When a tracer is wired in via [WithReaderTracer], a successful read
+// emits a [trace.PacketEvent] before the packet is returned. Errors
+// do not emit events.
 func (r *Reader) ReadPacket() (Packet, error) {
 	if _, err := io.ReadFull(r.src, r.hdr[:]); err != nil {
 		return Packet{}, err
@@ -59,11 +83,11 @@ func (r *Reader) ReadPacket() (Packet, error) {
 
 	switch length {
 	case 0:
-		return Packet{Kind: Flush}, nil
+		return r.emit(Packet{Kind: Flush}), nil
 	case 1:
-		return Packet{Kind: Delim}, nil
+		return r.emit(Packet{Kind: Delim}), nil
 	case 2:
-		return Packet{Kind: ResponseEnd}, nil
+		return r.emit(Packet{Kind: ResponseEnd}), nil
 	case 3:
 		return Packet{}, fmt.Errorf("pktline: invalid length 0003 (reserved)")
 	}
@@ -87,7 +111,22 @@ func (r *Reader) ReadPacket() (Packet, error) {
 		}
 		return Packet{}, err
 	}
-	return Packet{Kind: Data, Data: r.buf}, nil
+	return r.emit(Packet{Kind: Data, Data: r.buf}), nil
+}
+
+// emit reports p to the configured tracer (if any) and returns p
+// unchanged so call sites can pass it through inline.
+func (r *Reader) emit(p Packet) Packet {
+	if r.tracer != nil {
+		r.tracer.OnEvent(trace.PacketEvent{
+			Time:      time.Now(),
+			Direction: r.traceDir,
+			URL:       r.traceURL,
+			Bytes:     p.Data,
+			Kind:      kindToTracerKind(p.Kind),
+		})
+	}
+	return p
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. Canonical
