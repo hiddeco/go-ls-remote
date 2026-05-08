@@ -17,6 +17,14 @@ import (
 // Callers retaining the bytes across calls must copy them, for example
 // with [bytes.Clone].
 //
+// # Buffering
+//
+// Reader does not buffer src. Each [Reader.ReadPacket] call issues up
+// to two reads on the underlying source — one for the 4-byte length
+// prefix and one for the payload — so an unbuffered network source
+// (e.g., a [net.Conn]) costs two syscalls per packet. Wrap such
+// sources in a [bufio.Reader] before constructing the Reader.
+//
 // # End of stream
 //
 // On clean stream termination — the underlying reader returns EOF
@@ -78,7 +86,7 @@ func (r *Reader) ReadPacket() (Packet, error) {
 		return Packet{}, err
 	}
 
-	length, err := parseHexLength(r.hdr[:])
+	length, err := parseHexLength(r.hdr)
 	if err != nil {
 		return Packet{}, err
 	}
@@ -128,13 +136,13 @@ func (r *Reader) emit(p Packet) Packet {
 	return p
 }
 
-// parseHexLength decodes 4 ASCII hex digits to an integer. Canonical
-// Git's `pkt-line.c` writes the length prefix in lowercase but accepts
-// either case on read; we match that.
-func parseHexLength(b []byte) (int, error) {
-	if len(b) != 4 {
-		return 0, fmt.Errorf("pktline: header is %d bytes, want 4", len(b))
-	}
+// parseHexLength decodes 4 ASCII hex digits to an integer. The
+// implementation is hand-rolled rather than [strconv.ParseUint] to
+// avoid the per-call `string(b)` allocation; pkt-line streams call
+// this once per packet on a hot path. Canonical Git's `pkt-line.c`
+// writes the prefix in lowercase but accepts either case on read,
+// and we match that.
+func parseHexLength(b [4]byte) (int, error) {
 	v := 0
 	for _, c := range b {
 		var n int

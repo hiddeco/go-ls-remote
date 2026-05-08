@@ -31,7 +31,12 @@ func FuzzReader_ReadPacket(f *testing.F) {
 		f.Add(s)
 	}
 
-	const maxIters = 100 // bound to avoid runaway loops on adversarial input
+	// maxIters bounds how many packets we attempt per fuzz input. The
+	// reader is naturally bounded by stream length, so this is a
+	// belt-and-braces guard against future input shapes (or codec
+	// changes) that might admit a busy loop. 100 comfortably covers
+	// every shape the seed corpus exercises.
+	const maxIters = 100
 
 	f.Fuzz(func(t *testing.T, in []byte) {
 		r := NewReader(bytes.NewReader(in))

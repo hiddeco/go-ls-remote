@@ -105,8 +105,11 @@ func (w *Writer) emit(k Kind, payload []byte) {
 }
 
 // encodeHexLength writes 4 lowercase ASCII hex digits representing v
-// into b (which must be exactly 4 bytes long). Lowercase matches
-// canonical Git's `pkt-line.c` output.
+// into b, which must be exactly 4 bytes long. The implementation is
+// hand-rolled rather than `fmt.Sprintf("%04x", v)` to avoid the
+// per-call string allocation; pkt-line streams call this once per
+// packet on a hot path. Lowercase matches canonical Git's
+// `pkt-line.c` output.
 func encodeHexLength(b []byte, v int) {
 	const hex = "0123456789abcdef"
 	b[0] = hex[(v>>12)&0xf]
