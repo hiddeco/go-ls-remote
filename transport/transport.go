@@ -36,9 +36,9 @@ type Transport interface {
 // OpenOptions are the cross-transport options the root package passes
 // down on every [Transport.Open] call.
 //
-// Field order packs the struct without padding on 64-bit platforms:
-// the interface header (Tracer) and string header (UserAgent) cluster
-// ahead of the int-shaped [ProtocolVersion].
+// Field order packs the struct without padding on 64-bit platforms: the
+// 16-byte interface and string headers cluster ahead of the
+// pointer-shaped PreferredProtocol.
 type OpenOptions struct {
 	// Tracer receives [trace.Event] values emitted during the dial
 	// and subsequent I/O. A nil Tracer disables tracing entirely;
@@ -49,11 +49,14 @@ type OpenOptions struct {
 	// server. The empty string means "use the transport's default."
 	UserAgent string
 
-	// PreferredProtocol is the protocol version the client prefers.
-	// [ProtocolAuto] means "highest available, accept v0 fallback";
-	// most callers want this. The non-Auto values are useful for
-	// pinning a version against a known server.
-	PreferredProtocol ProtocolVersion
+	// PreferredProtocol pins the negotiation to a specific wire
+	// version. A nil pointer means auto-negotiate — request the
+	// highest version the server speaks, accepting v0 fallback —
+	// which is what most callers want and what [OpenOptions]'s zero
+	// value yields. A non-nil pointer pins; the transport returns
+	// `ErrUnsupportedProtocol` (wrapped in `*ProtocolError`) if the
+	// server cannot satisfy the pin.
+	PreferredProtocol *ProtocolVersion
 }
 
 // Conn is a single-flight connection to a Git server.

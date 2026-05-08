@@ -6,13 +6,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestProtocolVersion pins the wire-integer mapping. Each defined value
+// must equal the integer that appears in `version N\n` on the wire so
+// encoders/decoders can convert with `int(v)` rather than a switch.
 func TestProtocolVersion(t *testing.T) {
 	tests := []struct {
 		name string
 		v    ProtocolVersion
 		want int
 	}{
-		{"auto", ProtocolAuto, -1},
 		{"v0", ProtocolV0, 0},
 		{"v1", ProtocolV1, 1},
 		{"v2", ProtocolV2, 2},
@@ -30,12 +32,11 @@ func TestProtocolVersion_String(t *testing.T) {
 		v    ProtocolVersion
 		want string
 	}{
-		{"auto", ProtocolAuto, "auto"},
 		{"v0", ProtocolV0, "v0"},
 		{"v1", ProtocolV1, "v1"},
 		{"v2", ProtocolV2, "v2"},
 		{"out-of-range positive", ProtocolVersion(99), "unknown(99)"},
-		{"out-of-range negative", ProtocolVersion(-2), "unknown(-2)"},
+		{"out-of-range negative", ProtocolVersion(-1), "unknown(-1)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

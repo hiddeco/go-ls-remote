@@ -23,22 +23,24 @@ package transport
 
 import "fmt"
 
-// ProtocolVersion is the wire protocol version a client requests or has
-// negotiated with a server.
+// ProtocolVersion identifies a Git wire protocol version. Defined values
+// match the integer that travels on the wire: `int(ProtocolV2)` is the
+// literal `2` in the `version 2\n` advertisement.
+//
+// The type represents a concrete wire identity, not a caller preference.
+// The absence of a preference — "auto-negotiate" — is encoded one layer
+// up by leaving [OpenOptions.PreferredProtocol] nil, not by a sentinel
+// value here. Reserving every integer for a real version means
+// [OpenOptions]'s zero value is unambiguously "no preference," which is
+// also the spec default.
 //
 // Negotiation per canonical Git's `protocol.c`: the client announces a
-// preferred version (or [ProtocolAuto]) and the server picks the
-// highest it supports. See `determine_protocol_version_client` and
+// preferred version and the server picks the highest it supports. See
+// `determine_protocol_version_client` and
 // `determine_protocol_version_server` in `protocol.c`.
 type ProtocolVersion int
 
 const (
-	// ProtocolAuto requests the highest version available, accepting
-	// v0 fallback. Most callers want this; the explicit Vn constants
-	// exist for tests and for clients that need to pin a version for
-	// compatibility with a known server.
-	ProtocolAuto ProtocolVersion = -1
-
 	// ProtocolV0 is the original wire protocol; the server's
 	// capability list rides on the first ref-line of the
 	// advertisement. See `gitprotocol-pack.adoc` §"Reference Discovery".
@@ -53,13 +55,10 @@ const (
 	ProtocolV2 ProtocolVersion = 2
 )
 
-// String returns a short label suitable for diagnostic output and
-// log lines: `auto`, `v0`, `v1`, `v2`, or `unknown(N)` for any
-// out-of-range value.
+// String returns a short label suitable for diagnostic output and log
+// lines: `v0`, `v1`, `v2`, or `unknown(N)` for any out-of-range value.
 func (v ProtocolVersion) String() string {
 	switch v {
-	case ProtocolAuto:
-		return "auto"
 	case ProtocolV0:
 		return "v0"
 	case ProtocolV1:

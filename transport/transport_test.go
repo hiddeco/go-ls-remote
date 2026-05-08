@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
@@ -44,12 +45,24 @@ func TestConn_interfaceCompiles(t *testing.T) {
 	var _ Conn = fakeConn{}
 }
 
+// TestOpenOptions_zeroValue pins the zero-value contract: an
+// uninitialised [OpenOptions] is "no preference" all the way through.
+// PreferredProtocol is a pointer specifically so that "no preference"
+// is the zero value, not a sentinel that can be confused with a real
+// version (which would have made the integer zero mean v0).
 func TestOpenOptions_zeroValue(t *testing.T) {
 	var o OpenOptions
 	assert.Nil(t, o.Tracer)
 	assert.Empty(t, o.UserAgent)
-	assert.Equal(t, ProtocolV0, o.PreferredProtocol,
-		"zero value of PreferredProtocol is ProtocolV0 (the int zero); callers asking for the spec default should set ProtocolAuto explicitly")
+	assert.Nil(t, o.PreferredProtocol,
+		"zero value of PreferredProtocol must be nil = auto-negotiate, the spec default")
+
+	// Pin to a concrete version via address-of.
+	v := ProtocolV2
+	o.PreferredProtocol = &v
+	require.NotNil(t, o.PreferredProtocol)
+	assert.Equal(t, ProtocolV2, *o.PreferredProtocol)
+
 	// Sanity: the Tracer field can hold any [trace.Tracer], including
 	// nil and concrete implementations.
 	o.Tracer = trace.NewWriterTracer(nil)
