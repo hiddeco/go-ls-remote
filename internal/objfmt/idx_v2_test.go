@@ -19,9 +19,9 @@ import (
 // offsetEntry is one line of `git verify-pack -v` output: object id,
 // type, and the byte offset within the pack file.
 type offsetEntry struct {
-	oid  string
-	typ  string
-	off  int64
+	oid string
+	typ string
+	off int64
 }
 
 // readOffsets parses a `<stem>.offsets.txt` sidecar so tests can

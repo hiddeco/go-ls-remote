@@ -73,7 +73,7 @@ func TestMidx_Find(t *testing.T) {
 
 		const bigOffset uint64 = (1 << 31) + 12345
 		path := writeMidx(t, t.TempDir(), midxFixture{
-			algo: SHA1,
+			algo:  SHA1,
 			packs: []string{"a.idx", "b.idx"},
 			objs: []midxObj{
 				{oid: small, packIdx: 0, offset: 12},
@@ -100,7 +100,7 @@ func TestMidx_Find(t *testing.T) {
 		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
-			algo: SHA1,
+			algo:  SHA1,
 			packs: []string{"a.idx"},
 			objs: []midxObj{
 				// suppressLOFF forces the writer to set the
