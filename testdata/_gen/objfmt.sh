@@ -14,14 +14,26 @@
 #
 #   testdata/objfmt/empty.pack             zero-object SHA-1 pack
 #   testdata/objfmt/three-objects.pack     blob+tree+commit SHA-1 pack
+#   testdata/objfmt/three-objects.idx      idx v2 paired with the above
 #   testdata/objfmt/three-objects.offsets.txt
 #   testdata/objfmt/ofs-delta.pack         two near-identical blobs,
 #                                          OFS_DELTA encoded (default)
+#   testdata/objfmt/ofs-delta.idx
 #   testdata/objfmt/ofs-delta.offsets.txt
 #   testdata/objfmt/ref-delta.pack         same blobs as ofs-delta but
 #                                          --no-delta-base-offset
+#   testdata/objfmt/ref-delta.idx
 #   testdata/objfmt/ref-delta.offsets.txt
 #   testdata/objfmt/sha256-empty.pack      zero-object SHA-256 pack
+#   testdata/objfmt/sha256-empty.idx       idx v2 paired with the above
+#   testdata/objfmt/sha256-three.pack      blob+tree+commit SHA-256 pack
+#   testdata/objfmt/sha256-three.idx
+#   testdata/objfmt/sha256-three.offsets.txt
+#
+# `git index-pack` defaults to writing version 2 idx files; that is
+# what tests exercise. The version 1 layout is exercised separately
+# via a test-only helper that hand-rolls a synthetic idx (see
+# `internal/objfmt/idx_test.go`).
 #
 # Tested with: git version 2.53.0
 #
@@ -40,8 +52,9 @@ trap 'rm -rf "$work"' EXIT
 
 # index_and_dump <pack-path> [extra-index-pack-args...]
 #   Build a sidecar `.idx` next to the pack, run `git verify-pack -v`
-#   to capture the canonical per-object listing, then drop the `.idx`
-#   so only the pack and the text sidecar persist as fixtures.
+#   to capture the canonical per-object listing. The `.idx` persists
+#   alongside the pack so tests can exercise [Idx] without shelling
+#   out; the auxiliary `.rev` file is discarded.
 #
 #   The trailing `<path>: ok` line that `git verify-pack -v` emits is
 #   stripped via `sed '$d'` so the sidecar holds only the per-object
@@ -52,7 +65,7 @@ index_and_dump() {
     local stem="${pack%.pack}"
     git index-pack "$@" "$pack" >/dev/null
     git verify-pack -v "$stem.idx" | sed '$d' >"$stem.offsets.txt"
-    rm -f "$stem.idx" "$stem.rev"
+    rm -f "$stem.rev"
 }
 
 # --- Empty SHA-1 pack ---------------------------------------------------------
@@ -116,7 +129,37 @@ grep -Eq '^chain length = [1-9]' "$out/ref-delta.offsets.txt" \
     || { echo "ref-delta.pack: no delta chain"; exit 1; }
 
 # --- Empty SHA-256 pack -------------------------------------------------------
+# `git index-pack` infers the hash algorithm from the surrounding
+# repository, so the `.idx` build has to run inside the SHA-256 repo.
 git -C "$work" init -q --object-format=sha256 --initial-branch=main empty-sha256
-( cd "$work/empty-sha256" && git pack-objects --stdout </dev/null >"$out/sha256-empty.pack" )
+(
+    cd "$work/empty-sha256"
+    git pack-objects --stdout </dev/null >"$out/sha256-empty.pack"
+    git index-pack "$out/sha256-empty.pack" >/dev/null
+    rm -f "$out/sha256-empty.rev"
+)
+
+# --- Three-object SHA-256 pack (blob, tree, commit) ---------------------------
+sha256_repo="$work/sha256-three"
+git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-three
+(
+    cd "$sha256_repo"
+    git config user.email fixtures@example.invalid
+    git config user.name  fixtures
+    git config commit.gpgsign false
+    printf 'hello sha256\n' >hello.txt
+    git add hello.txt
+    GIT_AUTHOR_DATE='2020-01-02T03:04:05+00:00' \
+    GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
+        git commit -q -m 'fixture'
+    commit=$(git rev-parse HEAD)
+    tree=$(git rev-parse HEAD^{tree})
+    blob=$(git rev-parse HEAD:hello.txt)
+    printf '%s\n%s\n%s\n' "$commit" "$tree" "$blob" \
+        | git pack-objects --stdout >"$out/sha256-three.pack"
+    git index-pack "$out/sha256-three.pack" >/dev/null
+    git verify-pack -v "$out/sha256-three.idx" | sed '$d' >"$out/sha256-three.offsets.txt"
+    rm -f "$out/sha256-three.rev"
+)
 
 echo "wrote fixtures into $out"
