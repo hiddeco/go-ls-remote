@@ -29,6 +29,29 @@
 #   testdata/objfmt/sha256-three.pack      blob+tree+commit SHA-256 pack
 #   testdata/objfmt/sha256-three.idx
 #   testdata/objfmt/sha256-three.offsets.txt
+#   testdata/objfmt/multi-pack-index        midx over the two midx packs
+#                                          below (SHA-1)
+#   testdata/objfmt/midx-pack-1.pack       first pack referenced by the
+#                                          midx
+#   testdata/objfmt/midx-pack-1.idx
+#   testdata/objfmt/midx-pack-1.offsets.txt
+#   testdata/objfmt/midx-pack-2.pack       second pack referenced by the
+#                                          midx
+#   testdata/objfmt/midx-pack-2.idx
+#   testdata/objfmt/midx-pack-2.offsets.txt
+#   testdata/objfmt/multi-pack-index.packnames
+#                                          newline-separated PNAM
+#                                          contents (`.idx` basenames) in
+#                                          PNAM order; tests use this to
+#                                          map a midx pack-index back to
+#                                          a `.idx` fixture without
+#                                          re-parsing the midx
+#   testdata/objfmt/sha256-multi-pack-index
+#                                          SHA-256 midx + two SHA-256
+#                                          packs (same shape as above)
+#   testdata/objfmt/sha256-midx-pack-1.{pack,idx,offsets.txt}
+#   testdata/objfmt/sha256-midx-pack-2.{pack,idx,offsets.txt}
+#   testdata/objfmt/sha256-multi-pack-index.packnames
 #
 # `git index-pack` defaults to writing version 2 idx files; that is
 # what tests exercise. The version 1 layout is exercised separately
@@ -161,5 +184,149 @@ git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-three
     git verify-pack -v "$out/sha256-three.idx" | sed '$d' >"$out/sha256-three.offsets.txt"
     rm -f "$out/sha256-three.rev"
 )
+
+# --- Multi-pack-index over two SHA-1 packs -----------------------------------
+# A midx is only meaningful when it references at least two packs. Build
+# a small repo, partition its objects into two disjoint groups, run
+# `git pack-objects` once per group to produce two packs with stable
+# names, then drop them into a fresh bare host and let
+# `git multi-pack-index write` index them. The host repo is bare and
+# disposable; only the resulting `multi-pack-index` plus the two
+# referenced `.pack`/`.idx` pairs are retained as fixtures.
+#
+# Pack basenames are normalized to `midx-pack-{1,2}.pack` so test code
+# can refer to them without re-discovering the content-addressed names
+# emitted by `git pack-objects`. The PNAM chunk only stores the basename
+# regardless.
+midx_repo="$work/midx-src"
+git -C "$work" init -q --object-format=sha1 --initial-branch=main midx-src
+(
+    cd "$midx_repo"
+    git config user.email fixtures@example.invalid
+    git config user.name  fixtures
+    git config commit.gpgsign false
+
+    printf 'midx pack-1 content\n' >a.txt
+    git add a.txt
+    GIT_AUTHOR_DATE='2020-01-02T03:04:05+00:00' \
+    GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
+        git commit -q -m 'pack-1'
+    c1=$(git rev-parse HEAD)
+    t1=$(git rev-parse HEAD^{tree})
+    b1=$(git rev-parse HEAD:a.txt)
+
+    printf 'midx pack-2 content\n' >b.txt
+    git add b.txt
+    GIT_AUTHOR_DATE='2020-01-02T04:05:06+00:00' \
+    GIT_COMMITTER_DATE='2020-01-02T04:05:06+00:00' \
+        git commit -q -m 'pack-2'
+    c2=$(git rev-parse HEAD)
+    t2=$(git rev-parse HEAD^{tree})
+    b2=$(git rev-parse HEAD:b.txt)
+
+    mkdir -p packs
+    printf '%s\n%s\n%s\n' "$c1" "$t1" "$b1" \
+        | git pack-objects packs/p1 >/dev/null
+    printf '%s\n%s\n%s\n' "$c2" "$t2" "$b2" \
+        | git pack-objects packs/p2 >/dev/null
+)
+
+midx_host="$work/midx-host"
+mkdir -p "$midx_host/objects/pack"
+i=1
+for pack in "$midx_repo"/packs/p?-*.pack; do
+    stem="${pack%.pack}"
+    cp "$pack" "$midx_host/objects/pack/midx-pack-$i.pack"
+    cp "$stem.idx" "$midx_host/objects/pack/midx-pack-$i.idx"
+    i=$((i + 1))
+done
+git --git-dir="$midx_host" --bare init -q --object-format=sha1
+git --git-dir="$midx_host" multi-pack-index \
+    --object-dir="$midx_host/objects" write
+git --git-dir="$midx_host" multi-pack-index \
+    --object-dir="$midx_host/objects" verify
+
+install -m 0644 "$midx_host/objects/pack/multi-pack-index" \
+    "$out/multi-pack-index"
+for i in 1 2; do
+    install -m 0644 "$midx_host/objects/pack/midx-pack-$i.pack" \
+        "$out/midx-pack-$i.pack"
+    install -m 0644 "$midx_host/objects/pack/midx-pack-$i.idx" \
+        "$out/midx-pack-$i.idx"
+    # verify-pack reads the hash algorithm from the surrounding repo
+    # config, so run it inside the host repo where the idx lives.
+    git --git-dir="$midx_host" verify-pack -v \
+        "$midx_host/objects/pack/midx-pack-$i.idx" \
+        | sed '$d' >"$out/midx-pack-$i.offsets.txt"
+done
+ls "$midx_host/objects/pack/" \
+    | grep '^midx-pack-.*\.idx$' \
+    | sort >"$out/multi-pack-index.packnames"
+
+# --- Multi-pack-index over two SHA-256 packs ---------------------------------
+# Same shape as above, but every step runs in a SHA-256 repo so the
+# resulting midx records hash-version 2.
+sha256_midx_repo="$work/sha256-midx-src"
+git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-midx-src
+(
+    cd "$sha256_midx_repo"
+    git config user.email fixtures@example.invalid
+    git config user.name  fixtures
+    git config commit.gpgsign false
+
+    printf 'sha256 midx pack-1\n' >a.txt
+    git add a.txt
+    GIT_AUTHOR_DATE='2020-01-02T03:04:05+00:00' \
+    GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
+        git commit -q -m 'pack-1'
+    c1=$(git rev-parse HEAD)
+    t1=$(git rev-parse HEAD^{tree})
+    b1=$(git rev-parse HEAD:a.txt)
+
+    printf 'sha256 midx pack-2\n' >b.txt
+    git add b.txt
+    GIT_AUTHOR_DATE='2020-01-02T04:05:06+00:00' \
+    GIT_COMMITTER_DATE='2020-01-02T04:05:06+00:00' \
+        git commit -q -m 'pack-2'
+    c2=$(git rev-parse HEAD)
+    t2=$(git rev-parse HEAD^{tree})
+    b2=$(git rev-parse HEAD:b.txt)
+
+    mkdir -p packs
+    printf '%s\n%s\n%s\n' "$c1" "$t1" "$b1" \
+        | git pack-objects packs/p1 >/dev/null
+    printf '%s\n%s\n%s\n' "$c2" "$t2" "$b2" \
+        | git pack-objects packs/p2 >/dev/null
+)
+
+sha256_midx_host="$work/sha256-midx-host"
+mkdir -p "$sha256_midx_host/objects/pack"
+i=1
+for pack in "$sha256_midx_repo"/packs/p?-*.pack; do
+    stem="${pack%.pack}"
+    cp "$pack" "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.pack"
+    cp "$stem.idx" "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.idx"
+    i=$((i + 1))
+done
+git --git-dir="$sha256_midx_host" --bare init -q --object-format=sha256
+git --git-dir="$sha256_midx_host" multi-pack-index \
+    --object-dir="$sha256_midx_host/objects" write
+git --git-dir="$sha256_midx_host" multi-pack-index \
+    --object-dir="$sha256_midx_host/objects" verify
+
+install -m 0644 "$sha256_midx_host/objects/pack/multi-pack-index" \
+    "$out/sha256-multi-pack-index"
+for i in 1 2; do
+    install -m 0644 "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.pack" \
+        "$out/sha256-midx-pack-$i.pack"
+    install -m 0644 "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.idx" \
+        "$out/sha256-midx-pack-$i.idx"
+    git --git-dir="$sha256_midx_host" verify-pack -v \
+        "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.idx" \
+        | sed '$d' >"$out/sha256-midx-pack-$i.offsets.txt"
+done
+ls "$sha256_midx_host/objects/pack/" \
+    | grep '^sha256-midx-pack-.*\.idx$' \
+    | sort >"$out/sha256-multi-pack-index.packnames"
 
 echo "wrote fixtures into $out"
