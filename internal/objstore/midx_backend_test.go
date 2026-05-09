@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
@@ -121,27 +122,134 @@ func TestMidxBackend_LookupMissReturnsNilError(t *testing.T) {
 }
 
 func TestMidxBackend_AllPacksDeterministicOrder(t *testing.T) {
-	// `AllPacks` must yield midx-listed packs first in `PackNames`
-	// order, then sibling packs in basename-sorted order. Stable across
-	// independent opener invocations: the cross-pack REF_DELTA scan and
-	// any external integrity walk depends on it.
+	// `AllPacks` must yield every pack — midx-covered AND sibling — in
+	// a single mtime-desc order with basename as the stable
+	// tiebreaker, matching canonical Git's `packfile.c::sort_pack`.
+	// Stamping every pack to the same mtime exercises the tiebreaker:
+	// the order collapses to lexical basename order regardless of
+	// whether a pack is midx-covered.
+	wantNames := []string{"midx-pack-1.idx", "midx-pack-2.idx", "three-objects.idx"}
 	for i := range 3 {
-		b := openMidxBackendFromFixture(t, "midx-with-siblings")
+		root := materializeFixture(t, "midx-with-siblings")
+		gitDir := filepath.Join(root, ".git")
+		stampPackMtimes(t, gitDir, map[string]time.Time{
+			"midx-pack-1.pack":   packMtimeAnchor,
+			"midx-pack-2.pack":   packMtimeAnchor,
+			"three-objects.pack": packMtimeAnchor,
+		})
 
-		var got []*objfmt.Pack
+		b, err := openMidxBackend(gitDir, objfmt.SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = b.Close() })
+
+		var names []string
 		for p := range b.AllPacks() {
 			require.NotNil(t, p)
-			got = append(got, p)
+			idx := idxForPackInMidx(t, b, p)
+			names = append(names, filepath.Base(idx.Path()))
 		}
-
-		want := []*objfmt.Pack{
-			b.coveredByMidxIndex[0],
-			b.coveredByMidxIndex[1],
-			b.siblings[0].pack,
-		}
-		assert.Equal(t, want, got,
-			"iteration %d: AllPacks must walk midx-covered then siblings", i)
+		assert.Equal(t, wantNames, names,
+			"iteration %d: equal-mtime backend must fall back to basename order", i)
 	}
+}
+
+func TestMidxBackend_AllPacksOrderedByMtimeDesc(t *testing.T) {
+	// `AllPacks` is a single mtime-desc list across midx-covered and
+	// sibling packs — the midx-listed-first quirk does not survive in
+	// the enumeration order. With `three-objects.pack` (sibling)
+	// stamped youngest, it must lead the iteration even though it is
+	// not midx-covered.
+	root := materializeFixture(t, "midx-with-siblings")
+	gitDir := filepath.Join(root, ".git")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"midx-pack-1.pack":   packMtimeAnchor,
+		"midx-pack-2.pack":   packMtimeAnchor.Add(time.Hour),
+		"three-objects.pack": packMtimeAnchor.Add(2 * time.Hour),
+	})
+
+	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Close() })
+
+	var names []string
+	for p := range b.AllPacks() {
+		require.NotNil(t, p)
+		idx := idxForPackInMidx(t, b, p)
+		names = append(names, filepath.Base(idx.Path()))
+	}
+	assert.Equal(t,
+		[]string{"three-objects.idx", "midx-pack-2.idx", "midx-pack-1.idx"},
+		names, "AllPacks must yield younger packs first across both buckets")
+}
+
+func TestMidxBackend_SiblingFallbackHitsYoungerSiblingFirst(t *testing.T) {
+	// Two sibling packs not covered by the midx, both holding the
+	// lookup target, must resolve through the younger one. The
+	// midx-with-siblings fixture's existing sibling is the
+	// `three-objects` pack (basename `t...`); cloning a second copy
+	// under a basename that sorts BEFORE it (`aaa-...`) and stamping
+	// the EXISTING `three-objects` pack younger pins the divergence:
+	// basename-sort would visit `aaa-...` first, mtime-sort visits
+	// `three-objects` first.
+	root := materializeFixture(t, "midx-with-siblings")
+	gitDir := filepath.Join(root, ".git")
+	packDir := filepath.Join(gitDir, "objects", "pack")
+	clonePackPair(t, packDir, "three-objects", packDir, "aaa-older")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"midx-pack-1.pack":   packMtimeAnchor,
+		"midx-pack-2.pack":   packMtimeAnchor,
+		"aaa-older.pack":     packMtimeAnchor,
+		"three-objects.pack": packMtimeAnchor.Add(time.Hour),
+	})
+
+	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Close() })
+	require.Len(t, b.siblings, 2,
+		"both clones must surface as siblings (neither is midx-covered)")
+
+	pack, off, ok, err := b.Lookup(hashFromHex(t, threeCommitOID, objfmt.SHA1))
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, threeCommitOffset, off)
+	idx := idxForPackInMidx(t, b, pack)
+	assert.Equal(t, "three-objects.idx", filepath.Base(idx.Path()),
+		"sibling fallback must hit the younger pack before the older sibling")
+}
+
+func TestMidxBackend_BasenameTiebreaker(t *testing.T) {
+	// When two packs carry identical mtimes, the basename comparator
+	// breaks the tie. Stamp every pack to the same instant and the
+	// sibling slot at the end of `AllPacks` must order lexically — a
+	// silently-undefined order would surface as a flaky pass on this
+	// test across CI hosts.
+	root := materializeFixture(t, "midx-with-siblings")
+	gitDir := filepath.Join(root, ".git")
+	packDir := filepath.Join(gitDir, "objects", "pack")
+	clonePackPair(t, packDir, "three-objects", packDir, "aaa-tied")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"midx-pack-1.pack":   packMtimeAnchor,
+		"midx-pack-2.pack":   packMtimeAnchor,
+		"three-objects.pack": packMtimeAnchor,
+		"aaa-tied.pack":      packMtimeAnchor,
+	})
+
+	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = b.Close() })
+
+	var names []string
+	for p := range b.AllPacks() {
+		require.NotNil(t, p)
+		idx := idxForPackInMidx(t, b, p)
+		names = append(names, filepath.Base(idx.Path()))
+	}
+	assert.Equal(t,
+		[]string{
+			"aaa-tied.idx", "midx-pack-1.idx",
+			"midx-pack-2.idx", "three-objects.idx",
+		},
+		names, "equal-mtime packs must order by basename")
 }
 
 func TestMidxBackend_PackByChecksumLookup(t *testing.T) {

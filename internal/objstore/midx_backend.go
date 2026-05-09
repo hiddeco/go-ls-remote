@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
@@ -71,14 +72,21 @@ type midxBackend struct {
 	// is NOT covered by the midx. [midxBackend.Lookup] falls through to
 	// these on a midx miss — matching canonical Git's "midx is
 	// authoritative for its packs; siblings exist for newly-added
-	// packs." Sorted by idx basename so the fallback walk and
-	// [midxBackend.AllPacks] iterate in a platform-independent order.
+	// packs." Sorted by pack mtime (younger first) with idx basename
+	// as a stable tiebreaker so the fallback walk consults the pack
+	// most likely to satisfy the next lookup first, matching
+	// canonical Git's `packfile.c::sort_pack` heuristic.
 	siblings []packEntry
 
 	// ordered enumerates every opened pack in the order
-	// [midxBackend.AllPacks] yields: midx-covered packs first in
-	// `midx.PackNames()` order, then sibling packs in basename-sorted
-	// order. Built once at construction.
+	// [midxBackend.AllPacks] yields. Unlike `Lookup` — which keeps the
+	// midx-first / siblings-fallback two-phase shape because the midx
+	// is the fast index — `AllPacks` is a single mtime-descending
+	// list across both buckets, basename as the tiebreaker. Consumers
+	// (the cross-pack REF_DELTA scan, integrity walks) want the same
+	// "younger first" heuristic Git applies in `sort_pack`; the
+	// midx-insertion order is an implementation detail and would
+	// otherwise leak into them.
 	ordered []*objfmt.Pack
 
 	closeOnce sync.Once
@@ -130,6 +138,14 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		coveredIdxs:        make([]*objfmt.Idx, len(packNames)),
 		packsByChecksum:    map[objfmt.Hash]*objfmt.Pack{},
 	}
+
+	// coveredMtimes parallels `coveredByMidxIndex`, recording each
+	// midx-covered pack's mtime so the `AllPacks` enumeration can
+	// merge covered and sibling packs into a single mtime-desc list
+	// after construction. The midx slot itself stays in `PackNames`
+	// order — `Lookup` indexes into it directly via the midx-reported
+	// pack id and must not be reshuffled.
+	coveredMtimes := make([]time.Time, len(packNames))
 
 	// nameIndex maps each PackNames entry to its slot in
 	// `coveredByMidxIndex` / `coveredIdxs`. Built once so directory
@@ -203,12 +219,31 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 				packPath, idxPath, err)
 		}
 
+		// Capture pack mtime once: it feeds the open-time sort that
+		// matches canonical Git's `packfile.c::sort_pack` heuristic
+		// (younger first). Stat failures here are unusual — the pack
+		// was just opened — but surface as a clean error rather than
+		// silently substituting a zero time.
+		st, err := os.Stat(packPath)
+		if err != nil {
+			_ = pack.Close()
+			_ = idx.Close()
+			closeOpened()
+			return nil, fmt.Errorf("objstore: stat pack %s: %w", packPath, err)
+		}
+		mtime := st.ModTime()
+
 		b.packsByChecksum[idx.PackChecksum()] = pack
 		if i, covered := nameIndex[name]; covered {
 			b.coveredByMidxIndex[i] = pack
 			b.coveredIdxs[i] = idx
+			coveredMtimes[i] = mtime
 		} else {
-			b.siblings = append(b.siblings, packEntry{idx: idx, pack: pack})
+			b.siblings = append(b.siblings, packEntry{
+				idx:   idx,
+				pack:  pack,
+				mtime: mtime,
+			})
 		}
 	}
 
@@ -225,30 +260,65 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		}
 	}
 
-	// Sort siblings by idx basename so the fallback scan iterates in a
-	// stable order across filesystems whose `ReadDir` ordering differs.
+	// Sort siblings by pack mtime (younger first) with idx basename
+	// as a stable tiebreaker so the midx-miss fallback scan consults
+	// the pack most likely to satisfy the next lookup first
+	// (`packfile.c::sort_pack`).
 	slices.SortFunc(b.siblings, func(a, c packEntry) int {
+		if d := c.mtime.Compare(a.mtime); d != 0 {
+			return d
+		}
 		return strings.Compare(filepath.Base(a.idx.Path()),
 			filepath.Base(c.idx.Path()))
 	})
 
-	// Build `ordered`: midx-covered packs in `PackNames` order, then
-	// siblings in their already-sorted order. `coveredByMidxIndex` is
-	// already the PackNames-order slice, so it splats directly.
-	b.ordered = make([]*objfmt.Pack, 0, len(b.coveredByMidxIndex)+len(b.siblings))
-	b.ordered = append(b.ordered, b.coveredByMidxIndex...)
+	// Build `ordered` as a single mtime-desc / basename-tiebreaker
+	// merged list across midx-covered AND sibling packs. The midx
+	// insertion order is an implementation detail consumers of
+	// `AllPacks` (e.g. cross-pack REF_DELTA scans) must not depend
+	// on; canonical Git's `packfile.c::sort_pack` heuristic governs
+	// the order across the whole pack set.
+	type orderedEntry struct {
+		pack  *objfmt.Pack
+		idx   *objfmt.Idx
+		mtime time.Time
+	}
+	all := make([]orderedEntry, 0, len(b.coveredByMidxIndex)+len(b.siblings))
+	for i, p := range b.coveredByMidxIndex {
+		all = append(all, orderedEntry{
+			pack:  p,
+			idx:   b.coveredIdxs[i],
+			mtime: coveredMtimes[i],
+		})
+	}
 	for _, e := range b.siblings {
-		b.ordered = append(b.ordered, e.pack)
+		all = append(all, orderedEntry{pack: e.pack, idx: e.idx, mtime: e.mtime})
+	}
+	slices.SortFunc(all, func(a, c orderedEntry) int {
+		if d := c.mtime.Compare(a.mtime); d != 0 {
+			return d
+		}
+		return strings.Compare(filepath.Base(a.idx.Path()),
+			filepath.Base(c.idx.Path()))
+	})
+	b.ordered = make([]*objfmt.Pack, len(all))
+	for i, e := range all {
+		b.ordered[i] = e.pack
 	}
 
 	return b, nil
 }
 
 // Lookup answers h by consulting the midx first and falling back to a
-// per-idx scan over [midxBackend.siblings] on a midx miss. The fallback
-// matches canonical Git's "midx is authoritative for its packs;
-// siblings exist for newly-added packs" rule (`midx.c::nth_midxed_*`
-// vs `find_pack_entry`).
+// per-idx scan over [midxBackend.siblings] on a midx miss. The
+// midx-first half of the contract is the fast index — that's the
+// primary win and stays unchanged. The fallback matches canonical
+// Git's "midx is authoritative for its packs; siblings exist for
+// newly-added packs" rule (`midx.c::nth_midxed_*` vs
+// `find_pack_entry`); the sibling scan order is mtime-descending
+// with basename tiebreaker, matching `packfile.c::sort_pack` so the
+// pack most likely to satisfy the next lookup is the first one
+// consulted.
 //
 // A miss surfaces as `(nil, 0, false, nil)` so the upper layer can fall
 // through to loose objects, alternates, or [ErrCorruptObject] without
@@ -266,8 +336,9 @@ func (b *midxBackend) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
 		return b.coveredByMidxIndex[packIdx], off, true, nil
 	}
 
-	// Midx miss: scan the sibling packs in deterministic order. First
-	// hit wins; sibling packs were sorted by basename at construction.
+	// Midx miss: scan the sibling packs in mtime-desc / basename
+	// order so a fresh pack added after midx generation is the first
+	// fallback consulted.
 	for _, e := range b.siblings {
 		if off, ok := e.idx.FindOffset(h); ok {
 			return e.pack, off, true, nil
@@ -276,11 +347,13 @@ func (b *midxBackend) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
 	return nil, 0, false, nil
 }
 
-// AllPacks yields every open `*objfmt.Pack` the backend holds in
-// deterministic order: midx-covered packs first in
-// `Midx.PackNames()` order, then sibling packs in basename-sorted
-// order. Used by the cross-pack REF_DELTA scan and any external
-// integrity walk that needs to see each pack exactly once.
+// AllPacks yields every open `*objfmt.Pack` the backend holds — both
+// midx-covered and sibling — in a single mtime-desc / basename
+// tiebreaker order, matching canonical Git's `packfile.c::sort_pack`
+// heuristic. The midx insertion order is an implementation detail
+// that does NOT survive in the enumeration; consumers (the cross-pack
+// REF_DELTA scan, integrity walks) want "younger first" across the
+// whole set. See [packBackend.AllPacks] for the contract.
 func (b *midxBackend) AllPacks() iter.Seq[*objfmt.Pack] {
 	return func(yield func(*objfmt.Pack) bool) {
 		for _, p := range b.ordered {

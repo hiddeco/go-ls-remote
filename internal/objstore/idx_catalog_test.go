@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
@@ -107,11 +108,21 @@ func TestIdxCatalog_LookupMissReturnsNilError(t *testing.T) {
 }
 
 func TestIdxCatalog_LookupHitInSecondPack(t *testing.T) {
-	// `idx-multi` carries `ofs-delta` (sorts first) and `three-objects`
-	// (sorts second). An OID present only in `three-objects` must be
-	// found after iterating past the `ofs-delta` miss. The returned
-	// pack is the second one in basename-sorted order.
-	c := openIdxCatalogFromFixture(t, "idx-multi")
+	// `idx-multi` carries `ofs-delta` and `three-objects`. With both
+	// packs stamped to the same mtime the catalog falls back to
+	// basename order, putting `ofs-delta` first and `three-objects`
+	// second. An OID present only in `three-objects` must be found
+	// after iterating past the `ofs-delta` miss; the returned pack is
+	// the second slot.
+	root := materializeFixture(t, "idx-multi")
+	gitDir := filepath.Join(root, ".git")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"ofs-delta.pack":     packMtimeAnchor,
+		"three-objects.pack": packMtimeAnchor,
+	})
+	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
 	require.Len(t, c.packs, 2)
 
 	pack, off, ok, err := c.Lookup(hashFromHex(t, threeBlobOID, objfmt.SHA1))
@@ -123,16 +134,24 @@ func TestIdxCatalog_LookupHitInSecondPack(t *testing.T) {
 }
 
 func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
-	// `AllPacks` must yield packs in basename-sorted order across
-	// independent opener invocations: the cross-pack REF_DELTA scan
-	// and any external integrity walk depends on it. The pack order
-	// is checked indirectly via the parallel `c.packs` slice (idx and
-	// pack share a basename, so the idx path is the stable handle for
-	// the assertion).
+	// `AllPacks` must walk the catalog's internal slice verbatim and
+	// must do so deterministically across independent opener
+	// invocations: the cross-pack REF_DELTA scan and any external
+	// integrity walk depends on it. With both packs stamped to the
+	// same mtime, the basename tiebreaker pins the order to
+	// `ofs-delta`, `three-objects`.
 	wantNames := []string{"ofs-delta.idx", "three-objects.idx"}
-
 	for i := 0; i < 3; i++ {
-		c := openIdxCatalogFromFixture(t, "idx-multi")
+		root := materializeFixture(t, "idx-multi")
+		gitDir := filepath.Join(root, ".git")
+		stampPackMtimes(t, gitDir, map[string]time.Time{
+			"ofs-delta.pack":     packMtimeAnchor,
+			"three-objects.pack": packMtimeAnchor,
+		})
+
+		c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = c.Close() })
 
 		// AllPacks order matches the internal slice order; capture both
 		// and assert they are byte-identical.
@@ -151,8 +170,72 @@ func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 		assert.Equal(t, fromSlice, fromIter,
 			"iteration %d: AllPacks must walk the catalog slice verbatim", i)
 		assert.Equal(t, wantNames, names,
-			"iteration %d: catalog must be sorted by idx basename", i)
+			"iteration %d: equal-mtime catalog must fall back to basename order", i)
 	}
+}
+
+func TestIdxCatalog_AllPacksOrderedByMtimeDesc(t *testing.T) {
+	// Mirror canonical Git's `packfile.c::sort_pack`: younger packs
+	// first, with basename as a stable tiebreaker. Stamping
+	// `three-objects.pack` younger than `ofs-delta.pack` flips the
+	// basename-sorted order, so a backend that still keyed on basename
+	// would yield the packs the wrong way round.
+	root := materializeFixture(t, "idx-multi")
+	gitDir := filepath.Join(root, ".git")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"ofs-delta.pack":     packMtimeAnchor,
+		"three-objects.pack": packMtimeAnchor.Add(time.Hour),
+	})
+
+	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+
+	var names []string
+	for p := range c.AllPacks() {
+		require.NotNil(t, p)
+		// Idxs and packs share a basename; the idx path is the stable
+		// handle the rest of the suite uses for assertions.
+		idx := idxForPackInCatalog(t, c, p)
+		names = append(names, filepath.Base(idx.Path()))
+	}
+	assert.Equal(t, []string{"three-objects.idx", "ofs-delta.idx"}, names,
+		"AllPacks must yield younger packs first, basename as tiebreaker")
+}
+
+func TestIdxCatalog_LookupHitsYoungerPackFirst(t *testing.T) {
+	// Two packs that hold the same OID — built by copying
+	// `three-objects.{pack,idx}` to a second basename — must resolve
+	// through the younger one. The linear `Lookup` scan walks the
+	// catalog in mtime-desc order, so the first hit is the younger
+	// pack's `*Pack`.
+	root := t.TempDir()
+	gitDir := filepath.Join(root, ".git")
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "objects", "pack"), 0o755))
+
+	srcDir := filepath.Join(packFixtureRoot(t, "idx-single"), "objects", "pack")
+	clonePackPair(t, srcDir, "three-objects",
+		filepath.Join(gitDir, "objects", "pack"), "older")
+	clonePackPair(t, srcDir, "three-objects",
+		filepath.Join(gitDir, "objects", "pack"), "younger")
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"older.pack":   packMtimeAnchor,
+		"younger.pack": packMtimeAnchor.Add(time.Hour),
+	})
+
+	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	require.Len(t, c.packs, 2)
+
+	pack, off, ok, err := c.Lookup(hashFromHex(t, threeCommitOID, objfmt.SHA1))
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, threeCommitOffset, off)
+	assert.Same(t, c.packs[0].pack, pack,
+		"Lookup must return the first (youngest) pack's *Pack")
+	assert.Equal(t, "younger.idx", filepath.Base(c.packs[0].idx.Path()),
+		"the catalog's first slot must be the youngest pack")
 }
 
 func TestIdxCatalog_PackByChecksumLookup(t *testing.T) {

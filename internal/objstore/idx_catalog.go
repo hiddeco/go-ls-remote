@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
@@ -28,9 +29,16 @@ type idxCatalog struct {
 	commonDir string
 	algo      objfmt.Algo
 
-	// packs holds every (idx, pack) pair, sorted by idx basename so
-	// [idxCatalog.Lookup] and [idxCatalog.AllPacks] iterate in a
-	// platform-independent order.
+	// packs holds every (idx, pack) pair, sorted by pack-file mtime
+	// in descending order with the idx basename as a stable
+	// tiebreaker. [idxCatalog.Lookup]'s linear scan and
+	// [idxCatalog.AllPacks]'s iteration both walk the slice in this
+	// order, mirroring canonical Git's `packfile.c::sort_pack`:
+	// younger packs tend to hold more recent objects and to satisfy
+	// the next lookup. The tiebreaker is what stabilises the order
+	// when two packs land on the same mtime second (e.g. two packs
+	// freshly written by the same `WriteFile` loop) across
+	// filesystems with coarse mtime resolution.
 	packs []packEntry
 
 	// byChecksum maps each pack's trailer hash (as recorded by the
@@ -43,12 +51,17 @@ type idxCatalog struct {
 	closeErr  error
 }
 
-// packEntry pairs an opened idx with its `.pack` sibling. The pairing
-// is built once at construction; callers consume `idx` for offset
-// lookups and `pack` to read object bytes.
+// packEntry pairs an opened idx with its `.pack` sibling and records
+// the pack-file mtime captured at open time. The pairing is built
+// once at construction; callers consume `idx` for offset lookups and
+// `pack` to read object bytes. `mtime` is used only by the
+// open-time sort that matches canonical Git's `packfile.c::sort_pack`
+// heuristic (younger first); lookups themselves never re-stat the
+// file.
 type packEntry struct {
-	idx  *objfmt.Idx
-	pack *objfmt.Pack
+	idx   *objfmt.Idx
+	pack  *objfmt.Pack
+	mtime time.Time
 }
 
 // openIdxCatalog opens every `*.idx` under `<commonDir>/objects/pack/`,
@@ -129,14 +142,37 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 				packPath, idxPath, err)
 		}
 
-		c.packs = append(c.packs, packEntry{idx: idx, pack: pack})
+		// Capture pack mtime once so the sort key is stable for the
+		// lifetime of the catalog; lookups must not re-stat. A stat
+		// failure here is unusual — the pack was just opened — but
+		// surfaces as a clean error rather than silently substituting
+		// a zero time and skewing the order.
+		st, err := os.Stat(packPath)
+		if err != nil {
+			_ = pack.Close()
+			_ = idx.Close()
+			closeOpened()
+			return nil, fmt.Errorf("objstore: stat pack %s: %w", packPath, err)
+		}
+
+		c.packs = append(c.packs, packEntry{
+			idx:   idx,
+			pack:  pack,
+			mtime: st.ModTime(),
+		})
 		c.byChecksum[idx.PackChecksum()] = pack
 	}
 
-	// Sort by idx basename so `Lookup` iteration order — and the
-	// `AllPacks` enumeration the cross-pack REF_DELTA scan walks — is
-	// stable across filesystems whose `ReadDir` ordering differs.
+	// Sort by pack mtime (younger first) with idx basename as a
+	// stable tiebreaker, matching canonical Git's
+	// `packfile.c::sort_pack` heuristic. Younger packs tend to hold
+	// more recent objects and to satisfy the next lookup, and the
+	// basename tiebreaker keeps the order deterministic when two
+	// packs share an mtime second (or finer).
 	slices.SortFunc(c.packs, func(a, b packEntry) int {
+		if c := b.mtime.Compare(a.mtime); c != 0 {
+			return c
+		}
 		return strings.Compare(filepath.Base(a.idx.Path()),
 			filepath.Base(b.idx.Path()))
 	})
@@ -144,11 +180,14 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 	return c, nil
 }
 
-// Lookup walks the catalog's packs in basename-sorted order and returns
-// the first (Pack, offset) pair whose idx records h. A miss surfaces as
-// `(nil, 0, false, nil)` so the upper layer can fall through to loose
-// objects, alternates, or [ErrCorruptObject] without reinterpreting
-// the error slot.
+// Lookup walks the catalog's packs in mtime-descending order
+// (younger first) with basename as a stable tiebreaker and returns
+// the first (Pack, offset) pair whose idx records h. The order
+// matches canonical Git's `packfile.c::sort_pack` heuristic so a
+// fresh pack written by a recent fetch is the first one consulted.
+// A miss surfaces as `(nil, 0, false, nil)` so the upper layer can
+// fall through to loose objects, alternates, or [ErrCorruptObject]
+// without reinterpreting the error slot.
 //
 // [objfmt.Idx.FindOffset] reports only a boolean today; the error slot
 // here is preserved for forward compatibility with a future shape that
@@ -163,9 +202,9 @@ func (c *idxCatalog) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
 }
 
 // AllPacks yields every open `*objfmt.Pack` in the catalog's
-// deterministic basename-sorted order. Used by the cross-pack
-// REF_DELTA scan and any external integrity walk that needs to see
-// each pack exactly once.
+// mtime-desc / basename-tiebreaker order — see [packBackend.AllPacks]
+// for the contract. Used by the cross-pack REF_DELTA scan and any
+// external integrity walk that needs to see each pack exactly once.
 func (c *idxCatalog) AllPacks() iter.Seq[*objfmt.Pack] {
 	return func(yield func(*objfmt.Pack) bool) {
 		for _, e := range c.packs {
