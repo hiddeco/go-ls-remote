@@ -212,6 +212,31 @@
 #       compression level and the loose-object framing is not version-
 #       dependent). Tests reference these hex values directly.
 #
+#   testdata/repos/loose-tag-of-tag/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/objects/<aa>/<rest>        a chain commit -> tag v1 -> tag v2,
+#                                          generated via `git tag -a v1 HEAD`
+#                                          followed by `git tag -a v2 v1`. Both
+#                                          tags ship as loose objects so the
+#                                          [Store.Peel] recursion path can be
+#                                          exercised end-to-end. The terminal
+#                                          commit OID and both tag OIDs are
+#                                          referenced by `peel_test.go`.
+#
+#   testdata/repos/loose-tag-deep/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/objects/<aa>/<rest>        a chain v1 .. v17 of nested annotated
+#                                          tags rooted at HEAD. Exercises the
+#                                          [Store.Peel] depth-bound check
+#                                          (canonical Git's `MAXIMUM_PEEL`
+#                                          equivalent): peeling v17 must
+#                                          collapse to "not peelable" rather
+#                                          than recurse past the limit.
+#
 #   testdata/repos/loose-objects-sha256/
 #       dotgit/HEAD
 #       dotgit/config                     `[extensions] objectFormat = sha256`
@@ -804,6 +829,86 @@ for fanout in "$lo256_work"/.git/objects/*/; do
     esac
     mkdir -p "$loobj256_root/dotgit/objects/$name"
     cp "$fanout"/* "$loobj256_root/dotgit/objects/$name/"
+done
+
+# --- loose-tag-of-tag --------------------------------------------------------
+# A two-link tag chain: an annotated tag `v2` points at another
+# annotated tag `v1`, which in turn points at the commit. Exercises
+# the recursive dereference path in `Store.Peel`. Both tags ship as
+# loose objects under their canonical fanout so a single fixture
+# repo covers the chain.
+lotot_work="$(mktemp -d)"
+trap 'rm -rf "'"$rt_work_root"'" "'"$lo_work"'" "'"$lo256_work"'" "'"$lotot_work"'"' EXIT
+(
+    cd "$lotot_work"
+    git -c init.defaultBranch=main init -q --object-format=sha1
+    git config user.email fixtures@example.invalid
+    git config user.name  fixtures
+    git config commit.gpgsign false
+    git config tag.gpgsign    false
+    git config tag.forceSignAnnotated false
+    printf 'tag of tag\n' >payload.txt
+    git add payload.txt
+    git commit -q -m "fixture: tag-of-tag base commit"
+    git tag -a -m "fixture inner tag" v1 HEAD
+    git tag -a -m "fixture outer tag" v2 v1
+)
+lotot_root="$out/loose-tag-of-tag"
+mkdir -p "$lotot_root/dotgit/objects/pack" "$lotot_root/dotgit/refs"
+write_head "$lotot_root/dotgit"
+: >"$lotot_root/dotgit/objects/pack/.gitkeep"
+: >"$lotot_root/dotgit/refs/.gitkeep"
+for fanout in "$lotot_work"/.git/objects/*/; do
+    name=$(basename "$fanout")
+    case "$name" in
+        info|pack) continue ;;
+    esac
+    mkdir -p "$lotot_root/dotgit/objects/$name"
+    cp "$fanout"/* "$lotot_root/dotgit/objects/$name/"
+done
+
+# --- loose-tag-deep ----------------------------------------------------------
+# A 17-link annotated-tag chain rooted at HEAD: v1 -> HEAD,
+# v2 -> v1, ..., v17 -> v16. The chain length deliberately exceeds
+# `Store.Peel`'s `maxPeelDepth` (16) so the bound check has something
+# to reject; peeling v17 must collapse to "not peelable" rather than
+# walk to v0. Generated with `git tag -a` so every link is itself an
+# annotated-tag object and every dereference produces another tag.
+lodeep_work="$(mktemp -d)"
+trap 'rm -rf "'"$rt_work_root"'" "'"$lo_work"'" "'"$lo256_work"'" "'"$lotot_work"'" "'"$lodeep_work"'"' EXIT
+(
+    cd "$lodeep_work"
+    git -c init.defaultBranch=main init -q --object-format=sha1
+    git config user.email fixtures@example.invalid
+    git config user.name  fixtures
+    git config commit.gpgsign false
+    git config tag.gpgsign    false
+    git config tag.forceSignAnnotated false
+    printf 'deep chain\n' >payload.txt
+    git add payload.txt
+    git commit -q -m "fixture: deep tag chain base commit"
+    git tag -a -m "fixture deep tag v1" v1 HEAD
+    for i in $(seq 2 17); do
+        git tag -a -m "fixture deep tag v$i" "v$i" "v$((i-1))"
+    done
+)
+lodeep_root="$out/loose-tag-deep"
+mkdir -p "$lodeep_root/dotgit/objects/pack" "$lodeep_root/dotgit/refs/tags"
+write_head "$lodeep_root/dotgit"
+: >"$lodeep_root/dotgit/objects/pack/.gitkeep"
+# Ship the v1 .. v17 tag refs alongside the loose objects so the test
+# can resolve names without re-deriving the chain head OID. The ref
+# files are tiny copies of the work-repo's `refs/tags/v*` pointers.
+for ref in "$lodeep_work"/.git/refs/tags/v*; do
+    cp "$ref" "$lodeep_root/dotgit/refs/tags/$(basename "$ref")"
+done
+for fanout in "$lodeep_work"/.git/objects/*/; do
+    name=$(basename "$fanout")
+    case "$name" in
+        info|pack) continue ;;
+    esac
+    mkdir -p "$lodeep_root/dotgit/objects/$name"
+    cp "$fanout"/* "$lodeep_root/dotgit/objects/$name/"
 done
 
 # --- idx catalog fixtures ---------------------------------------------------

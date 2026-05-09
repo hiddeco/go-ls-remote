@@ -34,6 +34,16 @@ type Store struct {
 	alternates []*Store
 	cfg        storeConfig
 
+	// peelCache memoises [Store.Peel] decisions keyed on the input OID.
+	// Both peelable tags and "not a tag" misses live here so the second
+	// call on the same OID skips the object-body read entirely. The
+	// mutex serialises concurrent writers; the read-after-write rate is
+	// expected to be low (one cold read per ref served by ls-refs) so a
+	// plain [sync.Mutex] outperforms an [sync.RWMutex] without the
+	// reader-side bookkeeping cost.
+	peelCache map[objfmt.Hash]peelEntry
+	peelMu    sync.Mutex
+
 	// closeOnce guards [Store.Close] so the cascade runs exactly once
 	// even if the caller invokes Close repeatedly. closeErr stashes the
 	// joined error so subsequent calls return the same value.
@@ -153,6 +163,7 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 		packs:      packs,
 		alternates: alternates,
 		cfg:        cfg,
+		peelCache:  make(map[objfmt.Hash]peelEntry),
 	}, nil
 }
 
