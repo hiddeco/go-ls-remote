@@ -72,7 +72,7 @@ func readOffsets(t *testing.T, path string) []offsetEntry {
 // loosely connected to a real pack — pack-trailer SHA-1 is fabricated
 // — but every other byte matches the canonical layout in
 // `Documentation/gitformat-pack.adoc` lines 285-319.
-func writeV2Idx(t *testing.T, dir string, entries []v2Entry) string {
+func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	t.Helper()
 	// Sort by oid so the binary search invariant holds.
 	for i := 1; i < len(entries); i++ {

@@ -186,7 +186,7 @@ type midxObj struct {
 // declaration order, then a 20-byte SHA-1 trailer over every
 // preceding byte. SHA-256 is not implemented here because every
 // LOFF/edge-case test only needs the SHA-1 stride.
-func writeMidx(t *testing.T, dir string, fix midxFixture) string {
+func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	t.Helper()
 	require.Equal(t, SHA1, fix.algo,
 		"writeMidx only supports SHA-1 fixtures")
