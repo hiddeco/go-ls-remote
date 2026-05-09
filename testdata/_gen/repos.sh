@@ -266,6 +266,78 @@
 #                                          referencing both paths and not
 #                                          leak the already-opened idx.
 #
+#   testdata/repos/with-alternates-relative/
+#       main/dotgit/HEAD
+#       main/dotgit/refs/.gitkeep
+#       main/dotgit/objects/pack/.gitkeep
+#       main/dotgit/objects/info/alternates    one line:
+#                                          `../../../alt/.git/objects`
+#                                          (resolved against
+#                                          `main/.git/objects/` post-
+#                                          materialization, lands at
+#                                          `<root>/alt/.git/objects`).
+#                                          The path is written with the
+#                                          `.git` name, never `dotgit`,
+#                                          because materialization renames
+#                                          fixture directories but does
+#                                          not rewrite file content.
+#       alt/dotgit/HEAD
+#       alt/dotgit/refs/.gitkeep
+#       alt/dotgit/objects/pack/.gitkeep
+#                                          The alternate repo itself; carries
+#                                          no further alternates.
+#
+#   testdata/repos/with-alternates-cycle/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/objects/info/alternates    one line `.` — relative to
+#                                          `dotgit/objects/`, resolves to
+#                                          the same `objects/` directory.
+#                                          The opener must detect the
+#                                          self-reference cycle and surface
+#                                          [ErrCorruptObject] naming the
+#                                          repo's own gitdir.
+#
+#   testdata/repos/with-alternates-chain/
+#       a/dotgit/HEAD
+#       a/dotgit/refs/.gitkeep
+#       a/dotgit/objects/pack/.gitkeep
+#       a/dotgit/objects/info/alternates  `../../../b/.git/objects`
+#       b/dotgit/HEAD
+#       b/dotgit/refs/.gitkeep
+#       b/dotgit/objects/pack/.gitkeep
+#       b/dotgit/objects/info/alternates  `../../../c/.git/objects`
+#       c/dotgit/HEAD
+#       c/dotgit/refs/.gitkeep
+#       c/dotgit/objects/pack/.gitkeep
+#                                          A → B → C; opening A flattens
+#                                          the chain so the returned
+#                                          alternates slice carries B and
+#                                          B's own alternate C is reachable
+#                                          via B.alternates.
+#
+#   testdata/repos/with-alternates-cycle-chain/
+#       a/dotgit/HEAD
+#       a/dotgit/refs/.gitkeep
+#       a/dotgit/objects/pack/.gitkeep
+#       a/dotgit/objects/info/alternates  `../../../b/.git/objects`
+#       b/dotgit/HEAD
+#       b/dotgit/refs/.gitkeep
+#       b/dotgit/objects/pack/.gitkeep
+#       b/dotgit/objects/info/alternates  `../../../a/.git/objects`
+#                                          A → B → A. Opening A descends
+#                                          into B, which then re-encounters
+#                                          A's canonical commonDir in the
+#                                          `seen` set and surfaces the
+#                                          cycle error.
+#
+# Absolute-path alternates are NOT shipped as fixtures because committed
+# bytes cannot encode a host-specific tempdir path. Tests that exercise
+# the absolute branch synthesize their own two-repo layouts inside
+# `t.TempDir()` and write the resolved absolute path into
+# `objects/info/alternates` at test time.
+#
 # Empty directories cannot be tracked by git, so each fixture that
 # needs to ship one carries a zero-byte `.gitkeep` placeholder. The
 # materializer copies it through unchanged; the resolver and backends
@@ -859,5 +931,77 @@ cp "$root/testdata/objfmt/midx-pack-1.idx" \
     "$midx_missing_root/dotgit/objects/pack/midx-pack-1.idx"
 cp "$root/testdata/objfmt/midx-pack-1.pack" \
     "$midx_missing_root/dotgit/objects/pack/midx-pack-1.pack"
+
+# --- alternates fixtures ----------------------------------------------------
+# The alternates parser reads `<commonDir>/objects/info/alternates`,
+# resolves each relative entry against `<commonDir>/objects/`, and opens
+# each result as a transitively-linked store. The fixtures below cover
+# the three behaviours that fit a portable on-disk layout: a relative
+# path resolving to a sibling repo, a self-referential cycle, a
+# multi-hop chain, and a multi-hop cycle. The absolute-path branch is
+# exercised in-test (no committed bytes can encode a host-specific
+# tempdir path); see `alternates_test.go`.
+
+# scaffold_alt_repo <root>
+#   Lay down a minimal repo skeleton with `objects/info/` ready to
+#   receive an alternates file. The shape mirrors `scaffold_minimal_repo`
+#   but adds the `objects/info/` directory eagerly so each fixture
+#   builder below only has to write the alternates file itself.
+scaffold_alt_repo() {
+    local r="$1"
+    mkdir -p "$r/dotgit/objects/pack" "$r/dotgit/objects/info" "$r/dotgit/refs"
+    write_head "$r/dotgit"
+    : >"$r/dotgit/objects/.gitkeep"
+    : >"$r/dotgit/objects/pack/.gitkeep"
+    : >"$r/dotgit/refs/.gitkeep"
+}
+
+# --- with-alternates-relative -----------------------------------------------
+# `main/` carries an alternates file pointing at the sibling `alt/`
+# repo's `objects/`. The path is relative to `main/.git/objects/`
+# post-materialization, so `../../../alt/.git/objects` lands at
+# `<root>/alt/.git/objects`. The path is written with the `.git` name
+# rather than `dotgit` because materialization renames fixture
+# directories but does not rewrite file content.
+alt_rel_root="$out/with-alternates-relative"
+scaffold_alt_repo "$alt_rel_root/main"
+scaffold_alt_repo "$alt_rel_root/alt"
+printf '../../../alt/.git/objects\n' \
+    >"$alt_rel_root/main/dotgit/objects/info/alternates"
+
+# --- with-alternates-cycle --------------------------------------------------
+# A repo whose alternates file lists its own `objects/` directory (`.`
+# resolved against `dotgit/objects/` is `dotgit/objects/` itself). The
+# opener must detect the self-cycle on the first recursive descent and
+# surface `ErrCorruptObject` referencing the repo's own gitdir.
+alt_cyc_root="$out/with-alternates-cycle"
+scaffold_alt_repo "$alt_cyc_root"
+printf '.\n' >"$alt_cyc_root/dotgit/objects/info/alternates"
+
+# --- with-alternates-chain --------------------------------------------------
+# Three repos arranged A → B → C. Opening A returns one alternate (B),
+# whose own `s.alternates` carries C. The flattening shape is per-Store:
+# alternates are not transitively merged into a single slice.
+alt_chain_root="$out/with-alternates-chain"
+scaffold_alt_repo "$alt_chain_root/a"
+scaffold_alt_repo "$alt_chain_root/b"
+scaffold_alt_repo "$alt_chain_root/c"
+printf '../../../b/.git/objects\n' \
+    >"$alt_chain_root/a/dotgit/objects/info/alternates"
+printf '../../../c/.git/objects\n' \
+    >"$alt_chain_root/b/dotgit/objects/info/alternates"
+
+# --- with-alternates-cycle-chain --------------------------------------------
+# Two repos arranged A → B → A. Opening A descends into B; when B's
+# alternates resolver re-encounters A's canonical gitdir in the `seen`
+# set, it surfaces `ErrCorruptObject`. The error wrapping must name A
+# (the first repo to be re-encountered).
+alt_ccyc_root="$out/with-alternates-cycle-chain"
+scaffold_alt_repo "$alt_ccyc_root/a"
+scaffold_alt_repo "$alt_ccyc_root/b"
+printf '../../../b/.git/objects\n' \
+    >"$alt_ccyc_root/a/dotgit/objects/info/alternates"
+printf '../../../a/.git/objects\n' \
+    >"$alt_ccyc_root/b/dotgit/objects/info/alternates"
 
 echo "wrote fixtures into $out"

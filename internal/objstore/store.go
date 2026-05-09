@@ -76,6 +76,16 @@ func WithoutCRCCheck() Option {
 // ([ErrNotARepo], [ErrUnsupportedFormat]) so callers can match with
 // [errors.Is].
 func Open(path string, opts ...Option) (*Store, error) {
+	return openWithSeen(path, opts, map[string]bool{})
+}
+
+// openWithSeen is the alternates-aware constructor [Open] delegates to.
+// The seen set tracks canonical gitdir paths already visited along the
+// current alternates chain so [openAlternates] can detect cycles when
+// recursing through transitive alternates. Public callers reach this
+// through [Open] with a fresh empty set; [openAlternates] forwards its
+// growing set into recursive opens of each child store.
+func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, error) {
 	gitDir, commonDir, err := resolveGitDir(path)
 	if err != nil {
 		return nil, err
@@ -118,7 +128,19 @@ func Open(path string, opts ...Option) (*Store, error) {
 	}
 	opened = append(opened, packs)
 
-	alternates, err := openAlternates(commonDir, cfg)
+	// Mark this store's canonical commonDir as in-flight on the active
+	// alternates chain, then pop on return so a sibling alternate that
+	// legitimately reaches the same store via a different path (a
+	// diamond DAG) is not mis-classified as a cycle. The commonDir
+	// (rather than gitdir) is the right key because an alternate entry
+	// names another store's `objects/` directory, whose parent is by
+	// definition that store's commonDir — comparing on the same axis
+	// avoids a worktree's per-tree gitdir falsely escaping the check.
+	canonical := canonicalRepoDir(commonDir)
+	seen[canonical] = true
+	defer delete(seen, canonical)
+
+	alternates, err := openAlternates(commonDir, cfg, seen)
 	if err != nil {
 		closeAll()
 		return nil, err
