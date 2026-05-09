@@ -2,13 +2,23 @@
 // storage format with binary search inside each table and a merged
 // view across the stack.
 //
-// The package is built up in layers. The lowest layer parses the
-// file header that begins every reftable and verifies the CRC-32
-// trailer that closes the footer; block decoding, ref and index
-// iteration, and the public reader are added on top.
+// The package is built up in layers, each on top of the previous:
 //
-// All public types arrive with the reader API. Until then the parsing
-// helpers are unexported because no caller outside reftable needs them.
+//   - [parseHeader] / [verifyTrailer] decode the fixed-size header
+//     that begins every file and validate the CRC-32 trailer that
+//     closes the footer.
+//   - [parseBlock] decodes a ref/index/obj block header and its
+//     restart table; [decodeKey] and [decodeRefRecord] decode the
+//     prefix-compressed records inside.
+//   - [seekToLeaf] descends the ref index (when present) to the leaf
+//     ref block that should contain a sought name, falling back to a
+//     linear ref-block walk for files without an index.
+//
+// The public surface is two read-only types:
+//
+//   - [Reader] over a single reftable file ([OpenReader]).
+//   - [Stack] over a `tables.list` manifest, pre-merging the ref view
+//     across every table at construction ([OpenStack]).
 //
 // Format reference: canonical Git's `Documentation/technical/reftable.adoc`
 // and `reftable/table.c::parse_footer`.

@@ -32,10 +32,9 @@ var (
 // log_records (reflog). Neither is decoded here. The public read path
 // lists refs forward and resolves OIDs against pack/idx, never against
 // ref indexes; reflog is out of scope per the reftable spec's
-// "Out of scope" section. The footer's obj_position is preserved in
-// the diagnostic dump but the records themselves stay undecoded. A
-// future contributor adding OID → ref lookup or reflog reading should
-// implement the corresponding record decoders alongside this file.
+// "Out of scope" section. A future contributor adding OID → ref lookup
+// or reflog reading should implement the corresponding record decoders
+// alongside this file.
 
 // refRecord is the decoded form of one ref_record. Fields beyond Name,
 // UpdateIndex, and ValueType are populated only for the value types

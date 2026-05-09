@@ -224,6 +224,10 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 // at most one ref block (very small files, or one-block aligned
 // files); this fallback nonetheless walks all leading ref blocks for
 // robustness.
+//
+// The block-walk shape (first-block firstByteOffset, blockSize round-up,
+// stop-on-non-ref) matches [Reader.iterAllRefs]; see that function's
+// note on the deliberate non-factoring.
 func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter) ([]byte, uint32, error) {
 	headerSize := uint32(h.size())
 	pos := uint32(0)

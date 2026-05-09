@@ -25,6 +25,12 @@ import (
 // the low 20 bytes with the high 12 bytes zero, SHA-256 ids fill all
 // 32. The [Reader.HashAlgo] return value tells the caller how to
 // interpret them.
+//
+// The on-disk update_index is intentionally not exposed: ls-remote
+// consumers only need the merged-view value, and the merged-view
+// surface in [Stack] hides update_index by construction. A future
+// caller (status, reflog) that needs the field should add it here
+// rather than re-deriving it.
 type RefRecord struct {
 	Name      string
 	Value     objfmt.Hash
@@ -34,14 +40,16 @@ type RefRecord struct {
 
 // Reader is a read-only view of a single reftable file.
 //
-// A Reader memory-maps its file at construction and keeps the mapping
-// live for the entire lifetime of the value; [Reader.Close] releases
-// the mapping.
+// A Reader opens its file via `golang.org/x/exp/mmap` at construction.
+// The current implementation reads the file's bytes into a heap buffer
+// up front and walks that buffer; the mmap handle is retained so
+// [Reader.Close] releases the underlying OS resource in the right
+// order. A random-access mmap path is a potential follow-up.
 //
-// Reader does not merge across tables — that is the job of a future
-// stack reader. A single Reader sees only the records present in the
-// file it was opened on, including any tombstones (which are filtered
-// out before the public surface).
+// Reader does not merge across tables — that is the job of [Stack].
+// A single Reader sees only the records present in the file it was
+// opened on, including any tombstones (which are filtered out before
+// the public surface).
 //
 // # Concurrency
 //
@@ -59,17 +67,19 @@ type Reader struct {
 	header header
 }
 
-// OpenReader memory-maps the reftable at path, validates its header
-// and trailer, and returns a [*Reader] ready for [Reader.IterRefs] and
+// OpenReader opens the reftable at path, validates its header and
+// trailer, and returns a [*Reader] ready for [Reader.IterRefs] and
 // [Reader.FindRef] calls.
 //
-// The header is parsed up-front so HashAlgo and update-index bounds
-// are available without further I/O; the trailer is verified via its
-// CRC-32 so corrupted files surface as [ErrTrailerChecksum] before any
-// record is decoded. Errors from the underlying [mmap.Open] propagate
-// unwrapped (e.g. fs.ErrNotExist for a missing path).
+// The file is opened via `golang.org/x/exp/mmap` and read into a heap
+// buffer; the mmap handle is retained for ordered close. The header is
+// parsed up-front so HashAlgo and update-index bounds are available
+// without further I/O; the trailer is verified via its CRC-32 so
+// corrupted files surface as [ErrTrailerChecksum] before any record is
+// decoded. Errors from the underlying [mmap.Open] propagate unwrapped
+// (e.g. fs.ErrNotExist for a missing path).
 //
-// On any error after the mmap succeeds, the mapping is closed before
+// On any error after the open succeeds, the mapping is closed before
 // the error is returned; callers do not need to call [Reader.Close]
 // on a failed open.
 func OpenReader(path string) (*Reader, error) {
@@ -174,6 +184,13 @@ func (r *Reader) IterRefs() iter.Seq2[RefRecord, error] {
 // Block advancement uses blockLen, with the first block's length
 // folding in the file header preamble; thereafter pos rounds up to
 // blockSize when set.
+//
+// The block-walk shape (first-block firstByteOffset, blockSize round-up,
+// stop-on-non-ref) is the same one [seekLinear] uses for the no-index
+// fallback. The two are intentionally not factored together: this
+// walker yields every record, while [seekLinear] returns the single
+// leaf block that should contain a probe — different signatures, and
+// the duplication is a handful of lines.
 func (r *Reader) iterAllRefs() iter.Seq2[refRecord, error] {
 	return func(yield func(refRecord, error) bool) {
 		headerLen := uint32(r.header.size())

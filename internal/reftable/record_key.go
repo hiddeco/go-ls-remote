@@ -28,7 +28,12 @@ import "fmt"
 // decodeKey returns the reconstructed key, the 3-bit extra field, the
 // number of bytes consumed from buf, and any error. It allocates a
 // new slice for the returned key; callers may retain it without fear
-// of aliasing buf or prevKey.
+// of aliasing buf or prevKey. The fresh allocation per call is
+// intentional for v0 — sharing a running buffer between callers would
+// invalidate prevKey on the next decode and add lifetime rules the
+// public iterators do not need. A future hot-path tuning could thread
+// a reusable buffer through the block walkers if profiling shows the
+// allocation matters.
 //
 // Errors:
 //   - ErrTruncatedRecord wraps a buffer that ends mid-varint, mid-
