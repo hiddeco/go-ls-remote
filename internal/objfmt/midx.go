@@ -250,8 +250,13 @@ func (m *Midx) parseChunkTable(numChunks int) error {
 func (id chunkID) String() string { return string(id[:]) }
 
 // parsePackNames slices the PNAM chunk into NUL-separated entries and
-// stores them on the Midx. Canonical Git enforces v1 ordering; this
-// reader leaves ordering checks to the caller.
+// stores them on the Midx.
+//
+// For v1 files canonical Git requires the entries to be in
+// strict-ascending lexicographic order, rejecting both inversions and
+// duplicates ("multi-pack-index pack names out of order" in
+// `midx.c:213-218`). v2 relaxes the ordering, so the check fires only
+// when `m.ver == 1`.
 func (m *Midx) parsePackNames() error {
 	ext := m.chunks[chunkPNAM]
 	body := m.data[ext.off : ext.off+ext.len]
@@ -270,6 +275,14 @@ func (m *Midx) parsePackNames() error {
 	if uint32(len(names)) != m.numPacks {
 		return fmt.Errorf("objfmt: midx pack-name count %d != header num_packs %d: %w",
 			len(names), m.numPacks, ErrCorrupt)
+	}
+	if m.ver == 1 {
+		for i := 1; i < len(names); i++ {
+			if names[i-1] >= names[i] {
+				return fmt.Errorf("objfmt: midx v1 pack names out of order (%q before %q): %w",
+					names[i-1], names[i], ErrCorrupt)
+			}
+		}
 	}
 	m.packNames = names
 	return nil

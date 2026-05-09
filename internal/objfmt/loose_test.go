@@ -218,4 +218,70 @@ func TestReadLooseHeader(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotPanics(t, func() { _ = rc.Close() })
 	})
+
+	t.Run("rejects trailing garbage after declared body", func(t *testing.T) {
+		// Build a deflate stream whose inflated payload is
+		// `blob 5\x00helloEXTRA` — the header declares 5 body bytes but
+		// the stream produces 10. Canonical Git surfaces "garbage at
+		// end of loose object" via `unpack_loose_rest` in
+		// `object-file.c:282-328`. After draining exactly `size` bytes,
+		// `Close` must surface the same corruption.
+		in := zlibLoose(t, "blob 5", []byte("helloEXTRA"))
+		_, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.NoError(t, err)
+		require.Equal(t, int64(5), size)
+
+		got := make([]byte, 5)
+		_, err = io.ReadFull(rc, got)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("hello"), got)
+
+		err = rc.Close()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "garbage")
+	})
+
+	t.Run("rejects trailing garbage drained via ReadAll", func(t *testing.T) {
+		// Same corruption shape, but the caller reads with
+		// [io.ReadAll] (one large read returning all inflated bytes).
+		// The over-read must be observed during `Read` and surfaced
+		// from `Close`, not silently absorbed.
+		in := zlibLoose(t, "blob 5", []byte("helloEXTRA"))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.NoError(t, err)
+
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+
+		err = rc.Close()
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "garbage")
+	})
+
+	t.Run("valid object has no trailer error", func(t *testing.T) {
+		// Sanity: a well-formed loose object, fully drained and closed,
+		// must not surface a trailing-garbage error.
+		body := []byte("hello world")
+		in := zlibLoose(t, "blob 11", body)
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		assert.Equal(t, body, got)
+		assert.NoError(t, rc.Close())
+	})
+
+	t.Run("header-only read does not validate trailer", func(t *testing.T) {
+		// Even with extra inflated bytes past the declared size, a
+		// caller that reads only the header and closes without
+		// draining the body must not see a corruption error. The
+		// trailer check belongs in the body-fully-read path; lazy
+		// callers pay nothing.
+		in := zlibLoose(t, "blob 5", []byte("helloEXTRA"))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.NoError(t, err)
+		assert.NoError(t, rc.Close())
+	})
 }

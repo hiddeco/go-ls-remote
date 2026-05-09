@@ -191,6 +191,64 @@ func TestMidx_OpenMidx(t *testing.T) {
 		assert.Contains(t, err.Error(), "pack")
 	})
 
+	t.Run("rejects v1 non-ascending pack names", func(t *testing.T) {
+		// Canonical Git rejects v1 midx files whose PNAM entries are
+		// not in strict-ascending lexicographic order. Mirrors
+		// `midx.c:213-218` ("multi-pack-index pack names out of order").
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"b.idx", "a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+		})
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "pack name")
+	})
+
+	t.Run("rejects v1 duplicate pack names", func(t *testing.T) {
+		// Canonical Git's check is `strcmp(...) <= 0`, which also
+		// rejects duplicate basenames. Mirrors `midx.c:213-218`.
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx", "a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+		})
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "pack name")
+	})
+
+	t.Run("accepts v2 unsorted pack names", func(t *testing.T) {
+		// Canonical Git relaxes the ordering check for v2; only v1 is
+		// strict. Build a fixture with packs out of order, flip the
+		// version byte to 2, and confirm the parser accepts it.
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"b.idx", "a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		raw[4] = 2 // version 2 — relaxed pack-name ordering
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		m, err := OpenMidx(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = m.Close() })
+		assert.Equal(t, uint32(2), m.Version())
+		assert.Equal(t, []string{"b.idx", "a.idx"}, m.PackNames())
+	})
+
 	t.Run("rejects misaligned chunk offset", func(t *testing.T) {
 		// Patch the TOC entry for OIDF to a misaligned absolute
 		// offset (off by 1). Mirrors `chunk-format.c:127-130`, which

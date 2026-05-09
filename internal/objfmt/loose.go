@@ -22,6 +22,18 @@ import (
 // type and size may close body without draining it. Close is safe to
 // call more than once.
 //
+// # Trailer validation
+//
+// When a caller drains the body of its declared size and then calls
+// Close, body verifies that the deflate stream produced exactly that
+// many post-header bytes. An over-long stream (the header understated
+// the body length, or extra deflate bytes were appended) surfaces as a
+// [ErrCorrupt]-wrapped error from Close, mirroring "garbage at end of
+// loose object" in canonical Git's `unpack_loose_rest`
+// (`object-file.c:282-328`). Callers that close without draining pay
+// nothing for the check; partial reads cannot meaningfully assert what
+// the trailer should have been.
+//
 // On error body is nil and the wrapped error chain reflects the cause:
 // zlib framing, header parsing, or unexpected EOF inside the stream.
 func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadCloser, err error) {
@@ -55,7 +67,7 @@ func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadClose
 		return 0, 0, nil, err
 	}
 
-	return typ, size, &looseBody{r: br, closer: zr}, nil
+	return typ, size, &looseBody{r: br, closer: zr, remaining: size}, nil
 }
 
 // parseLooseSize decodes the size field of a loose-object header,
@@ -115,12 +127,31 @@ func parseLooseTypeName(name string) (ObjectType, error) {
 // looseBody adapts the post-header bufio reader and the underlying
 // zlib reader into a single [io.ReadCloser] whose Close releases the
 // zlib decoder.
+//
+// Bytes delivered to the caller are tracked against the declared body
+// size so [looseBody.Close] can decide whether to validate the trailer
+// (see the "Trailer validation" section on [ReadLooseHeader]).
 type looseBody struct {
-	r      io.Reader
-	closer io.Closer
+	r         io.Reader
+	closer    io.Closer
+	remaining int64 // body bytes still owed to the caller
+	overrun   bool  // bytes were observed past the declared size
 }
 
-func (b *looseBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+func (b *looseBody) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if int64(n) > b.remaining {
+		// More body bytes arrived than the header declared; the
+		// deflate stream is longer than the writer claimed. Hold the
+		// flag so [Close] can surface the canonical Git "garbage at
+		// end of loose object" error after the caller drains.
+		b.overrun = true
+		b.remaining = 0
+	} else {
+		b.remaining -= int64(n)
+	}
+	return n, err
+}
 
 // Close releases the zlib decoder. zlib reports trailer corruption
 // (Adler-32 mismatch, dangling continuation bits) at Close time, so
@@ -130,14 +161,49 @@ func (b *looseBody) Read(p []byte) (int, error) { return b.r.Read(p) }
 // already drained or after an earlier Close, which is benign for
 // the "type-and-size only" use case documented on
 // [ReadLooseHeader].
+//
+// When the caller has drained exactly the declared size, Close also
+// peeks at the deflate stream to confirm it is truly exhausted. If
+// the stream still has bytes to deliver, the writer's `<size>` field
+// disagrees with the deflate payload and the file is corrupt;
+// canonical Git surfaces the same condition as "garbage at end of
+// loose object" in `unpack_loose_rest` (`object-file.c:282-328`).
+// Callers that close without draining (header-only readers) skip the
+// check — a partial read carries no information about what the
+// trailer should have been.
 func (b *looseBody) Close() error {
 	if b.closer == nil {
 		return nil
 	}
 	c := b.closer
 	b.closer = nil
-	if err := c.Close(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-		return fmt.Errorf("objfmt: close loose object: %w", err)
+
+	var trailerErr error
+	switch {
+	case b.overrun:
+		// [looseBody.Read] already observed bytes past the declared
+		// size, so the deflate stream is longer than the header
+		// claimed. No need to probe; the corruption is established.
+		trailerErr = fmt.Errorf("objfmt: garbage at end of loose object: %w", ErrCorrupt)
+	case b.remaining == 0:
+		// Drained exactly. Probe one byte past the declared size: a
+		// clean stream returns `(0, io.EOF)`; anything else (extra
+		// inflated bytes, non-EOF errors) is corruption.
+		var probe [1]byte
+		switch n, err := b.r.Read(probe[:]); {
+		case n > 0:
+			trailerErr = fmt.Errorf("objfmt: garbage at end of loose object: %w", ErrCorrupt)
+		case err != nil && !errors.Is(err, io.EOF):
+			trailerErr = fmt.Errorf("objfmt: garbage at end of loose object: %w", ErrCorrupt)
+		}
 	}
-	return nil
+
+	if err := c.Close(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		closeErr := fmt.Errorf("objfmt: close loose object: %w", err)
+		if trailerErr != nil {
+			return errors.Join(trailerErr, closeErr)
+		}
+		return closeErr
+	}
+	return trailerErr
 }
