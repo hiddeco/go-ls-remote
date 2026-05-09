@@ -104,7 +104,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 	}
 	opened = append(opened, refs)
 
-	loose, err := openLoose(commonDir)
+	loose, err := openLoose(commonDir, cfg.algo)
 	if err != nil {
 		closeAll()
 		return nil, err
