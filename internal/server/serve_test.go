@@ -31,38 +31,6 @@ func openEmptyStore(t *testing.T) *objstore.Store {
 	return s
 }
 
-// TestServe_V0EmitsFlush pins the v0 skeleton's behaviour: with
-// `transport.ProtocolV0` the server emits a flush — the empty
-// advertisement Task 3 will replace with the empty-repo placeholder
-// plus a proper ref list.
-func TestServe_V0EmitsFlush(t *testing.T) {
-	store := openEmptyStore(t)
-
-	clientToServer, _ := io.Pipe()
-	pr, pw := io.Pipe()
-
-	r := pktline.NewReader(clientToServer)
-	w := pktline.NewWriter(pw)
-
-	errCh := make(chan error, 1)
-	go func() {
-		err := Serve(context.Background(), r, w, store, Options{
-			Agent:             "test-agent/0.0",
-			PreferredProtocol: transport.ProtocolV0,
-		})
-		_ = pw.Close()
-		errCh <- err
-	}()
-
-	cr := pktline.NewReader(pr)
-
-	p, err := cr.ReadPacket()
-	require.NoError(t, err)
-	assert.Equal(t, pktline.Flush, p.Kind)
-
-	require.NoError(t, <-errCh)
-}
-
 // TestServe_UnknownProtocolReturnsError pins the contract for any
 // `PreferredProtocol` value outside the supported set: `Serve` must
 // surface an error rather than emit silence.

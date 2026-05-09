@@ -31,9 +31,13 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // capability set and emission order are documented on
 // [writeV2Advertisement].
 //
-// For [transport.ProtocolV0] the advertisement is the empty ref list
-// terminator — a single flush — pending the empty-repo placeholder
-// and ref-list emission of a follow-up iteration.
+// For [transport.ProtocolV0] the advertisement is the canonical
+// reference-discovery stream: HEAD (when valid) followed by every
+// ref in C-locale byte order, with peeled lines for annotated tags
+// and a trailing flush. An empty repository emits the
+// `<zero-oid> capabilities^{}\0<caps>\n` placeholder defined at
+// `upload-pack.c:1422-1428`. The cap list and emission rules are
+// documented on [writeV0Advertisement].
 //
 // Any other value of opts.PreferredProtocol returns
 // [ErrUnsupportedProtocol] without emitting any bytes on w.
@@ -50,10 +54,7 @@ func Serve(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	case transport.ProtocolV2:
 		return writeV2Advertisement(w, store, opts)
 	case transport.ProtocolV0:
-		if err := w.WriteFlush(); err != nil {
-			return fmt.Errorf("server: write v0 advertisement flush: %w", err)
-		}
-		return nil
+		return writeV0Advertisement(w, store, opts)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedProtocol, opts.PreferredProtocol)
 	}
