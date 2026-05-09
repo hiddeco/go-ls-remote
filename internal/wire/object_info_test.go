@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -409,4 +411,171 @@ func TestDecodeObjectInfo(t *testing.T) {
 			{OID: oid2, Size: 0},
 		}, infos)
 	})
+}
+
+// readRequestArgs walks an encoded `object-info` request stream and
+// returns the recovered `oid` arguments together with the size-flag.
+// The wire shape it expects mirrors `EncodeObjectInfo` (and
+// `gitprotocol-v2.adoc` §"object-info" lines 556-585): a
+// `command=object-info` data packet, zero or more capability-echo
+// data packets, a `0001` delim, then the body of `size` and `oid <hex>`
+// lines closed by a `0000` flush. A failure to match any of those
+// constraints fails the test.
+func readRequestArgs(t *testing.T, raw []byte) (oids []string, sizeFlag bool) {
+	t.Helper()
+	r := pktline.NewReader(bytes.NewReader(raw))
+
+	// First packet: `command=object-info`.
+	first, err := r.ReadPacket()
+	require.NoError(t, err)
+	require.Equal(t, pktline.Data, first.Kind)
+	require.Equal(t, "command=object-info\n", string(first.Data))
+
+	// Header section: capability-echo lines until the delim.
+	for {
+		p, err := r.ReadPacket()
+		require.NoError(t, err)
+		if p.Kind == pktline.Delim {
+			break
+		}
+		require.Equal(t, pktline.Data, p.Kind,
+			"unexpected control packet in header: %v", p.Kind)
+	}
+
+	// Body section: `size` and/or `oid <hex>` lines until flush.
+	for {
+		p, err := r.ReadPacket()
+		require.NoError(t, err)
+		if p.Kind == pktline.Flush {
+			return oids, sizeFlag
+		}
+		require.Equal(t, pktline.Data, p.Kind,
+			"unexpected control packet in body: %v", p.Kind)
+		line := string(bytes.TrimSuffix(p.Data, []byte{'\n'}))
+		switch {
+		case line == "size":
+			sizeFlag = true
+		case strings.HasPrefix(line, "oid "):
+			oids = append(oids, strings.TrimPrefix(line, "oid "))
+		default:
+			t.Fatalf("unrecognised body line %q", line)
+		}
+	}
+}
+
+// emitObjectInfoResponse serialises a server-side `object-info`
+// response from the given infos, choosing the attrs line based on
+// whether the caller asked for size echoing. It mirrors the shape
+// that `protocol-caps.c::send_info` writes for the success path: an
+// `attrs` line, one `<oid>[ <size>]` line per row, and a flush.
+func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) *bytes.Buffer {
+	t.Helper()
+	payloads := make([]string, 0, 1+len(infos))
+	if withSize {
+		payloads = append(payloads, "size\n")
+	} else {
+		payloads = append(payloads, "\n")
+	}
+	for _, info := range infos {
+		if withSize {
+			payloads = append(payloads,
+				info.OID+" "+strconv.FormatInt(info.Size, 10)+"\n")
+		} else {
+			payloads = append(payloads, info.OID+"\n")
+		}
+	}
+	return buildObjectInfoStream(t, payloads...)
+}
+
+// TestObjectInfo_roundTrip pins encode/decode against silent drift.
+// `EncodeObjectInfo` writes the client request (`command=object-info`
+// header, `0001` delim, `size` plus `oid <hex>` body, flush) while
+// `DecodeObjectInfo` reads the server response (attrs line,
+// `<oid>[ <size>]` rows, flush) — the two are *not* mirror images of
+// each other (`protocol-caps.c::cap_object_info` vs
+// `protocol-caps.c::send_info`). The cases below therefore lock two
+// independent loops:
+//
+//  1. Request: encode an `ObjectInfoArgs` plus OIDs, re-parse the
+//     produced pkt-line stream, and check that the OID list and the
+//     size-flag survived the trip.
+//  2. Response: synthesise a canonical server response that matches
+//     the request's size-flag, decode it, re-emit a server stream
+//     from the decoded rows, decode that, and assert idempotence.
+//
+// Together the two loops keep encoder and decoder honest even though
+// no single function exercises both ends.
+func TestObjectInfo_roundTrip(t *testing.T) {
+	const (
+		oidA = "1111111111111111111111111111111111111111"
+		oidB = "2222222222222222222222222222222222222222"
+		oidC = "3333333333333333333333333333333333333333"
+	)
+
+	cases := []struct {
+		name      string
+		oids      []string
+		args      ObjectInfoArgs
+		wantInfos []RawObjectInfo
+	}{
+		{
+			name:      "single OID, size off",
+			oids:      []string{oidA},
+			args:      ObjectInfoArgs{},
+			wantInfos: []RawObjectInfo{{OID: oidA}},
+		},
+		{
+			name:      "single OID, size on",
+			oids:      []string{oidA},
+			args:      ObjectInfoArgs{Size: true},
+			wantInfos: []RawObjectInfo{{OID: oidA, Size: 42}},
+		},
+		{
+			name: "multiple OIDs, size on",
+			oids: []string{oidA, oidB, oidC},
+			args: ObjectInfoArgs{Size: true},
+			wantInfos: []RawObjectInfo{
+				{OID: oidA, Size: 100},
+				{OID: oidB, Size: 200},
+				{OID: oidC, Size: 300},
+			},
+		},
+		{
+			name: "multiple OIDs, size off",
+			oids: []string{oidA, oidB, oidC},
+			args: ObjectInfoArgs{},
+			wantInfos: []RawObjectInfo{
+				{OID: oidA},
+				{OID: oidB},
+				{OID: oidC},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("request", func(t *testing.T) {
+				var buf bytes.Buffer
+				w := pktline.NewWriter(&buf)
+				require.NoError(t,
+					EncodeObjectInfo(w, tc.oids, tc.args, nil, ""))
+
+				gotOIDs, gotSize := readRequestArgs(t, buf.Bytes())
+				assert.Equal(t, tc.oids, gotOIDs)
+				assert.Equal(t, tc.args.Size, gotSize)
+			})
+
+			t.Run("response idempotent", func(t *testing.T) {
+				first := emitObjectInfoResponse(t, tc.wantInfos, tc.args.Size)
+				gotFirst, err := DecodeObjectInfo(pktline.NewReader(first))
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantInfos, gotFirst)
+
+				second := emitObjectInfoResponse(t, gotFirst, tc.args.Size)
+				gotSecond, err := DecodeObjectInfo(pktline.NewReader(second))
+				require.NoError(t, err)
+				assert.Equal(t, gotFirst, gotSecond)
+			})
+		})
+	}
 }
