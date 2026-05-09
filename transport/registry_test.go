@@ -63,3 +63,13 @@ func TestRegistry_emptyRegistryRoundTrip(t *testing.T) {
 	_, ok := r.Lookup("anything")
 	assert.False(t, ok)
 }
+
+func TestRegistry_RegisterPanicsOnNil(t *testing.T) {
+	t.Run("via NewRegistry", func(t *testing.T) {
+		assert.Panics(t, func() { NewRegistry(nil) })
+	})
+	t.Run("via Register", func(t *testing.T) {
+		r := NewRegistry()
+		assert.Panics(t, func() { r.Register(nil) })
+	})
+}

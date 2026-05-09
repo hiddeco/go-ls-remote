@@ -31,6 +31,11 @@ type Registry struct {
 // Each transport contributes its [Transport.Schemes]; if two transports
 // claim the same scheme the later one wins.
 //
+// Every Transport in ts must be non-nil. Passing nil panics — the
+// Registry is constructed once at start-up and a nil entry would
+// poison every subsequent [Registry.Lookup] for the schemes it
+// would have claimed, so the failure is forced to be loud.
+//
 // Schemes are stored case-insensitively (lower-cased on entry); lookups
 // are likewise case-insensitive.
 func NewRegistry(ts ...Transport) *Registry {
@@ -43,7 +48,12 @@ func NewRegistry(ts ...Transport) *Registry {
 
 // Register adds t to the registry. For each scheme t claims, the entry
 // replaces any prior binding (last writer wins).
+//
+// Register panics if t is nil; see [NewRegistry] for the rationale.
 func (r *Registry) Register(t Transport) {
+	if t == nil {
+		panic("transport: Register called with nil Transport")
+	}
 	for _, s := range t.Schemes() {
 		r.byScheme[strings.ToLower(s)] = t
 	}
