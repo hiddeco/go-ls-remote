@@ -60,7 +60,11 @@ func TestReftableBackend_IterRefs_YieldsContentExcludingHEAD(t *testing.T) {
 	got := collectReftableRefs(t, b)
 
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 
@@ -146,7 +150,11 @@ func TestReftableBackend_CustomLocation_RelativeToGitDir(t *testing.T) {
 
 	got := collectReftableRefs(t, b)
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 }
@@ -166,7 +174,11 @@ func TestReftableBackend_CustomLocation_AbsoluteIsVerbatim(t *testing.T) {
 
 	got := collectReftableRefs(t, b)
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 }
@@ -192,7 +204,11 @@ func TestReftableBackend_CommonDirVsGitDir_DefaultLocationUsesCommonDir(t *testi
 
 	got := collectReftableRefs(t, b)
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 }
@@ -225,7 +241,11 @@ func TestReftableBackend_OpenViaStore_YieldsPopulatedRefs(t *testing.T) {
 		got = append(got, entry)
 	}
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 
@@ -234,6 +254,55 @@ func TestReftableBackend_OpenViaStore_YieldsPopulatedRefs(t *testing.T) {
 	assert.Equal(t, "refs/heads/main", head.Symref)
 	assert.Equal(t, hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1), head.OID)
 	assert.False(t, head.Unborn)
+}
+
+func TestReftableBackend_IterRefs_PeelKnownAlwaysTrue(t *testing.T) {
+	// Reftable records always carry the peel slot (zero or set), so the
+	// merged-view lift must surface PeelKnown=true for every entry it
+	// yields. The fixture's only non-HEAD ref is a commit, hence Peeled
+	// is the zero hash.
+	b := openReftableFromFixture(t, "with-reftable-content")
+	got := collectReftableRefs(t, b)
+
+	require.Len(t, got, 1)
+	assert.True(t, got[0].PeelKnown,
+		"reftable entry must surface PeelKnown=true")
+	assert.Equal(t, objfmt.Hash{}, got[0].Peeled)
+}
+
+func TestReftableBackend_Lookup_KnownRef(t *testing.T) {
+	// The fixture's `refs/heads/main` value record carries no peel slot
+	// (it is a commit). Lookup returns PeelKnown=true, Peeled=zero.
+	b := openReftableFromFixture(t, "with-reftable-content")
+
+	entry, found, err := b.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "refs/heads/main", entry.Name)
+	assert.Equal(t,
+		hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1), entry.OID)
+	assert.True(t, entry.PeelKnown)
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+}
+
+func TestReftableBackend_Lookup_MissingRef(t *testing.T) {
+	b := openReftableFromFixture(t, "with-reftable-content")
+
+	entry, found, err := b.Lookup("refs/heads/does-not-exist")
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, RefEntry{}, entry)
+}
+
+func TestReftableBackend_Lookup_HEADHidden(t *testing.T) {
+	// HEAD is exposed through Head(), not Lookup. A direct Lookup("HEAD")
+	// must miss so callers cannot accidentally hand HEAD's symref payload
+	// to peel logic that expects a value record.
+	b := openReftableFromFixture(t, "with-reftable-content")
+
+	_, found, err := b.Lookup("HEAD")
+	require.NoError(t, err)
+	assert.False(t, found, "HEAD must not surface through Lookup")
 }
 
 // copyDirContents copies every regular file under src into dst,

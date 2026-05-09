@@ -90,12 +90,11 @@ type peelEntry struct {
 //
 // # `fully-peeled` short-circuit
 //
-// Callers that hold the source ref name AND want to skip the loose-
-// object read entirely for refs that the `packed-refs` header tagged
-// `fully-peeled` should consult `looseRefs.peelHint` and
-// `looseRefs.refTraits` directly before calling Peel. The OID-based
-// API here cannot perform that short-circuit because the trait
-// belongs to the source ref, not to the value the ref carries.
+// Callers that hold the source ref name should prefer [Store.PeelRef],
+// which consults the backend's peel hint before falling through to
+// Peel. The OID-based API here cannot perform that short-circuit
+// because the peel hint belongs to the source ref, not to the value
+// the ref carries.
 func (s *Store) Peel(oid objfmt.Hash) (peeled objfmt.Hash, ok bool, err error) {
 	// Fast path: a previous call on this OID has already decided.
 	s.peelMu.Lock()
@@ -280,4 +279,32 @@ func parseTagBody(body []byte, algo objfmt.Algo) (objfmt.Hash, string, error) {
 			"objstore: tag body has unknown type %q: %w", typeName, ErrCorruptObject)
 	}
 	return target, typeName, nil
+}
+
+// PeelRef resolves name through the configured ref backend and peels
+// the resulting OID, short-circuiting the object-body read whenever the
+// backend already knows the answer.
+//
+// Returns (zero, false, nil) for a name absent from the backend so
+// callers can branch on ok the same way as [Store.Peel]; an unknown
+// ref is not an error. Backend faults (decode errors, transient I/O)
+// surface through err.
+//
+// When the backend reports [RefEntry.PeelKnown]=true — the
+// `packed-refs` `fully-peeled` trait, an explicit `^<oid>` line, or a
+// reftable record with its peel slot populated — PeelRef returns the
+// recorded peel without touching the object store. Otherwise it falls
+// through to [Store.Peel] on the resolved OID.
+func (s *Store) PeelRef(name string) (peeled objfmt.Hash, ok bool, err error) {
+	entry, found, err := s.refs.Lookup(name)
+	if err != nil {
+		return objfmt.Hash{}, false, err
+	}
+	if !found {
+		return objfmt.Hash{}, false, nil
+	}
+	if entry.PeelKnown {
+		return entry.Peeled, !entry.Peeled.IsZero(), nil
+	}
+	return s.Peel(entry.OID)
 }

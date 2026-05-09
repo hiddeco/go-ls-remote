@@ -141,6 +141,11 @@ func (b *reftableBackend) Head() (Head, error) { return b.head, nil }
 // — out of scope for v0, and consistent with [looseRefs]'s precedent
 // of dropping non-HEAD symrefs from `refs/`.
 //
+// Every yielded entry sets [RefEntry.PeelKnown]=true: reftable value
+// records always carry a peel slot, so the merged-view answer is
+// definitive without further I/O. [RefEntry.Peeled] is the recorded
+// peel target for annotated tags and the zero hash otherwise.
+//
 // The error slot mirrors the upstream [reftable.Stack.IterRefs]
 // contract: a decode failure short-circuits the walk and is forwarded
 // to the consumer. Today the upstream iterator never errors at walk
@@ -160,10 +165,47 @@ func (b *reftableBackend) IterRefs() iter.Seq2[RefEntry, error] {
 			if rec.TargetRef != "" {
 				continue
 			}
-			if !yield(RefEntry{Name: rec.Name, OID: rec.Value}, nil) {
+			if !yield(refEntryFromReftable(rec), nil) {
 				return
 			}
 		}
+	}
+}
+
+// Lookup resolves name through the reftable stack's merged view. HEAD
+// and non-HEAD symref records are filtered out for the same reasons
+// [reftableBackend.IterRefs] hides them: HEAD has its own surface and
+// non-HEAD symrefs are not modeled by [RefEntry] in v0. A resolved hit
+// always returns PeelKnown=true.
+func (b *reftableBackend) Lookup(name string) (RefEntry, bool, error) {
+	if name == "HEAD" {
+		return RefEntry{}, false, nil
+	}
+	rec, found, err := b.stack.FindRef(name)
+	if err != nil {
+		return RefEntry{}, false, fmt.Errorf("objstore: read ref %q: %w", name, err)
+	}
+	if !found {
+		return RefEntry{}, false, nil
+	}
+	if rec.TargetRef != "" {
+		return RefEntry{}, false, nil
+	}
+	return refEntryFromReftable(rec), true, nil
+}
+
+// refEntryFromReftable lifts a reftable value record into a [RefEntry].
+// PeelKnown is hard-coded to true: every reftable value record's peel
+// slot is observable from the merged view (a zero slot means "no peel"
+// and a set slot means "peels to this OID"), so callers never need to
+// fall through to an object-body read for refs the reftable backend
+// resolves.
+func refEntryFromReftable(rec reftable.RefRecord) RefEntry {
+	return RefEntry{
+		Name:      rec.Name,
+		OID:       rec.Value,
+		Peeled:    rec.Peeled,
+		PeelKnown: true,
 	}
 }
 

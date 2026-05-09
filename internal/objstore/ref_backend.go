@@ -23,6 +23,15 @@ type refBackend interface {
 	// in an unspecified order. The iterator stops on the first error.
 	IterRefs() iter.Seq2[RefEntry, error]
 
+	// Lookup resolves name to a single [RefEntry]. The found return is
+	// false when the backend has no entry by that name; the error slot
+	// is reserved for backend faults (decode errors, transient I/O) and
+	// is not produced by a missing name.
+	//
+	// Implementations must populate [RefEntry.Peeled] and
+	// [RefEntry.PeelKnown] using the same rules as [refBackend.IterRefs].
+	Lookup(name string) (RefEntry, bool, error)
+
 	// Close releases any resources held by the backend (file handles,
 	// memory mappings). It must be safe to call exactly once; idempotency
 	// is the [Store]'s responsibility, not the backend's.
@@ -63,6 +72,32 @@ type RefEntry struct {
 
 	// OID is the resolved object id of the ref's terminal target.
 	OID objfmt.Hash
+
+	// Peeled is the dereferenced commit id when the backend can answer
+	// without performing object I/O; the zero hash otherwise. A non-zero
+	// Peeled is only meaningful when [RefEntry.PeelKnown] is true.
+	Peeled objfmt.Hash
+
+	// PeelKnown reports whether the backend definitively knows the
+	// peel state for this ref without reading the object body. The
+	// three observable shapes are:
+	//
+	//   - PeelKnown && !Peeled.IsZero(): peelable annotated tag whose
+	//     terminal target is Peeled.
+	//   - PeelKnown && Peeled.IsZero(): the ref has no peel (commit,
+	//     tree, blob, lightweight tag).
+	//   - !PeelKnown: the backend cannot answer cheaply; callers that
+	//     need the peel must reach for [Store.Peel] (or
+	//     [Store.PeelRef], which folds the lookup and the fall-through
+	//     into one call).
+	//
+	// The loose-refs backend sets PeelKnown when a `^<oid>` line follows
+	// the entry in `packed-refs` OR when the file's `# pack-refs with:`
+	// header advertises the `fully-peeled` trait — under that trait the
+	// absence of `^<oid>` is itself authoritative. The reftable backend
+	// always sets PeelKnown=true: every reftable ref record carries its
+	// peel slot (zero or set), so the merged-view lookup is definitive.
+	PeelKnown bool
 }
 
 // Head returns the resolved [Head] of the repository by delegating to

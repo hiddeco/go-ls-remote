@@ -30,6 +30,15 @@ type packedEntry struct {
 	// `packed-refs`. Loose ref overrides set it to false because loose
 	// ref files do not encode peel state.
 	peelKnown bool
+
+	// fromPacked is true when the entry's OID came from `packed-refs`,
+	// false when a loose ref file under `refs/` overrode the packed
+	// entry (or registered a name absent from `packed-refs`). The
+	// distinction matters for the file-wide `fully-peeled` trait: the
+	// trait makes "no peel line" authoritative for entries the trait
+	// applies to (the `packed-refs` body), but says nothing about a
+	// loose override whose OID was never in the file.
+	fromPacked bool
 }
 
 // packedTraits captures the optional traits advertised by the
@@ -169,7 +178,7 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 				"objstore: packed-refs line %d: parse oid %q: %w",
 				lineNo, raw, ErrCorruptObject)
 		}
-		out.refs[name] = packedEntry{oid: oid}
+		out.refs[name] = packedEntry{oid: oid, fromPacked: true}
 		lastRef = name
 	}
 	if err := scanner.Err(); err != nil {

@@ -66,14 +66,24 @@ func TestLooseRefs_LooseOnly_IterRefsSorted(t *testing.T) {
 
 func TestLooseRefs_PackedOnly_IterRefs(t *testing.T) {
 	// Only `packed-refs` carries entries. The parser must surface them
-	// all, the trait header sets `peeled` and `fully-peeled`, and the
-	// tag's `^peel` line populates packedEntry.peeled.
+	// all, the trait header sets `peeled` and `fully-peeled` (so every
+	// entry's PeelKnown is true), and the tag's `^peel` line populates
+	// packedEntry.peeled.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
 	got := collectRefs(t, r)
 
 	want := []RefEntry{
-		{Name: "refs/heads/main", OID: hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1)},
-		{Name: "refs/tags/v1", OID: hashFromHex(t, "cccccccccccccccccccccccccccccccccccccccc", objfmt.SHA1)},
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
+			PeelKnown: true,
+		},
+		{
+			Name:      "refs/tags/v1",
+			OID:       hashFromHex(t, "cccccccccccccccccccccccccccccccccccccccc", objfmt.SHA1),
+			Peeled:    hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1),
+			PeelKnown: true,
+		},
 	}
 	assert.Equal(t, want, got)
 }
@@ -87,19 +97,26 @@ func TestLooseRefs_Mixed_LooseShadowsPacked(t *testing.T) {
 
 	wantLoose := hashFromHex(t, "3333333333333333333333333333333333333333", objfmt.SHA1)
 	wantOld := hashFromHex(t, "2222222222222222222222222222222222222222", objfmt.SHA1)
+	// `mixed`'s packed-refs header advertises `fully-peeled`, so the
+	// packed-only `refs/heads/old` entry inherits PeelKnown=true (its
+	// missing `^<oid>` line is authoritative under the trait). The
+	// loose-shadowed `refs/heads/main` keeps PeelKnown=false because
+	// the trait does not apply to a loose-override OID.
 	want := []RefEntry{
 		{Name: "refs/heads/main", OID: wantLoose},
-		{Name: "refs/heads/old", OID: wantOld},
+		{Name: "refs/heads/old", OID: wantOld, PeelKnown: true},
 	}
 	assert.Equal(t, want, got)
 
-	// Loose overrides drop packed peel information: even though the
-	// packed-refs file in this fixture advertises peel traits, the
-	// loose-shadowed main carries no peel hint.
-	_, peelKnown, ok := r.peelHint("refs/heads/main")
-	require.True(t, ok)
-	assert.False(t, peelKnown,
+	// Loose overrides drop packed peel information AND the fixture's
+	// packed-refs header carries no `fully-peeled` trait, so the
+	// loose-shadowed main must surface PeelKnown=false.
+	entry, found, err := r.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.False(t, entry.PeelKnown,
 		"loose override must drop packed peel hint")
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_Head_SymrefToExistingRef(t *testing.T) {
@@ -163,20 +180,18 @@ func TestLooseRefs_Traits_PeeledAndFullyPeeled(t *testing.T) {
 	// both flags must be true and `sorted` must remain false.
 	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
 
-	traits := r.refTraits()
-	assert.True(t, traits.peeled)
-	assert.True(t, traits.fullyPeeled)
-	assert.False(t, traits.sorted)
+	assert.True(t, r.traits.peeled)
+	assert.True(t, r.traits.fullyPeeled)
+	assert.False(t, r.traits.sorted)
 }
 
 func TestLooseRefs_Traits_SortedOnly(t *testing.T) {
 	// Header `# pack-refs with: sorted`: only `sorted` flips.
 	r := openLooseFromFixture(t, "packed-refs-sorted", objfmt.SHA1)
 
-	traits := r.refTraits()
-	assert.False(t, traits.peeled)
-	assert.False(t, traits.fullyPeeled)
-	assert.True(t, traits.sorted)
+	assert.False(t, r.traits.peeled)
+	assert.False(t, r.traits.fullyPeeled)
+	assert.True(t, r.traits.sorted)
 }
 
 func TestLooseRefs_Traits_NoHeader(t *testing.T) {
@@ -184,10 +199,9 @@ func TestLooseRefs_Traits_NoHeader(t *testing.T) {
 	// trait flag remains false.
 	r := openLooseFromFixture(t, "packed-refs-no-traits", objfmt.SHA1)
 
-	traits := r.refTraits()
-	assert.False(t, traits.peeled)
-	assert.False(t, traits.fullyPeeled)
-	assert.False(t, traits.sorted)
+	assert.False(t, r.traits.peeled)
+	assert.False(t, r.traits.fullyPeeled)
+	assert.False(t, r.traits.sorted)
 }
 
 func TestLooseRefs_Traits_UnknownTokensTolerated(t *testing.T) {
@@ -201,24 +215,28 @@ func TestLooseRefs_Traits_UnknownTokensTolerated(t *testing.T) {
 
 func TestLooseRefs_PeelKnown_Tag(t *testing.T) {
 	// The annotated tag in `packed-only` carries a `^peel` line, so
-	// peelKnown is true and peeled equals the parsed hex.
+	// PeelKnown is true and Peeled equals the parsed hex.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
 
-	peeled, peelKnown, ok := r.peelHint("refs/tags/v1")
-	require.True(t, ok)
-	assert.True(t, peelKnown)
-	assert.Equal(t, hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1), peeled)
+	entry, found, err := r.Lookup("refs/tags/v1")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, entry.PeelKnown)
+	assert.Equal(t, hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1), entry.Peeled)
 }
 
-func TestLooseRefs_PeelKnown_NonTag(t *testing.T) {
-	// The branch entry in `packed-only` has no `^peel` line; peelKnown
-	// must be false and peeled must be the zero hash.
+func TestLooseRefs_PeelKnown_NonTag_FullyPeeledMakesItKnown(t *testing.T) {
+	// The branch entry in `packed-only` has no `^peel` line, but the
+	// fixture's header advertises `peeled fully-peeled`, so the absence
+	// is authoritative: PeelKnown=true with Peeled=zero.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
 
-	peeled, peelKnown, ok := r.peelHint("refs/heads/main")
-	require.True(t, ok)
-	assert.False(t, peelKnown)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	entry, found, err := r.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, entry.PeelKnown,
+		"fully-peeled trait must make missing peel definitive")
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_MalformedPackedRefsLine(t *testing.T) {
@@ -263,4 +281,120 @@ func TestLooseRefs_SortedSliceMatchesIterRefs(t *testing.T) {
 	}
 	assert.True(t, slices.IsSorted(names), "IterRefs output must be sorted")
 	assert.Equal(t, r.sorted, names, "sorted slice must mirror IterRefs")
+}
+
+func TestLooseRefs_IterRefs_PeelFieldsPopulated_FullyPeeled(t *testing.T) {
+	// `packed-refs-fully-peeled` advertises the `fully-peeled` trait, so
+	// every yielded entry's PeelKnown must be true regardless of whether
+	// the ref itself is peelable. The annotated tag carries its peel hex
+	// in Peeled; the branch entry has Peeled at zero.
+	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
+	got := collectRefs(t, r)
+
+	wantPeel := hashFromHex(t,
+		"dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1)
+	want := []RefEntry{
+		{
+			Name:      "refs/heads/main",
+			OID:       hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
+			Peeled:    objfmt.Hash{},
+			PeelKnown: true,
+		},
+		{
+			Name:      "refs/tags/v1",
+			OID:       hashFromHex(t, "cccccccccccccccccccccccccccccccccccccccc", objfmt.SHA1),
+			Peeled:    wantPeel,
+			PeelKnown: true,
+		},
+	}
+	assert.Equal(t, want, got)
+}
+
+func TestLooseRefs_IterRefs_PeelFieldsPopulated_NoTrait(t *testing.T) {
+	// `packed-only` advertises `peeled fully-peeled` too, so PeelKnown
+	// must be true. Pair this with the no-trait check below to confirm
+	// PeelKnown does follow the trait, not a hard-coded value.
+	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
+	got := collectRefs(t, r)
+	for _, e := range got {
+		assert.True(t, e.PeelKnown,
+			"%s: fully-peeled trait must surface as PeelKnown=true", e.Name)
+	}
+
+	// `packed-refs-no-traits` ships an entry with no trait header. The
+	// branch ref has no `^peel` line, so PeelKnown must be false.
+	r2 := openLooseFromFixture(t, "packed-refs-no-traits", objfmt.SHA1)
+	for entry, err := range r2.IterRefs() {
+		require.NoError(t, err)
+		if entry.Name == "refs/heads/main" {
+			assert.False(t, entry.PeelKnown,
+				"branch ref without trait must have PeelKnown=false")
+			assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+		}
+	}
+}
+
+func TestLooseRefs_Lookup_FullyPeeledTrait_NoPeelMeansDefinitive(t *testing.T) {
+	// Branch entry in a `fully-peeled` fixture. The trait makes the
+	// absence of `^<oid>` authoritative: PeelKnown=true, Peeled=zero.
+	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "refs/heads/main", entry.Name)
+	assert.Equal(t,
+		hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
+		entry.OID)
+	assert.True(t, entry.PeelKnown)
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+}
+
+func TestLooseRefs_Lookup_PeelLineRecorded(t *testing.T) {
+	// The annotated tag has both the trait and an explicit `^peel`
+	// line. PeelKnown=true and Peeled carries the recorded hex.
+	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/tags/v1")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, entry.PeelKnown)
+	assert.Equal(t,
+		hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1),
+		entry.Peeled)
+}
+
+func TestLooseRefs_Lookup_NoTrait_PeelLineStillKnown(t *testing.T) {
+	// Without `fully-peeled` but with an explicit `^peel`, the peel is
+	// still definitive: the entry's own peelKnown bit suffices.
+	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/tags/v1")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, entry.PeelKnown)
+	assert.Equal(t,
+		hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1),
+		entry.Peeled)
+}
+
+func TestLooseRefs_Lookup_NoTrait_NoPeelLineUnknown(t *testing.T) {
+	// `packed-refs-no-traits` ships a branch entry with no trait, so the
+	// absence of `^peel` is not authoritative: PeelKnown must be false.
+	r := openLooseFromFixture(t, "packed-refs-no-traits", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.False(t, entry.PeelKnown)
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+}
+
+func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
+	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/heads/does-not-exist")
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, RefEntry{}, entry)
 }

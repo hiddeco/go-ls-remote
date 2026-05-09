@@ -330,6 +330,107 @@ func TestStorePeel_ConcurrentCallsConverge(t *testing.T) {
 	wg.Wait()
 }
 
+func TestStore_PeelRef_FullyPeeledShortCircuits(t *testing.T) {
+	// `packed-refs-fully-peeled` ships no objects directory; `Peel` on
+	// any OID would miss with the "not peelable" shape. The annotated
+	// tag entry carries `^<peel-oid>` in `packed-refs`, so PeelRef must
+	// return the recorded peel hex without consulting the object store.
+	// Asserting equality against the recorded hex is itself the proof:
+	// no object-body read could synthesize that value here.
+	root := materializeFixture(t, "packed-refs-fully-peeled")
+	s, err := Open(root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	wantPeel := hashFromHex(t,
+		"dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1)
+
+	peeled, ok, err := s.PeelRef("refs/tags/v1")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, wantPeel, peeled)
+}
+
+func TestStore_PeelRef_FullyPeeledNoPeelShortCircuits(t *testing.T) {
+	// Branch entry in a fully-peeled fixture: the absence of `^<oid>` is
+	// definitive. PeelRef must return (zero, false, nil) without
+	// consulting the object store.
+	root := materializeFixture(t, "packed-refs-fully-peeled")
+	s, err := Open(root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	peeled, ok, err := s.PeelRef("refs/heads/main")
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, objfmt.Hash{}, peeled)
+}
+
+func TestStore_PeelRef_NoTraitFallsThrough(t *testing.T) {
+	// `loose-tag-deep` ships annotated tags as loose ref files under
+	// `refs/tags/` plus the corresponding loose tag objects. With no
+	// `packed-refs` and no `fully-peeled` trait, PeelKnown is false and
+	// PeelRef must fall through to Peel and return the chain's terminal
+	// commit — the same shape as a direct `Peel` call on the ref's OID.
+	s := openStoreFromFixture(t, "loose-tag-deep")
+
+	v1OID := readRefOID(t, s, "refs/tags/v1")
+	wantPeel, ok, err := s.Peel(v1OID)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	peeled, ok, err := s.PeelRef("refs/tags/v1")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, wantPeel, peeled)
+
+	// Sanity: the ref entry itself must NOT report PeelKnown for this
+	// fixture. If it did, the test would not exercise the fall-through
+	// path it claims to.
+	entry, found, err := s.refs.Lookup("refs/tags/v1")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, entry.PeelKnown,
+		"sanity: a loose ref without packed-refs must not have a known peel")
+	assert.Equal(t, v1OID, entry.OID)
+}
+
+func TestStore_PeelRef_ReftableUsesRecordPeel(t *testing.T) {
+	// Reftable records always populate the peel slot, so every Lookup
+	// must surface PeelKnown=true. PeelRef short-circuits on the record
+	// without falling through to the object-body read.
+	root := materializeFixture(t, "with-reftable-content")
+	s, err := Open(root)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// `refs/heads/main` is a commit, so the per-record peel slot is
+	// zero. PeelRef returns (zero, false, nil).
+	peeled, ok, err := s.PeelRef("refs/heads/main")
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, objfmt.Hash{}, peeled)
+
+	// The short-circuit signal: the same Lookup that PeelRef consults
+	// reports PeelKnown=true for the reftable backend.
+	entry, found, err := s.refs.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, entry.PeelKnown,
+		"reftable Lookup must populate PeelKnown=true")
+}
+
+func TestStore_PeelRef_MissingRef(t *testing.T) {
+	// A ref name absent from the backend must surface as the same
+	// "no peel" shape as a non-peelable input — never an error.
+	s := openStoreFromFixture(t, "loose-objects")
+
+	peeled, ok, err := s.PeelRef("refs/heads/does-not-exist")
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, objfmt.Hash{}, peeled)
+}
+
 // readRefOID resolves name through the store's iterator. Used by the
 // depth-chain tests so the assertion does not depend on a hardcoded
 // hex that the fixture generator might rotate. Iteration is O(N) in

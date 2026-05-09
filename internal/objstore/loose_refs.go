@@ -162,7 +162,9 @@ func (r *looseRefs) walkLooseRefs() error {
 
 		// Loose overrides packed: drop any prior packed peel hint, since
 		// a loose ref carries no peel information and we cannot trust a
-		// stale peel against a possibly-rewritten OID.
+		// stale peel against a possibly-rewritten OID. fromPacked stays
+		// at its zero value (false) so the file-wide `fully-peeled`
+		// trait does not bleed onto an OID that never lived in the file.
 		r.refs[name] = packedEntry{oid: oid}
 		return nil
 	})
@@ -231,38 +233,46 @@ func (r *looseRefs) IterRefs() iter.Seq2[RefEntry, error] {
 	return func(yield func(RefEntry, error) bool) {
 		for _, name := range r.sorted {
 			entry := r.refs[name]
-			if !yield(RefEntry{Name: name, OID: entry.oid}, nil) {
+			if !yield(r.toRefEntry(name, entry), nil) {
 				return
 			}
 		}
 	}
 }
 
-// peelHint reports the cached peel state for name. ok is true when the
-// ref exists; peelKnown distinguishes "this ref is peeled and the peel
-// is the returned hash" from "no peel was recorded in `packed-refs`".
-// Combined with [packedTraits.fullyPeeled] (exposed via [looseRefs.refTraits]),
-// a future Peel implementation can short-circuit non-peelable refs without
-// re-reading the file.
-//
-// Pre-installed for the Peel implementation in a follow-up; intentionally
-// unused by the package today, exercised only by tests. Kept on the
-// backend rather than the [refBackend] interface so the public surface
-// stays minimal.
-func (r *looseRefs) peelHint(name string) (peeled objfmt.Hash, peelKnown, ok bool) {
+// Lookup resolves name through the cached map. The map lookup is O(1)
+// and I/O-free; every ref the constructor saw is materialized eagerly
+// at [openLooseRefs] time. The error slot stays in the contract so the
+// reftable backend can surface its decode-time failures uniformly, but
+// this implementation never errors at lookup time.
+func (r *looseRefs) Lookup(name string) (RefEntry, bool, error) {
 	entry, found := r.refs[name]
 	if !found {
-		return objfmt.Hash{}, false, false
+		return RefEntry{}, false, nil
 	}
-	return entry.peeled, entry.peelKnown, true
+	return r.toRefEntry(name, entry), true, nil
 }
 
-// refTraits returns the cached [packedTraits] for the backend. Used by
-// peel-aware callers in the same package.
+// toRefEntry lifts a cached [packedEntry] into the public [RefEntry].
+// PeelKnown captures two signals:
 //
-// Pre-installed for the Peel implementation in a follow-up; intentionally
-// unused by the package today, exercised only by tests.
-func (r *looseRefs) refTraits() packedTraits { return r.traits }
+//   - The entry's own `peelKnown` bit, set when a `^<oid>` line followed
+//     the ref in `packed-refs`. The peel is recorded directly.
+//   - The file-wide `fully-peeled` trait, but only for entries that came
+//     from `packed-refs` (`fromPacked` true). The trait is a statement
+//     about the file's contents — under it, the absence of a `^<oid>`
+//     line is authoritative, so a packed entry without one definitively
+//     has no peel. A loose-override entry's OID never sat in the file,
+//     so the trait says nothing about it; PeelKnown stays false and
+//     [Store.PeelRef] falls through to a full peel.
+func (r *looseRefs) toRefEntry(name string, entry packedEntry) RefEntry {
+	return RefEntry{
+		Name:      name,
+		OID:       entry.oid,
+		Peeled:    entry.peeled,
+		PeelKnown: entry.peelKnown || (entry.fromPacked && r.traits.fullyPeeled),
+	}
+}
 
 // Close releases the backend. The eager-load constructor holds no file
 // handles or memory mappings beyond the lifetime of [openLooseRefs].
