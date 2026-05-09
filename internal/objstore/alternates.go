@@ -43,7 +43,7 @@ import (
 // (the path no longer points at a usable repository, or the cycle
 // check trips) closes every alternate already opened on this call so
 // the caller never sees a partially-constructed chain.
-func openAlternates(commonDir string, cfg storeConfig, seen map[string]bool) ([]*Store, error) {
+func openAlternates(commonDir string, seen map[string]bool) ([]*Store, error) {
 	path := filepath.Join(commonDir, "objects", "info", "alternates")
 	raw, err := os.ReadFile(path)
 	if err != nil {

@@ -160,7 +160,7 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 	seen[canonical] = true
 	defer delete(seen, canonical)
 
-	alternates, err := openAlternates(commonDir, cfg, seen)
+	alternates, err := openAlternates(commonDir, seen)
 	if err != nil {
 		closeAll()
 		return nil, err

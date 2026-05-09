@@ -27,26 +27,13 @@ func scaffoldAltRepo(t *testing.T, root string) {
 	))
 }
 
-// minimalCfg returns the storeConfig the alternates parser receives
-// when called from `Open`. Only the fields the parser inspects (none,
-// today) need to be populated; the struct is passed by value so this
-// simply mirrors the defaults `readGitConfig` would produce for a
-// brand-new sha1+files repo.
-func minimalCfg() storeConfig {
-	return storeConfig{
-		algo:       0, // unused by openAlternates
-		refStorage: refStorageSpec{format: "files"},
-		verifyCRC:  true,
-	}
-}
-
 func TestOpenAlternates_NoFile(t *testing.T) {
 	// A repository without `objects/info/alternates` must surface an
 	// empty chain with no error: alternates are optional.
 	root := materializeFixture(t, "empty")
 	commonDir := filepath.Join(root, ".git")
 
-	got, err := openAlternates(commonDir, minimalCfg(), map[string]bool{})
+	got, err := openAlternates(commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -63,7 +50,7 @@ func TestOpenAlternates_EmptyFile(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(commonDir, minimalCfg(), map[string]bool{})
+	got, err := openAlternates(commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -80,7 +67,7 @@ func TestOpenAlternates_CommentsOnly(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(commonDir, minimalCfg(), map[string]bool{})
+	got, err := openAlternates(commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -101,7 +88,7 @@ func TestOpenAlternates_SingleAbsolutePath(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent, minimalCfg(),
+	got, err := openAlternates(parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -122,7 +109,7 @@ func TestOpenAlternates_SingleRelativePath(t *testing.T) {
 	mainCommonDir := filepath.Join(root, "main", ".git")
 	altGitDir := filepath.Join(root, "alt", ".git")
 
-	got, err := openAlternates(mainCommonDir, minimalCfg(),
+	got, err := openAlternates(mainCommonDir,
 		map[string]bool{canonicalRepoDir(mainCommonDir): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -147,7 +134,7 @@ func TestOpenAlternates_QuotedPath(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent, minimalCfg(),
+	got, err := openAlternates(parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -230,7 +217,7 @@ func TestOpenAlternates_MultipleEntriesPreserveOrder(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent, minimalCfg(),
+	got, err := openAlternates(parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 3)
@@ -386,7 +373,7 @@ func TestOpenAlternates_NonExistentTargetReturnsError(t *testing.T) {
 		0o644,
 	))
 
-	_, err := openAlternates(parent, minimalCfg(),
+	_, err := openAlternates(parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.Error(t, err)
 	// The recursive `openWithSeen` surfaces ErrNotARepo for a missing
