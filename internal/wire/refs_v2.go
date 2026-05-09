@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"strings"
 	"time"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -176,18 +175,23 @@ func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 // 395-470: split on spaces, treat a leading `unborn` as the OID-stand-in
 // for an unborn ref, and silently ignore tokens whose prefix is not
 // `peeled:` or `symref-target:`.
+//
+// Tokenisation walks the raw `[]byte` payload via [bytes.Fields] so
+// the per-line `[]byte → string` allocation `strings.Fields` would
+// otherwise force is avoided; conversion to `string` happens only at
+// the [RawRef] field boundary, where the value is retained.
 func parseLSRefsLine(line []byte) (RawRef, error) {
-	tokens := strings.Fields(string(line))
+	tokens := bytes.Fields(line)
 	if len(tokens) < 2 {
 		return RawRef{}, errors.New(
 			"wire: malformed ls-refs ref line: expected at least 2 fields")
 	}
 
-	if tokens[0] == "unborn" {
-		ref := RawRef{Name: tokens[1], Unborn: true}
+	if bytes.Equal(tokens[0], []byte("unborn")) {
+		ref := RawRef{Name: string(tokens[1]), Unborn: true}
 		for _, tok := range tokens[2:] {
-			if t, ok := strings.CutPrefix(tok, "symref-target:"); ok {
-				ref.Symref = t
+			if t, ok := bytes.CutPrefix(tok, []byte("symref-target:")); ok {
+				ref.Symref = string(t)
 			}
 			// Other attributes (including a stray `peeled:` on an
 			// unborn ref) are silently ignored — `process_ref_v2`
@@ -196,14 +200,14 @@ func parseLSRefsLine(line []byte) (RawRef, error) {
 		return ref, nil
 	}
 
-	ref := RawRef{OID: tokens[0], Name: tokens[1]}
+	ref := RawRef{OID: string(tokens[0]), Name: string(tokens[1])}
 	for _, tok := range tokens[2:] {
-		if t, ok := strings.CutPrefix(tok, "peeled:"); ok {
-			ref.Peeled = t
+		if t, ok := bytes.CutPrefix(tok, []byte("peeled:")); ok {
+			ref.Peeled = string(t)
 			continue
 		}
-		if t, ok := strings.CutPrefix(tok, "symref-target:"); ok {
-			ref.Symref = t
+		if t, ok := bytes.CutPrefix(tok, []byte("symref-target:")); ok {
+			ref.Symref = string(t)
 			continue
 		}
 		// Unknown attribute — silently dropped, mirroring the trailing
