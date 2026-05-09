@@ -91,8 +91,15 @@ func (c RawCapabilities) Names() []string {
 // server emits a `^{}` companion line; [RawRef.Symref] is the target
 // refname for a symbolic ref, populated from a matching `symref=`
 // capability after the v0/v1 ref list is parsed.
+//
+// [RawRef.Unborn] is set when a v2 `ls-refs` response uses the literal
+// `unborn` token in place of an object id, signalling a ref (typically
+// `HEAD`) that points at an unborn branch on a freshly-initialised
+// repository. [RawRef.OID] is then empty. The flag distinguishes an
+// unborn ref from a malformed line missing its OID.
 type RawRef struct {
 	OID, Name, Peeled, Symref string
+	Unborn                    bool
 }
 
 // RawObjectInfo is one row of a v2 `object-info` response: an object

@@ -2,6 +2,10 @@ package wire
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"iter"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,4 +301,245 @@ func TestCapabilityDropEventWhen(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	e := CapabilityDropEvent{Time: now}
 	assert.Equal(t, now, e.When())
+}
+
+// collectLSRefs drains seq into a slice and returns the first error
+// yielded, if any. Decoder semantics guarantee the iterator stops after
+// surfacing an error, so a single `lastErr` captures the failure mode.
+func collectLSRefs(seq iter.Seq2[RawRef, error]) (refs []RawRef, lastErr error) {
+	for ref, err := range seq {
+		if err != nil {
+			lastErr = err
+			return
+		}
+		refs = append(refs, ref)
+	}
+	return
+}
+
+// buildLSRefsStream encodes payloads as data packets followed by a
+// flush, matching the canonical v2 `ls-refs` response framing
+// (`gitprotocol-v2.adoc` §"ls-refs"). Each payload should already
+// carry its trailing LF.
+func buildLSRefsStream(t *testing.T, payloads ...string) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	w := pktline.NewWriter(&buf)
+	for _, p := range payloads {
+		require.NoError(t, w.WritePacket([]byte(p)))
+	}
+	require.NoError(t, w.WriteFlush())
+	return &buf
+}
+
+func TestDecodeLSRefs(t *testing.T) {
+	const (
+		oidMain = "1111111111111111111111111111111111111111"
+		oidTag  = "2222222222222222222222222222222222222222"
+		oidPeel = "3333333333333333333333333333333333333333"
+		oidHEAD = "4444444444444444444444444444444444444444"
+	)
+
+	t.Run("empty (just flush)", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := pktline.NewWriter(&buf)
+		require.NoError(t, w.WriteFlush())
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(&buf)))
+		require.NoError(t, err)
+		assert.Empty(t, refs)
+	})
+
+	t.Run("simple ref", func(t *testing.T) {
+		buf := buildLSRefsStream(t, oidMain+" refs/heads/main\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
+	})
+
+	t.Run("peeled tag", func(t *testing.T) {
+		buf := buildLSRefsStream(t, oidTag+" refs/tags/v1 peeled:"+oidPeel+"\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidTag,
+			Name:   "refs/tags/v1",
+			Peeled: oidPeel,
+		}}, refs)
+	})
+
+	t.Run("symref-target", func(t *testing.T) {
+		buf := buildLSRefsStream(t, oidHEAD+" HEAD symref-target:refs/heads/main\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidHEAD,
+			Name:   "HEAD",
+			Symref: "refs/heads/main",
+		}}, refs)
+	})
+
+	t.Run("peeled and symref both", func(t *testing.T) {
+		// Either order is legal: `process_ref_v2` matches by prefix on
+		// each token. Verify both arrangements parse to the same value.
+		cases := []string{
+			oidTag + " refs/tags/v1 peeled:" + oidPeel + " symref-target:refs/heads/main\n",
+			oidTag + " refs/tags/v1 symref-target:refs/heads/main peeled:" + oidPeel + "\n",
+		}
+		for _, line := range cases {
+			t.Run(line, func(t *testing.T) {
+				buf := buildLSRefsStream(t, line)
+
+				refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+				require.NoError(t, err)
+				assert.Equal(t, []RawRef{{
+					OID:    oidTag,
+					Name:   "refs/tags/v1",
+					Peeled: oidPeel,
+					Symref: "refs/heads/main",
+				}}, refs)
+			})
+		}
+	})
+
+	t.Run("unborn HEAD with symref-target", func(t *testing.T) {
+		buf := buildLSRefsStream(t, "unborn HEAD symref-target:refs/heads/main\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			Name:   "HEAD",
+			Symref: "refs/heads/main",
+			Unborn: true,
+		}}, refs)
+	})
+
+	t.Run("unborn HEAD without symref", func(t *testing.T) {
+		buf := buildLSRefsStream(t, "unborn HEAD\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{Name: "HEAD", Unborn: true}}, refs)
+	})
+
+	t.Run("unknown attribute ignored", func(t *testing.T) {
+		buf := buildLSRefsStream(t,
+			oidMain+" refs/heads/main symref-target:refs/heads/main weird-attr:value\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidMain,
+			Name:   "refs/heads/main",
+			Symref: "refs/heads/main",
+		}}, refs)
+	})
+
+	t.Run("multiple refs in stream order", func(t *testing.T) {
+		buf := buildLSRefsStream(t,
+			oidHEAD+" HEAD symref-target:refs/heads/main\n",
+			oidMain+" refs/heads/main\n",
+			oidTag+" refs/tags/v1 peeled:"+oidPeel+"\n",
+		)
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{
+			{OID: oidHEAD, Name: "HEAD", Symref: "refs/heads/main"},
+			{OID: oidMain, Name: "refs/heads/main"},
+			{OID: oidTag, Name: "refs/tags/v1", Peeled: oidPeel},
+		}, refs)
+	})
+
+	t.Run("malformed: one token only", func(t *testing.T) {
+		buf := buildLSRefsStream(t, oidMain+"\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "malformed")
+		assert.Empty(t, refs)
+	})
+
+	t.Run("unexpected control packet (delim)", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := pktline.NewWriter(&buf)
+		require.NoError(t, w.WriteDelim())
+		require.NoError(t, w.WriteFlush())
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(&buf)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected control packet")
+		assert.Empty(t, refs)
+	})
+
+	t.Run("server ERR mid-stream", func(t *testing.T) {
+		buf := buildLSRefsStream(t, "ERR access denied\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "access denied")
+		assert.Empty(t, refs)
+	})
+
+	t.Run("ERR after a successful ref still surfaces error", func(t *testing.T) {
+		buf := buildLSRefsStream(t,
+			oidMain+" refs/heads/main\n",
+			"ERR boom\n",
+		)
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "boom")
+		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
+	})
+
+	t.Run("truncated stream (EOF before flush)", func(t *testing.T) {
+		// One data packet, no flush, and no further bytes — the reader
+		// returns `io.EOF` on the next packet read.
+		var buf bytes.Buffer
+		w := pktline.NewWriter(&buf)
+		require.NoError(t, w.WritePacket([]byte(oidMain+" refs/heads/main\n")))
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(&buf)))
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF),
+			"want io.ErrUnexpectedEOF, got %v", err)
+		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
+	})
+
+	t.Run("early break: yield false stops iteration", func(t *testing.T) {
+		buf := buildLSRefsStream(t,
+			oidHEAD+" HEAD symref-target:refs/heads/main\n",
+			oidMain+" refs/heads/main\n",
+			oidTag+" refs/tags/v1\n",
+		)
+
+		var seen []RawRef
+		var loopErr error
+		for ref, err := range DecodeLSRefs(pktline.NewReader(buf)) {
+			if err != nil {
+				loopErr = err
+				break
+			}
+			seen = append(seen, ref)
+			break // bail on first ref
+		}
+		require.NoError(t, loopErr)
+		require.Len(t, seen, 1)
+		assert.Equal(t, "HEAD", seen[0].Name)
+	})
+
+	t.Run("error message starts with wire prefix", func(t *testing.T) {
+		// Spot-check that errors carry a `wire:` prefix per package
+		// convention — not a load-bearing assertion, just a guard.
+		buf := buildLSRefsStream(t, "ERR nope\n")
+
+		_, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.Error(t, err)
+		assert.True(t, strings.HasPrefix(err.Error(), "wire:"),
+			"err = %q", err.Error())
+	})
 }
