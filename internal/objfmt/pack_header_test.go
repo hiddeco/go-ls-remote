@@ -2,6 +2,7 @@ package objfmt
 
 import (
 	"encoding/binary"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -283,5 +284,33 @@ func TestPack_ReadHeader(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "unknown pack object type 5")
+	})
+
+	t.Run("safe under concurrent calls on the same Pack", func(t *testing.T) {
+		// `Pack` is documented as safe for concurrent reads. The
+		// per-call peek scratch comes from a `sync.Pool`, so this
+		// test pins the contract: many goroutines hammering
+		// `ReadHeader` on a shared `Pack` must each see the
+		// expected header without buffer aliasing.
+		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		const goroutines = 32
+		const iterations = 256
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		for g := 0; g < goroutines; g++ {
+			go func() {
+				defer wg.Done()
+				for i := 0; i < iterations; i++ {
+					hdr, err := p.ReadHeader(179)
+					require.NoError(t, err)
+					require.Equal(t, TypeBlob, hdr.Type)
+					require.Equal(t, int64(14), hdr.Size)
+				}
+			}()
+		}
+		wg.Wait()
 	})
 }

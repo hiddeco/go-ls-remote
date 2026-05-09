@@ -2,7 +2,28 @@ package objfmt
 
 import (
 	"fmt"
+	"sync"
 )
+
+// packHeaderScratch is a per-goroutine scratch pool for the peek
+// buffer used by [Pack.ReadHeader]. Each entry has cap >= 64 bytes,
+// covering the SHA-256 worst case (32-byte peek + 32-byte algo
+// stride for REF_DELTA). The pool is package-level rather than
+// stored on `Pack` because `Pack` is documented as safe for
+// concurrent reads from multiple goroutines.
+var packHeaderScratch = sync.Pool{
+	New: func() any {
+		b := make([]byte, packHeaderPeek+32)
+		return &b
+	},
+}
+
+// packHeaderPeek is the fixed peek-window size shared between
+// [Pack.ReadHeader] and the scratch pool above. 32 bytes covers any
+// plausible type/size header (2^137 max per `packfile.c:1228`)
+// plus the OFS_DELTA varint; an additional `algo.Size()` bytes
+// cover REF_DELTA.
+const packHeaderPeek = 32
 
 // ObjectHeader is the decoded form of a pack object's leading
 // type/size header, plus the delta base reference for delta types.
@@ -64,24 +85,19 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 		return ObjectHeader{}, fmt.Errorf("objfmt: header offset %d out of range", at)
 	}
 
-	// 32 bytes covers any plausible type/size header (2^137 max
-	// per `packfile.c:1228`) plus the OFS_DELTA varint; the extra
-	// algo.Size() bytes cover REF_DELTA.
-	//
-	// The buffer is `make`'d on every call. A per-call alloc of
-	// ~64 bytes is small in absolute terms but adds up across a
-	// full pack walk; reuse cannot live on `Pack` itself because
-	// the type is documented as safe for concurrent reads, so any
-	// reuse strategy must be a `sync.Pool` (or equivalent
-	// per-goroutine scratch). The trade-off is left for the
-	// `internal/objstore` layer where the iteration pattern is
-	// concrete and a benchmark can justify the complexity.
-	const peek = 32
-	want := peek + p.algo.Size()
+	// Scratch comes from `packHeaderScratch` rather than `make`
+	// per call: `Pack` is concurrent-safe so the buffer cannot
+	// live on the receiver, and a `sync.Pool` of fixed-size 64-byte
+	// slices removes the per-call heap allocation that escape
+	// analysis enforces here (the interface call to `p.r.ReadAt`
+	// prevents stack allocation).
+	want := packHeaderPeek + p.algo.Size()
 	if rem := p.r.Len() - at; rem < int64(want) {
 		want = int(rem)
 	}
-	buf := make([]byte, want)
+	bufp := packHeaderScratch.Get().(*[]byte)
+	defer packHeaderScratch.Put(bufp)
+	buf := (*bufp)[:want]
 	n, err := p.r.ReadAt(buf, at)
 	if err != nil && n == 0 {
 		return ObjectHeader{}, fmt.Errorf("objfmt: read header at %d: %w", at, err)
