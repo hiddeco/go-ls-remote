@@ -545,3 +545,259 @@ func TestDecodeLSRefs(t *testing.T) {
 			"err = %q", err.Error())
 	})
 }
+
+// readLSRefsRequest walks an encoded `ls-refs` request stream and
+// returns the recovered argument set. The wire shape it expects
+// mirrors `EncodeLSRefs` (and `gitprotocol-v2.adoc` §"ls-refs"
+// command-request): a `command=ls-refs` data packet, zero or more
+// capability-echo data packets, a `0001` delim, then the body of
+// `peel`, `symrefs`, `unborn`, and `ref-prefix <p>` lines closed by a
+// `0000` flush. A failure to match any of those constraints fails the
+// test.
+//
+// Argument order is canonical (`peel`, `symrefs`, `unborn`, then
+// `ref-prefix` in slice order) per `connect.c::get_remote_refs` lines
+// 564-597, so the helper records each flag independently rather than
+// asserting position.
+func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
+	t.Helper()
+	r := pktline.NewReader(bytes.NewReader(raw))
+
+	first, err := r.ReadPacket()
+	require.NoError(t, err)
+	require.Equal(t, pktline.Data, first.Kind)
+	require.Equal(t, "command=ls-refs\n", string(first.Data))
+
+	for {
+		p, err := r.ReadPacket()
+		require.NoError(t, err)
+		if p.Kind == pktline.Delim {
+			break
+		}
+		require.Equal(t, pktline.Data, p.Kind,
+			"unexpected control packet in header: %v", p.Kind)
+	}
+
+	for {
+		p, err := r.ReadPacket()
+		require.NoError(t, err)
+		if p.Kind == pktline.Flush {
+			return args
+		}
+		require.Equal(t, pktline.Data, p.Kind,
+			"unexpected control packet in body: %v", p.Kind)
+		line := string(bytes.TrimSuffix(p.Data, []byte{'\n'}))
+		switch {
+		case line == "peel":
+			args.Peel = true
+		case line == "symrefs":
+			args.Symrefs = true
+		case line == "unborn":
+			args.Unborn = true
+		case strings.HasPrefix(line, "ref-prefix "):
+			args.Prefixes = append(args.Prefixes,
+				strings.TrimPrefix(line, "ref-prefix "))
+		default:
+			t.Fatalf("unrecognised body line %q", line)
+		}
+	}
+}
+
+// TestLSRefs_attrSemantics pins the v2 `ls-refs` ref-line attribute
+// rules that `parseLSRefsLine` derives from
+// `connect.c::process_ref_v2` lines 395-470. The parent
+// `TestDecodeLSRefs` exercises the happy path; this test locks the
+// rules that make the decoder forward-compatible with future
+// attributes:
+//
+//  1. Attribute order does not matter — `process_ref_v2` matches each
+//     token by prefix in a left-to-right loop with no positional
+//     constraint.
+//  2. Repeated attributes follow last-wins. `process_ref_v2` calls
+//     `xstrdup` on each match without breaking the loop, so a second
+//     `symref-target:` overwrites the first. The Go decoder mirrors
+//     this for `symref-target:` and applies the same last-wins rule
+//     to `peeled:`. Canonical Git treats each `peeled:` as a separate
+//     ref entry rather than overwriting a single field — that
+//     divergence is a deliberate idiomatic choice (`Peeled` is a
+//     scalar on `RawRef`), and the test below pins which token wins
+//     in our representation.
+//  3. Unknown attributes are silently dropped — the trailing `else`
+//     arm in `process_ref_v2` is implicit (no `else` branch runs
+//     after the two `skip_prefix` checks fail). New attributes added
+//     by future Git versions therefore must not break older clients.
+func TestLSRefs_attrSemantics(t *testing.T) {
+	const (
+		oidTag   = "1111111111111111111111111111111111111111"
+		oidPeel1 = "2222222222222222222222222222222222222222"
+		oidPeel2 = "3333333333333333333333333333333333333333"
+	)
+
+	t.Run("attribute order independence", func(t *testing.T) {
+		// `process_ref_v2` walks tokens left-to-right with no position
+		// dependency, so swapping the two attrs must not affect the
+		// parsed value. This is the structural form of the existing
+		// "peeled and symref both" sub-case, hoisted out so future
+		// attribute additions can be slotted alongside without
+		// touching the happy-path table.
+		want := []RawRef{{
+			OID:    oidTag,
+			Name:   "refs/tags/v1",
+			Peeled: oidPeel1,
+			Symref: "refs/heads/main",
+		}}
+		orderings := []string{
+			oidTag + " refs/tags/v1 peeled:" + oidPeel1 + " symref-target:refs/heads/main\n",
+			oidTag + " refs/tags/v1 symref-target:refs/heads/main peeled:" + oidPeel1 + "\n",
+		}
+		for _, line := range orderings {
+			t.Run(line, func(t *testing.T) {
+				buf := buildLSRefsStream(t, line)
+				refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+				require.NoError(t, err)
+				assert.Equal(t, want, refs)
+			})
+		}
+	})
+
+	t.Run("repeated peeled attribute: last wins", func(t *testing.T) {
+		// Two `peeled:` tokens on a single line. Canonical Git appends
+		// each as its own peeled ref entry; our decoder collapses to a
+		// single scalar `Peeled` field whose value is the rightmost
+		// token (each loop iteration overwrites the previous via
+		// `ref.Peeled = t`). The test pins last-wins so a future
+		// refactor toward first-wins (or first-error) does not change
+		// the contract silently.
+		buf := buildLSRefsStream(t,
+			oidTag+" refs/tags/v1 peeled:"+oidPeel1+" peeled:"+oidPeel2+"\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidTag,
+			Name:   "refs/tags/v1",
+			Peeled: oidPeel2,
+		}}, refs)
+	})
+
+	t.Run("repeated symref-target attribute: last wins", func(t *testing.T) {
+		// `process_ref_v2` calls `ref->symref = xstrdup(arg)` without
+		// `break`, so a second `symref-target:` clobbers the first.
+		// The Go decoder follows the same rule via overwrite assignment.
+		buf := buildLSRefsStream(t,
+			oidTag+" HEAD symref-target:refs/heads/old symref-target:refs/heads/new\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidTag,
+			Name:   "HEAD",
+			Symref: "refs/heads/new",
+		}}, refs)
+	})
+
+	t.Run("unknown attribute forward compat", func(t *testing.T) {
+		// A future Git version may emit an attribute the decoder does
+		// not recognise. `process_ref_v2`'s loop runs `skip_prefix` for
+		// each known prefix and silently falls through when none match;
+		// the Go decoder mirrors this with the trailing-comment fallthrough.
+		// The known attrs on the same line must still survive verbatim.
+		buf := buildLSRefsStream(t,
+			oidTag+" refs/tags/v1 frobnitz:foo peeled:"+oidPeel1+
+				" symref-target:refs/heads/main bazqux:bar\n")
+
+		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
+		require.NoError(t, err)
+		assert.Equal(t, []RawRef{{
+			OID:    oidTag,
+			Name:   "refs/tags/v1",
+			Peeled: oidPeel1,
+			Symref: "refs/heads/main",
+		}}, refs)
+	})
+}
+
+// TestLSRefs_roundTrip pins the encode side of the v2 `ls-refs` codec
+// against silent drift. `EncodeLSRefs` writes the client request
+// (`command=ls-refs` header, capability echoes, `0001` delim, body of
+// `peel`/`symrefs`/`unborn`/`ref-prefix` lines, flush) while
+// `DecodeLSRefs` reads the server response (per-ref data packets
+// terminated by flush) — the two are *not* mirror images of each
+// other, the same asymmetry that motivated `TestObjectInfo_roundTrip`
+// (`protocol-caps.c::cap_object_info` vs `protocol-caps.c::send_info`).
+//
+// Each case encodes a `RefsArgs` covering a combination of the three
+// boolean flags, re-parses the produced pkt-line stream via
+// `readLSRefsRequest`, and asserts the request shape survived the
+// trip. The `unborn` cases supply a capability set advertising
+// `ls-refs=unborn` so `EncodeLSRefs` does not gate the flag away — the
+// gating itself is exercised by `TestEncodeLSRefs`.
+func TestLSRefs_roundTrip(t *testing.T) {
+	unbornCaps := RawCapabilities{{Name: "ls-refs", Value: "unborn"}}
+
+	cases := []struct {
+		name string
+		args RefsArgs
+		caps RawCapabilities
+	}{
+		{
+			name: "no flags",
+			args: RefsArgs{},
+			caps: nil,
+		},
+		{
+			name: "peel only",
+			args: RefsArgs{Peel: true},
+			caps: nil,
+		},
+		{
+			name: "symrefs only",
+			args: RefsArgs{Symrefs: true},
+			caps: nil,
+		},
+		{
+			name: "unborn only (capability advertised)",
+			args: RefsArgs{Unborn: true},
+			caps: unbornCaps,
+		},
+		{
+			name: "peel and symrefs",
+			args: RefsArgs{Peel: true, Symrefs: true},
+			caps: nil,
+		},
+		{
+			name: "peel and unborn (capability advertised)",
+			args: RefsArgs{Peel: true, Unborn: true},
+			caps: unbornCaps,
+		},
+		{
+			name: "symrefs and unborn (capability advertised)",
+			args: RefsArgs{Symrefs: true, Unborn: true},
+			caps: unbornCaps,
+		},
+		{
+			name: "all flags with prefixes (capability advertised)",
+			args: RefsArgs{
+				Peel:     true,
+				Symrefs:  true,
+				Unborn:   true,
+				Prefixes: []string{"refs/heads/", "refs/tags/"},
+			},
+			caps: unbornCaps,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := pktline.NewWriter(&buf)
+			require.NoError(t, EncodeLSRefs(w, tc.args, tc.caps, "", nil))
+
+			got := readLSRefsRequest(t, buf.Bytes())
+			assert.Equal(t, tc.args.Peel, got.Peel, "peel flag")
+			assert.Equal(t, tc.args.Symrefs, got.Symrefs, "symrefs flag")
+			assert.Equal(t, tc.args.Unborn, got.Unborn, "unborn flag")
+			assert.Equal(t, tc.args.Prefixes, got.Prefixes, "ref-prefix order")
+		})
+	}
+}
