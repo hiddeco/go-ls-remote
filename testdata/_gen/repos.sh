@@ -342,6 +342,51 @@
 #                                          B's own alternate C is reachable
 #                                          via B.alternates.
 #
+#   testdata/repos/pack-only/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/three-objects.{idx,pack}
+#                                          single canonical pack/idx pair
+#                                          copied from `testdata/objfmt/`,
+#                                          with no loose objects under
+#                                          `objects/`. The
+#                                          `Store.ObjectInfo` happy-path
+#                                          test resolves a packed commit
+#                                          here without falling through to
+#                                          the loose backend first.
+#
+#   testdata/repos/ofs-delta-pack/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/ofs-delta.{idx,pack}
+#                                          single pack/idx pair carrying a
+#                                          base blob and a 1-deep OFS_DELTA
+#                                          dependent on it. Used by the
+#                                          delta-resolution check that
+#                                          confirms the resolved type / size
+#                                          come from the base / delta-target
+#                                          combination rather than the
+#                                          delta's own header.
+#
+#   testdata/repos/pack-with-alternates/
+#       main/dotgit/HEAD
+#       main/dotgit/refs/.gitkeep
+#       main/dotgit/objects/pack/.gitkeep   no local packs, no loose objects.
+#       main/dotgit/objects/info/alternates one line:
+#                                          `../../../alt/.git/objects` —
+#                                          relative path resolves against
+#                                          `main/.git/objects/` after
+#                                          materialization, landing at
+#                                          the sibling alternate below.
+#       alt/dotgit/HEAD
+#       alt/dotgit/refs/.gitkeep
+#       alt/dotgit/objects/pack/three-objects.{idx,pack}
+#                                          the alternate carries the
+#                                          fixture pack so the
+#                                          `Store.ObjectInfo` walk has to
+#                                          traverse `s.alternates` to
+#                                          resolve a pack-only OID.
+#
 #   testdata/repos/with-alternates-cycle-chain/
 #       a/dotgit/HEAD
 #       a/dotgit/refs/.gitkeep
@@ -1108,5 +1153,45 @@ printf '../../../b/.git/objects\n' \
     >"$alt_ccyc_root/a/dotgit/objects/info/alternates"
 printf '../../../a/.git/objects\n' \
     >"$alt_ccyc_root/b/dotgit/objects/info/alternates"
+
+# --- pack-only --------------------------------------------------------------
+# A repo with one pack/idx pair and no loose objects. The
+# `Store.ObjectInfo` happy-path test resolves a packed commit OID here
+# without falling through to the loose backend first; reusing the
+# canonical `three-objects` bytes keeps the assertion grounded in
+# offsets the offsets-sidecar already records.
+pack_only_root="$out/pack-only"
+scaffold_idx_repo "$pack_only_root"
+cp "$root/testdata/objfmt/three-objects.idx" \
+    "$pack_only_root/dotgit/objects/pack/three-objects.idx"
+cp "$root/testdata/objfmt/three-objects.pack" \
+    "$pack_only_root/dotgit/objects/pack/three-objects.pack"
+
+# --- ofs-delta-pack ---------------------------------------------------------
+# A repo with the canonical `ofs-delta` pack and its idx. Used by the
+# `Store.ObjectInfo` 1-deep OFS_DELTA test: the resolved type comes
+# from the base blob, the size from the delta's target-size varint.
+ofs_delta_root="$out/ofs-delta-pack"
+scaffold_idx_repo "$ofs_delta_root"
+cp "$root/testdata/objfmt/ofs-delta.idx" \
+    "$ofs_delta_root/dotgit/objects/pack/ofs-delta.idx"
+cp "$root/testdata/objfmt/ofs-delta.pack" \
+    "$ofs_delta_root/dotgit/objects/pack/ofs-delta.pack"
+
+# --- pack-with-alternates ---------------------------------------------------
+# A repo whose local objects directory carries no packs and no loose
+# objects, plus an alternates pointer at a sibling repo that holds the
+# canonical `three-objects` pack. Used by the `Store.ObjectInfo`
+# alternate-fall-through test: the resolver must miss locally on every
+# layer and recurse into the alternate to find the OID.
+pwa_root="$out/pack-with-alternates"
+scaffold_alt_repo "$pwa_root/main"
+scaffold_idx_repo "$pwa_root/alt"
+cp "$root/testdata/objfmt/three-objects.idx" \
+    "$pwa_root/alt/dotgit/objects/pack/three-objects.idx"
+cp "$root/testdata/objfmt/three-objects.pack" \
+    "$pwa_root/alt/dotgit/objects/pack/three-objects.pack"
+printf '../../../alt/.git/objects\n' \
+    >"$pwa_root/main/dotgit/objects/info/alternates"
 
 echo "wrote fixtures into $out"

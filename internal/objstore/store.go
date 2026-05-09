@@ -44,6 +44,16 @@ type Store struct {
 	peelCache map[objfmt.Hash]peelEntry
 	peelMu    sync.Mutex
 
+	// refDeltaCache memoises cross-pack REF_DELTA base resolutions for
+	// [Store.ObjectInfo]. Both positive shapes (`(*Pack, offset, true)`)
+	// and negative shapes (`(nil, 0, false)`) live here so a missing
+	// base never re-scans every pack on the next call. Same mutex
+	// rationale as [peelCache]: lookups concentrate on a small working
+	// set of bases, so a plain [sync.Mutex] beats an [sync.RWMutex]
+	// without the reader-side bookkeeping cost.
+	refDeltaCache map[objfmt.Hash]refDeltaCacheEntry
+	refDeltaMu    sync.Mutex
+
 	// closeOnce guards [Store.Close] so the cascade runs exactly once
 	// even if the caller invokes Close repeatedly. closeErr stashes the
 	// joined error so subsequent calls return the same value.
@@ -157,13 +167,14 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 	}
 
 	return &Store{
-		algo:       cfg.algo,
-		refs:       refs,
-		loose:      loose,
-		packs:      packs,
-		alternates: alternates,
-		cfg:        cfg,
-		peelCache:  make(map[objfmt.Hash]peelEntry),
+		algo:          cfg.algo,
+		refs:          refs,
+		loose:         loose,
+		packs:         packs,
+		alternates:    alternates,
+		cfg:           cfg,
+		peelCache:     make(map[objfmt.Hash]peelEntry),
+		refDeltaCache: make(map[objfmt.Hash]refDeltaCacheEntry),
 	}, nil
 }
 

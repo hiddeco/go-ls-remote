@@ -90,3 +90,22 @@ func (p *Pack) Version() uint32 { return p.ver }
 // the index, but verification of the trailer ([Pack.VerifyChecksum])
 // is what proves the pack body is intact.
 func (p *Pack) Count() uint32 { return p.nr }
+
+// Len returns the size of the underlying pack file in bytes, including
+// the 12-byte header and the `algo.Size()`-byte trailer. Callers that
+// need to bound a per-object byte range (notably the CRC32 verifier
+// in `internal/objstore`, which hashes the compressed bytes between
+// one object's start and the next object's offset) use Len to land on
+// the trailer when an object is the last entry in the pack.
+func (p *Pack) Len() int64 { return p.r.Len() }
+
+// ReadAt copies bytes from absolute offset off into b, returning the
+// number of bytes read and any read error. It is a thin pass-through
+// to the underlying [io.ReaderAt]; concurrent calls are safe.
+//
+// Exposed so callers in `internal/objstore` can hash the on-disk
+// compressed bytes of a packed object without re-opening the file or
+// reaching through unexported state. The contract matches
+// [io.ReaderAt]: a short read at end-of-file returns the bytes that
+// were available alongside an [io.EOF].
+func (p *Pack) ReadAt(b []byte, off int64) (int, error) { return p.r.ReadAt(b, off) }

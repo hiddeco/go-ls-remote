@@ -336,3 +336,81 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 		assert.Error(t, idx.VerifyChecksum())
 	})
 }
+
+func TestIdx_OffsetAfter(t *testing.T) {
+	t.Run("returns next-greater offset across the table", func(t *testing.T) {
+		// `three-objects.idx` records three entries at offsets 12, 131,
+		// and 179 (per the sidecar). OffsetAfter must return the next
+		// strictly-larger value regardless of OID-sort order, and report
+		// `false` once asked past the last entry.
+		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = idx.Close() })
+
+		cases := []struct {
+			in    int64
+			want  int64
+			found bool
+		}{
+			{0, 12, true},
+			{12, 131, true},
+			{131, 179, true},
+			{179, 0, false},
+			{1 << 30, 0, false},
+		}
+		for _, tc := range cases {
+			got, ok := idx.OffsetAfter(tc.in)
+			assert.Equalf(t, tc.found, ok, "OffsetAfter(%d) ok", tc.in)
+			assert.Equalf(t, tc.want, got, "OffsetAfter(%d) value", tc.in)
+		}
+	})
+
+	t.Run("resolves through the v2 large-offset overflow", func(t *testing.T) {
+		// One entry sits in the small-offset slot, one spills into the
+		// 64-bit overflow table. OffsetAfter must walk both representations
+		// and pick the next-larger value across the unified offset space.
+		small, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		big, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		require.NoError(t, err)
+		const bigOffset uint64 = (1 << 31) + 4096
+		path := writeV2Idx(t, t.TempDir(), []v2Entry{
+			{oid: small, offset: 12, crc: 0x11111111},
+			{oid: big, offset: bigOffset, crc: 0x22222222},
+		})
+		idx, err := OpenIdx(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = idx.Close() })
+
+		got, ok := idx.OffsetAfter(12)
+		require.True(t, ok)
+		assert.Equal(t, int64(bigOffset), got)
+
+		_, ok = idx.OffsetAfter(int64(bigOffset))
+		assert.False(t, ok)
+	})
+
+	t.Run("hand-rolled v1 idx walks the offset slot", func(t *testing.T) {
+		// v1 has no overflow table; the offset slot is 32-bit and lives at
+		// the head of every record. The helper accepts the same shape used
+		// elsewhere; assert next-greater across two stable values.
+		oidA, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		oidB, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		require.NoError(t, err)
+		path := writeV1Idx(t, t.TempDir(), []v1Entry{
+			{offset: 12, oid: oidA},
+			{offset: 256, oid: oidB},
+		})
+		idx, err := OpenIdx(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = idx.Close() })
+
+		got, ok := idx.OffsetAfter(12)
+		require.True(t, ok)
+		assert.Equal(t, int64(256), got)
+
+		_, ok = idx.OffsetAfter(256)
+		assert.False(t, ok)
+	})
+}

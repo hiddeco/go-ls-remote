@@ -157,3 +157,87 @@ func (i *Idx) Count() uint32 { return i.count }
 
 // Path returns the filesystem path passed to [OpenIdx].
 func (i *Idx) Path() string { return i.path }
+
+// OffsetAfter returns the smallest pack offset strictly greater than
+// off recorded in this idx, or `(0, false)` if no such offset exists
+// (i.e. off names the last object in the pack, so its compressed body
+// runs all the way to the trailer).
+//
+// The offset table is stored in OID order, not offset order, so a
+// linear scan over every entry is required. Cost is O(N) per call,
+// which is paid only on the cold CRC-verification path in
+// `internal/objstore`; the alternative — sorting offsets at open
+// time — would inflate the steady-state memory footprint for
+// every Idx and is not warranted by the access pattern. Callers
+// that need the fast path should cache the (offset, next-offset)
+// pair themselves.
+func (i *Idx) OffsetAfter(off int64) (int64, bool) {
+	switch i.ver {
+	case 1:
+		return i.offsetAfterV1(off)
+	case 2:
+		return i.offsetAfterV2(off)
+	default:
+		return 0, false
+	}
+}
+
+// offsetAfterV1 walks the v1 main table's offset slot in every record
+// and returns the smallest value strictly greater than off.
+func (i *Idx) offsetAfterV1(off int64) (int64, bool) {
+	if i.algo != SHA1 || i.count == 0 || len(i.data) < 256*4 {
+		return 0, false
+	}
+	tableStart := 256 * 4
+	want := int64(-1)
+	for k := uint32(0); k < i.count; k++ {
+		entry := i.data[tableStart+int(k)*idxV1RecordSize:]
+		cand := int64(binary.BigEndian.Uint32(entry[0:4]))
+		if cand > off && (want < 0 || cand < want) {
+			want = cand
+		}
+	}
+	if want < 0 {
+		return 0, false
+	}
+	return want, true
+}
+
+// offsetAfterV2 walks the v2 offset table and returns the smallest
+// offset strictly greater than off, resolving large-offset overflow
+// slots through the trailing 64-bit table where the MSB is set.
+func (i *Idx) offsetAfterV2(off int64) (int64, bool) {
+	hashLen := i.algo.Size()
+	if i.count == 0 || hashLen == 0 {
+		return 0, false
+	}
+	offsetTable := idxV2HeaderLen + 256*4 + int(i.count)*hashLen + int(i.count)*4
+	if len(i.data) < offsetTable+int(i.count)*4 {
+		return 0, false
+	}
+	overflowTable := offsetTable + int(i.count)*4
+	want := int64(-1)
+	for k := uint32(0); k < i.count; k++ {
+		raw := binary.BigEndian.Uint32(
+			i.data[offsetTable+int(k)*4 : offsetTable+(int(k)+1)*4])
+		var cand int64
+		if raw&idxV2OverflowMSB == 0 {
+			cand = int64(raw)
+		} else {
+			overflowIdx := raw &^ idxV2OverflowMSB
+			end := overflowTable + int(overflowIdx)*8 + 8
+			if len(i.data) < end {
+				continue
+			}
+			cand = int64(binary.BigEndian.Uint64(
+				i.data[overflowTable+int(overflowIdx)*8 : end]))
+		}
+		if cand > off && (want < 0 || cand < want) {
+			want = cand
+		}
+	}
+	if want < 0 {
+		return 0, false
+	}
+	return want, true
+}
