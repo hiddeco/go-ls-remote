@@ -90,6 +90,14 @@ type looseBody struct {
 
 func (b *looseBody) Read(p []byte) (int, error) { return b.r.Read(p) }
 
+// Close releases the zlib decoder. zlib reports trailer corruption
+// (Adler-32 mismatch, dangling continuation bits) at Close time, so
+// the error is wrapped with package context rather than swallowed
+// or returned bare. [io.ErrClosedPipe] is the one expected
+// non-error: zlib emits it when Close is called after the stream is
+// already drained or after an earlier Close, which is benign for
+// the "type-and-size only" use case documented on
+// [ReadLooseHeader].
 func (b *looseBody) Close() error {
 	if b.closer == nil {
 		return nil
@@ -97,7 +105,7 @@ func (b *looseBody) Close() error {
 	c := b.closer
 	b.closer = nil
 	if err := c.Close(); err != nil && !errors.Is(err, io.ErrClosedPipe) {
-		return err
+		return fmt.Errorf("objfmt: close loose object: %w", err)
 	}
 	return nil
 }
