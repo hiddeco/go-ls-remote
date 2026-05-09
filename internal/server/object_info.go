@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -30,4 +31,35 @@ func handleObjectInfo(r *pktline.Reader, w *pktline.Writer,
 		return fmt.Errorf("server: object-info: write flush: %w", err)
 	}
 	return nil
+}
+
+// drainArgs reads pkt-lines from r until the terminating flush of a
+// v2 command-args section. The canonical command handlers (e.g.
+// `object-info.c::object_info`) consume args one at a time and stop on
+// `PACKET_READ_FLUSH`; the stub mirrors that loop without interpreting
+// any argument.
+//
+// A non-EOF error is wrapped; an unexpected EOF mid-args is reported
+// as an [io.ErrUnexpectedEOF] wrap so callers can distinguish a
+// truncated request from a clean stream close.
+//
+// The `ls-refs` handler used to call this helper too; once it grew real
+// argument parsing, the helper was moved here. A subsequent iteration
+// of `handleObjectInfo` will replace its sole call site, after which
+// `drainArgs` can be deleted entirely.
+func drainArgs(r *pktline.Reader) error {
+	for {
+		pkt, err := r.ReadPacket()
+		if err != nil {
+			if err == io.EOF {
+				return io.ErrUnexpectedEOF
+			}
+			return err
+		}
+		if pkt.Kind == pktline.Flush {
+			return nil
+		}
+		// Other kinds (Data, Delim, ResponseEnd) are silently
+		// consumed; the stub does not interpret arg payloads.
+	}
 }
