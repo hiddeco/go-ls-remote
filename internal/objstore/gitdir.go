@@ -170,10 +170,17 @@ func resolveCommonDir(gitDir string) (string, error) {
 
 	target := strings.TrimRight(string(raw), "\r\n")
 	if target == "" {
-		// Treat an empty commondir as absent. Canonical Git would
-		// die here, but the resolver's contract is to surface a
+		// Treat an empty commondir as absent. Canonical Git's
+		// `setup.c::get_common_dir_noenv` reads the file with
+		// `strbuf_read_file(...) <= 0` and dies on a zero-byte
+		// payload, but the resolver's contract is to surface a
 		// usable directory whenever it can — and in this branch the
-		// gitdir itself is the only sensible fallback.
+		// gitdir itself is the only sensible fallback. This is a
+		// deliberate v0 design choice: more permissive than
+		// canonical, never less correct (a worktree without an
+		// indirection is just a non-linked worktree). Revisit if v0
+		// ever needs strict canonical-Git behavior, e.g. for an
+		// `fsck`-equivalent integrity path.
 		return gitDir, nil
 	}
 

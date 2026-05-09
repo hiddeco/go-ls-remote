@@ -171,6 +171,20 @@ func (b *looseBody) Read(p []byte) (int, error) {
 // Callers that close without draining (header-only readers) skip the
 // check — a partial read carries no information about what the
 // trailer should have been.
+//
+// Known gap (deflate-trailer integrity): canonical Git's
+// `unpack_loose_rest` also rejects the dual case — trailing
+// compressed bytes appended after a clean `Z_STREAM_END` — by
+// checking `stream->avail_in != 0` once `git_inflate` returns
+// `Z_STREAM_END` (`object-file.c:321`). v0 catches the over-long
+// inflated-payload case (the `overrun` and post-drain probe paths
+// above) but not the trailing-compressed-bytes case: doing so would
+// require restructuring this body wrapper to expose the underlying
+// `*os.File` past the zlib decoder so file position can be compared
+// against file size after inflate completes. The body still decodes
+// correctly when extra deflate bytes are present, so the divergence
+// is integrity-only, not semantic. Revisit if v0 grows write
+// support, or if integrity-only validation becomes a stated goal.
 func (b *looseBody) Close() error {
 	if b.closer == nil {
 		return nil

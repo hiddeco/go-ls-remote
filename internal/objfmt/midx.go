@@ -157,6 +157,9 @@ func OpenMidx(path string, algo Algo) (*Midx, error) {
 	if err := m.parseFanout(); err != nil {
 		return nil, err
 	}
+	if err := m.validateOIDLookup(); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -334,6 +337,40 @@ func (m *Midx) parseFanout() error {
 		if packIdx >= m.numPacks {
 			return fmt.Errorf("objfmt: midx OOFF pack index %d >= num_packs %d at entry %d: %w",
 				packIdx, m.numPacks, k, ErrCorrupt)
+		}
+	}
+	return nil
+}
+
+// validateOIDLookup walks the OIDL chunk and confirms its entries are
+// in strict-ascending order. The fanout-bounded binary search in
+// `Midx.Find` (mirroring `bsearch_one_midx` in `midx.c`) silently
+// returns wrong answers if OIDL is unsorted: an OID that is present
+// but at a bisection-incompatible position is reported absent. Equal
+// consecutive entries are likewise corruption — a midx records each
+// object once, so duplicate OIDs indicate either a writer bug or a
+// malicious file.
+//
+// Canonical Git's `midx_read_oid_lookup` (`midx.c:76-84`) only checks
+// that the chunk size matches `count * hash_len`; ordering is assumed
+// because `midx-write.c` writes a sorted table. v0 is deliberately
+// stricter here as defense-in-depth: a one-pass walk at parse time
+// costs nothing and acts as a tripwire for both malformed external
+// files and any future v0 write path that produces a corrupt OIDL.
+func (m *Midx) validateOIDLookup() error {
+	if m.count < 2 {
+		return nil
+	}
+	oidl := m.chunks[chunkOIDL]
+	hashLen := int64(m.algo.Size())
+	body := m.data[oidl.off : oidl.off+oidl.len]
+	for i := int64(1); i < int64(m.count); i++ {
+		prev := body[(i-1)*hashLen : i*hashLen]
+		cur := body[i*hashLen : (i+1)*hashLen]
+		if bytes.Compare(prev, cur) >= 0 {
+			return fmt.Errorf(
+				"objfmt: midx OIDL not strictly ascending at entry %d (%x >= %x): %w",
+				i, prev, cur, ErrCorrupt)
 		}
 	}
 	return nil

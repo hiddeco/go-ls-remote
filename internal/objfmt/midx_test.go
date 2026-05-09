@@ -249,6 +249,80 @@ func TestMidx_OpenMidx(t *testing.T) {
 		assert.Equal(t, []string{"b.idx", "a.idx"}, m.PackNames())
 	})
 
+	t.Run("rejects non-ascending OIDL", func(t *testing.T) {
+		// Build a clean two-object midx, locate its OIDL chunk via the
+		// TOC, and swap the two OIDs so the lookup table is no longer
+		// strictly ascending. The fanout-bounded binary search in
+		// `Midx.Find` (mirroring `bsearch_one_midx` in `midx.c`) only
+		// returns correct answers when OIDL is sorted; an unsorted OIDL
+		// is silent corruption at lookup time. Canonical Git's
+		// `midx_read_oid_lookup` (`midx.c:76-84`) does not validate
+		// ordering at load — v0 adds this defense-in-depth check at
+		// parse time so a malformed file is rejected immediately.
+		oidLow, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		oidHigh, err := ParseHex("2222222222222222222222222222222222222222", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx"},
+			objs: []midxObj{
+				{oid: oidLow, packIdx: 0, offset: 12},
+				{oid: oidHigh, packIdx: 0, offset: 24},
+			},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+
+		oidlOff := findChunkOffset(t, raw, "OIDL")
+		hashLen := int64(SHA1.Size())
+		// Swap the two consecutive 20-byte OIDs.
+		first := append([]byte{}, raw[oidlOff:oidlOff+hashLen]...)
+		second := append([]byte{}, raw[oidlOff+hashLen:oidlOff+2*hashLen]...)
+		copy(raw[oidlOff:oidlOff+hashLen], second)
+		copy(raw[oidlOff+hashLen:oidlOff+2*hashLen], first)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "OIDL")
+	})
+
+	t.Run("rejects duplicate OIDL entries", func(t *testing.T) {
+		// Stamp the second OID record on top of the first so OIDL
+		// holds the same OID twice. The midx invariant requires
+		// unique OIDs (each object appears once); equal consecutive
+		// hashes are corruption just like an inversion.
+		oidLow, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		oidHigh, err := ParseHex("2222222222222222222222222222222222222222", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx"},
+			objs: []midxObj{
+				{oid: oidLow, packIdx: 0, offset: 12},
+				{oid: oidHigh, packIdx: 0, offset: 24},
+			},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+
+		oidlOff := findChunkOffset(t, raw, "OIDL")
+		hashLen := int64(SHA1.Size())
+		// Overwrite slot 1 with slot 0's OID — strict-ascending
+		// rejects equal consecutive entries, not just inversions.
+		copy(raw[oidlOff+hashLen:oidlOff+2*hashLen],
+			raw[oidlOff:oidlOff+hashLen])
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "OIDL")
+	})
+
 	t.Run("rejects misaligned chunk offset", func(t *testing.T) {
 		// Patch the TOC entry for OIDF to a misaligned absolute
 		// offset (off by 1). Mirrors `chunk-format.c:127-130`, which
