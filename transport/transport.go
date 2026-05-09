@@ -11,11 +11,24 @@ import (
 // claims. A Transport is stateless metadata; per-call work happens in
 // [Transport.Open].
 //
-// Concrete implementations live under the `transport/<scheme>` packages
-// (e.g. `transport/http`, `transport/ssh`); the
+// Built-in implementations live under the `transport/<scheme>`
+// packages (e.g. `transport/http`, `transport/ssh`); the
 // [github.com/hiddeco/go-ls-remote/transport/file] package will host
-// `transport/file` once it ships. Callers compose a [Registry] with the
-// implementations they need rather than relying on init() side effects.
+// `transport/file` once it ships. Callers compose a [Registry] with
+// the implementations they need rather than relying on init() side
+// effects.
+//
+// # User implementations
+//
+// Transport is an open extension point: third parties may implement
+// it and register custom schemes via [Registry.Register]. A user
+// implementation must honour the contracts documented on [Conn]
+// (single-flight per connection, idempotent Close, lifecycle of
+// readers returned from Advertisement and Command) and on
+// [OpenOptions] (nil Tracer disables tracing; nil PreferredProtocol
+// auto-negotiates). The library performs no runtime validation
+// beyond the [Registry] scheme lookup, so a misbehaving Transport
+// can corrupt session state — the contract is the only safety net.
 type Transport interface {
 	// Schemes returns the canonical scheme list this transport claims,
 	// for example `{"https", "http"}`. Schemes are matched
@@ -61,6 +74,11 @@ type OpenOptions struct {
 
 // Conn is a single-flight connection to a Git server.
 //
+// User implementations are supported as part of the [Transport]
+// extension contract; the rules below are the load-bearing seams
+// that custom transports must respect to interoperate with the
+// higher-layer Session.
+//
 // # Concurrency
 //
 // Conn is NOT safe for concurrent use. While a `*pktline.Reader`
@@ -75,11 +93,12 @@ type OpenOptions struct {
 // single-flight.
 type Conn interface {
 	// Advertisement returns a reader over the initial advertisement
-	// pkt-lines. For v0 and v1 the stream includes the cap-bearing
-	// first ref line and any subsequent ref lines until flush; for
-	// v2 it contains the version line followed by capability lines
-	// until flush. The reader must be called and consumed (or
-	// closed) exactly once before [Conn.Command].
+	// pkt-lines. It is available on every negotiated protocol
+	// version: v0 and v1 stream the cap-bearing first ref line and
+	// any subsequent ref lines until flush, and v2 streams the
+	// version line followed by capability lines until flush. The
+	// reader must be called and consumed (or closed) exactly once
+	// before [Conn.Command].
 	Advertisement() *pktline.Reader
 
 	// Command issues a v2 command and returns a reader over its
