@@ -34,6 +34,10 @@ import "fmt"
 // [OpenOptions]'s zero value is unambiguously "no preference," which is
 // also the spec default.
 //
+// Values outside the defined constants format as `unknown(N)` via
+// [ProtocolVersion.String]; no other range checking is enforced at
+// the type level.
+//
 // Negotiation per canonical Git's `protocol.c`: the client announces a
 // preferred version and the server picks the highest it supports. See
 // `determine_protocol_version_client` and
