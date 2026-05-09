@@ -84,7 +84,7 @@ func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter 
 	const maxDepth = 64
 
 	pos := indexRoot
-	for depth := 0; depth < maxDepth; depth++ {
+	for range maxDepth {
 		if pos >= uint64(len(file)) {
 			return nil, 0, fmt.Errorf("reftable: block_position %d outside file (%d bytes): %w", pos, len(file), ErrTruncatedBlock)
 		}
@@ -152,16 +152,16 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	restartOff := blk.header.blockLen - 2 - 3*uint32(blk.header.restartCount)
 
 	// Binary-search restart points for the largest restart key ≤ probe.
-	// Restart records carry prefix_length=0 by spec, so their suffix
-	// equals the full key — no running prevKey is required for the
-	// comparison.
+	// Restart records carry prefix_length=0, so each cmp() call decodes
+	// a self-contained key; no running prevKey is needed.
 	idx := blk.seekRestart(func(i int) int {
 		off := blk.restartOffsets[i]
 		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil)
 		if err != nil {
-			// Treat unreadable restart entries as sorting after the
-			// probe; the linear scan below will surface the format
-			// error properly.
+			// Returning +1 makes seekRestart skip this restart; the
+			// chosen earlier restart still anchors the linear scan,
+			// which re-reads the same bytes via decodeKey and returns
+			// the format error to the caller.
 			return +1
 		}
 		return bytes.Compare(key, probe)
@@ -253,6 +253,9 @@ func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter)
 		// ref-block run; canonical Git stops the linear scan there.
 		// Peek at the type byte before parsing so we don't surface a
 		// misleading log/obj-block error.
+		if uint32(len(slice)) <= firstByteOffset {
+			break
+		}
 		typeByte := slice[firstByteOffset]
 		if typeByte != blockTypeRef {
 			break

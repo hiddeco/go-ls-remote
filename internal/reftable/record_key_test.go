@@ -96,7 +96,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("extra_field_three_bits", func(t *testing.T) {
 		// All eight extra values round-trip through encode/decode.
-		for ex := uint8(0); ex < 8; ex++ {
+		for ex := range uint8(8) {
 			raw := encodeKey(nil, []byte("HEAD"), ex)
 			key, gotEx, _, err := decodeKey(raw, nil)
 			require.NoError(t, err)
