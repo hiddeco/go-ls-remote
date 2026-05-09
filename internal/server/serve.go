@@ -25,10 +25,11 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 //
 // For [transport.ProtocolV2] the advertisement begins with a single
 // data packet whose payload is `version 2\n` (see canonical Git's
-// `serve.c::advertise_capabilities` and `gitprotocol-v2.adoc` §"Capability
-// Advertisement"), followed in later iterations by the capability list
-// and a flush. The current skeleton emits the version line and then a
-// flush; capabilities land in a follow-up.
+// `serve.c::protocol_v2_advertise_capabilities` and
+// `gitprotocol-v2.adoc` §"Capability Advertisement"), followed by one
+// data packet per advertised capability and a trailing flush. The
+// capability set and emission order are documented on
+// [writeV2Advertisement].
 //
 // For [transport.ProtocolV0] the advertisement is the empty ref list
 // terminator — a single flush — pending the empty-repo placeholder
@@ -37,25 +38,17 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // Any other value of opts.PreferredProtocol returns
 // [ErrUnsupportedProtocol] without emitting any bytes on w.
 //
-// The store argument will source ref enumeration and object metadata
-// in later iterations; the current skeleton does not read from it.
-// Passing a nil store is permitted for now but will become an error
-// once the handlers land.
+// The store argument sources the `object-format` capability value
+// today and will source ref enumeration and object metadata in later
+// iterations. Passing a nil store is not permitted.
 func Serve(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store, opts Options) error {
 	_ = ctx
 	_ = r
-	_ = store
 
 	switch opts.PreferredProtocol {
 	case transport.ProtocolV2:
-		if err := w.WritePacket([]byte("version 2\n")); err != nil {
-			return fmt.Errorf("server: write v2 version line: %w", err)
-		}
-		if err := w.WriteFlush(); err != nil {
-			return fmt.Errorf("server: write v2 advertisement flush: %w", err)
-		}
-		return nil
+		return writeV2Advertisement(w, store, opts)
 	case transport.ProtocolV0:
 		if err := w.WriteFlush(); err != nil {
 			return fmt.Errorf("server: write v0 advertisement flush: %w", err)
