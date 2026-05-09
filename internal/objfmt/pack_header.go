@@ -67,6 +67,15 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	// 32 bytes covers any plausible type/size header (2^137 max
 	// per `packfile.c:1228`) plus the OFS_DELTA varint; the extra
 	// algo.Size() bytes cover REF_DELTA.
+	//
+	// The buffer is `make`'d on every call. A per-call alloc of
+	// ~64 bytes is small in absolute terms but adds up across a
+	// full pack walk; reuse cannot live on `Pack` itself because
+	// the type is documented as safe for concurrent reads, so any
+	// reuse strategy must be a `sync.Pool` (or equivalent
+	// per-goroutine scratch). The trade-off is left for the
+	// `internal/objstore` layer where the iteration pattern is
+	// concrete and a benchmark can justify the complexity.
 	const peek = 32
 	want := peek + p.algo.Size()
 	if rem := p.r.Len() - at; rem < int64(want) {

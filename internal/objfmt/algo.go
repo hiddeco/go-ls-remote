@@ -4,6 +4,24 @@
 //
 // The package is dependency-free so any reader, writer, or transport
 // in the library can import it without pulling unrelated code.
+//
+// # Layering
+//
+// objfmt reads on-disk structures and parses individual records:
+// pack object headers including the OFS_DELTA / REF_DELTA pointers,
+// idx and midx fanout/lookup chunks, and loose object framing. It
+// does NOT walk delta chains, follow REF_DELTA bases across packs,
+// or otherwise interpret records relative to one another. Chain
+// depth is therefore unbounded at this layer — a maliciously
+// crafted pack can declare an arbitrarily deep REF_DELTA / OFS_DELTA
+// chain and objfmt will report each individual header faithfully.
+//
+// The higher-layer object store (`internal/objstore`, future) is
+// the enforcement point: it must cap chain depth before resolution
+// to prevent denial-of-service from untrusted packs. objfmt
+// deliberately stays out of that policy so the same parser can
+// serve trusted on-disk packs (no cap needed) and wire-received
+// packs (cap aggressively) without conditional knobs.
 package objfmt
 
 // Algo identifies a Git object hash algorithm. The zero value is not a
