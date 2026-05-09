@@ -101,7 +101,7 @@ func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
 	// only defined attribute is `size`; record whether the response will
 	// carry a size token on each per-OID line.
 	wantSize := false
-	for _, tok := range strings.Fields(string(attrsLine)) {
+	for tok := range strings.FieldsSeq(string(attrsLine)) {
 		if tok == "size" {
 			wantSize = true
 		}
