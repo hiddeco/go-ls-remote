@@ -28,6 +28,17 @@ type RefsArgs struct {
 	Unborn bool
 }
 
+// ObjectInfoArgs are the per-command arguments to a v2 `object-info`
+// request. Per `gitprotocol-v2.adoc` §"object-info" (lines 556-585),
+// `size` is currently the only defined attribute; the server emits a
+// matching `size` line per OID in the response when set.
+type ObjectInfoArgs struct {
+	// Size requests `size` information for each OID. When false the
+	// server still returns one row per OID, but with the size column
+	// omitted.
+	Size bool
+}
+
 // DefaultUserAgent is the agent string the encoder advertises when
 // the caller passes an empty userAgent. The version suffix is not
 // appended yet; the root package will override this at session-build

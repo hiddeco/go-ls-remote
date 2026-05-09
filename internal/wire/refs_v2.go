@@ -18,10 +18,9 @@ import (
 // library default [DefaultUserAgent] when non-empty. tracer is
 // optional; a nil tracer disables event emission.
 //
-// The capability echo and `unborn` gate follow canonical Git
-// (`connect.c::send_capabilities` lines 490-516,
-// `connect.c::get_remote_refs` lines 564-597), and the body grammar
-// matches `gitprotocol-v2.adoc` §"command-request".
+// Capability echo is delegated to [writeCapabilityEcho]; the `unborn`
+// gate follows `connect.c::get_remote_refs` lines 564-597, and the
+// body grammar matches `gitprotocol-v2.adoc` §"command-request".
 //
 // EncodeLSRefs does not flush the underlying writer — wrapping is
 // left to the caller.
@@ -35,28 +34,9 @@ func EncodeLSRefs(
 	if err := writeLine(w, "command=ls-refs"); err != nil {
 		return err
 	}
-
-	// Capability echo: order mirrors `send_capabilities` —
-	// `agent` before `object-format`. We skip `promisor-remote`
-	// because the ls-remote shape never asks for it.
-	if caps.Has("agent") {
-		ua := userAgent
-		if ua == "" {
-			ua = DefaultUserAgent
-		}
-		if err := writeLine(w, "agent="+ua); err != nil {
-			return err
-		}
+	if err := writeCapabilityEcho(w, caps, userAgent); err != nil {
+		return err
 	}
-	// `server_feature_v2` (connect.c:97) requires the capability to
-	// carry a `=value`, so a boolean `object-format` token is not
-	// echoed.
-	if v, ok := caps.Get("object-format"); ok && v != "" {
-		if err := writeLine(w, "object-format="+v); err != nil {
-			return err
-		}
-	}
-
 	if err := w.WriteDelim(); err != nil {
 		return err
 	}
