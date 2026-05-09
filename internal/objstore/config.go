@@ -13,9 +13,10 @@ import (
 )
 
 // storeConfig is the subset of `config` keys the object store needs to
-// open a repository: the object hash algorithm and the ref-storage
-// decision. It is populated by [readGitConfig] and consumed by the
-// store opener.
+// open a repository: the object hash algorithm, the ref-storage
+// decision, and the option-derived behaviour flags layered on top by
+// [Open]. It is populated by [readGitConfig] (algo, refStorage) and
+// then mutated by each [Option] before backend construction.
 type storeConfig struct {
 	// algo is the object hash algorithm selected by
 	// `extensions.objectFormat`. Defaults to [objfmt.SHA1] when the
@@ -26,6 +27,13 @@ type storeConfig struct {
 	// from `extensions.refStorage`. Always populated; the zero value
 	// of [refStorageSpec] is never returned.
 	refStorage refStorageSpec
+
+	// verifyCRC enables per-object CRC32 verification on pack-index
+	// reads. Defaults to true; flipped to false by [WithoutCRCCheck].
+	// The flag lives on storeConfig (not a sibling type) so backend
+	// constructors that already receive the config can consult it
+	// without a second parameter.
+	verifyCRC bool
 }
 
 // refStorageSpec is the parsed `extensions.refStorage` value. It
@@ -66,6 +74,7 @@ func readGitConfig(commonDir string) (storeConfig, error) {
 	cfg := storeConfig{
 		algo:       objfmt.SHA1,
 		refStorage: refStorageSpec{format: "files"},
+		verifyCRC:  true,
 	}
 
 	path := filepath.Join(commonDir, "config")

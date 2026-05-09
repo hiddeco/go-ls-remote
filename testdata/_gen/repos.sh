@@ -48,6 +48,41 @@
 #       repo/dotgit/worktrees/wt/HEAD     the linked-worktree gitdir tested directly
 #       repo/dotgit/worktrees/wt/commondir   `../..`
 #
+#   testdata/repos/empty/
+#       dotgit/HEAD                       sha1+files defaults; no commits
+#       dotgit/objects/.gitkeep           preserve empty dir under git
+#       dotgit/objects/pack/.gitkeep      preserve empty dir under git
+#       dotgit/refs/.gitkeep              preserve empty dir under git
+#
+#   testdata/repos/sha256/
+#       dotgit/HEAD                       same shape as `empty/`
+#       dotgit/config                     `[extensions] objectFormat = sha256`
+#       dotgit/objects/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/refs/.gitkeep
+#
+#   testdata/repos/with-reftable/
+#       dotgit/HEAD
+#       dotgit/config                     `[extensions] refStorage = reftable`
+#       dotgit/objects/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/refs/.gitkeep
+#       dotgit/reftable/tables.list       empty placeholder; populated
+#                                          once a reftable-content fixture
+#                                          is needed
+#
+#   testdata/repos/with-midx/
+#       dotgit/HEAD
+#       dotgit/objects/pack/multi-pack-index   zero-byte placeholder so the
+#                                              opener takes the midx branch;
+#                                              non-empty content is asserted
+#                                              by the midx-backend tests
+#
+# Empty directories cannot be tracked by git, so each fixture that
+# needs to ship one carries a zero-byte `.gitkeep` placeholder. The
+# materializer copies it through unchanged; the resolver and backends
+# ignore it.
+#
 # The `gitdir:` payloads inside `dotgit` files reference `.git` (the
 # post-materialization name) rather than `dotgit`, because that is
 # what the resolver under test will see on disk after
@@ -134,5 +169,66 @@ mkdir -p "$cd_root/repo/dotgit/worktrees/wt"
 write_head "$cd_root/repo/dotgit"
 write_head "$cd_root/repo/dotgit/worktrees/wt"
 printf '../..\n' >"$cd_root/repo/dotgit/worktrees/wt/commondir"
+
+# scaffold_minimal_repo <root>
+#   Lay down the canonical empty-repo skeleton: a `dotgit/HEAD` file
+#   plus the empty `objects/`, `objects/pack/`, and `refs/` directories
+#   each guarded by a `.gitkeep`. Used as the starting point for the
+#   `Open`-orchestration fixtures below.
+scaffold_minimal_repo() {
+    local root="$1"
+    mkdir -p "$root/dotgit/objects/pack" "$root/dotgit/refs"
+    write_head "$root/dotgit"
+    : >"$root/dotgit/objects/.gitkeep"
+    : >"$root/dotgit/objects/pack/.gitkeep"
+    : >"$root/dotgit/refs/.gitkeep"
+}
+
+# --- empty -------------------------------------------------------------------
+# Shape: a brand-new sha1+files repository with no commits, no packs,
+# no `packed-refs`. The opener must succeed and report `objfmt.SHA1`;
+# `IterRefs` must yield nothing once the loose-refs backend lands.
+scaffold_minimal_repo "$out/empty"
+
+# --- sha256 ------------------------------------------------------------------
+# Shape: identical to `empty/` but flips `extensions.objectFormat` to
+# `sha256`. Exercises the algo plumbing through the opener.
+sha256_root="$out/sha256"
+scaffold_minimal_repo "$sha256_root"
+cat >"$sha256_root/dotgit/config" <<'EOF'
+[core]
+	repositoryformatversion = 1
+[extensions]
+	objectFormat = sha256
+EOF
+
+# --- with-reftable -----------------------------------------------------------
+# Shape: same skeleton as `empty/` plus an empty `reftable/` directory
+# (the canonical Git location is `<commonDir>/reftable/tables.list` —
+# we ship an empty placeholder so the directory survives `git add` and
+# the opener can take the reftable branch). Reftable content fixtures
+# live alongside the reftable parser tests.
+rt_root="$out/with-reftable"
+scaffold_minimal_repo "$rt_root"
+mkdir -p "$rt_root/dotgit/reftable"
+: >"$rt_root/dotgit/reftable/tables.list"
+cat >"$rt_root/dotgit/config" <<'EOF'
+[core]
+	repositoryformatversion = 1
+[extensions]
+	refStorage = reftable
+EOF
+
+# --- with-midx ---------------------------------------------------------------
+# Shape: a HEAD plus an empty pack directory carrying a zero-byte
+# `multi-pack-index` placeholder. The opener uses the file's presence
+# (not its contents) to choose the midx pack backend over the loose
+# `.idx` catalogue. Real midx bodies are exercised by the midx-backend
+# tests and live alongside their pack/idx fixtures.
+midx_root="$out/with-midx"
+mkdir -p "$midx_root/dotgit/objects/pack" "$midx_root/dotgit/refs"
+write_head "$midx_root/dotgit"
+: >"$midx_root/dotgit/objects/pack/multi-pack-index"
+: >"$midx_root/dotgit/refs/.gitkeep"
 
 echo "wrote fixtures into $out"
