@@ -36,11 +36,11 @@ type Store struct {
 
 	// peelCache memoises [Store.Peel] decisions keyed on the input OID.
 	// Both peelable tags and "not a tag" misses live here so the second
-	// call on the same OID skips the object-body read entirely. The
-	// mutex serialises concurrent writers; the read-after-write rate is
-	// expected to be low (one cold read per ref served by ls-refs) so a
-	// plain [sync.Mutex] outperforms an [sync.RWMutex] without the
-	// reader-side bookkeeping cost.
+	// call on the same OID skips the object-body read entirely. A plain
+	// [sync.Mutex] is the deliberate (untimed) choice: the cache is
+	// expected to see a small steady working set with low reader/writer
+	// overlap, where the reader-side bookkeeping of [sync.RWMutex] is
+	// unlikely to pay off. Revisit if a real workload demands it.
 	peelCache map[objfmt.Hash]peelEntry
 	peelMu    sync.Mutex
 
@@ -48,9 +48,9 @@ type Store struct {
 	// [Store.ObjectInfo]. Both positive shapes (`(*Pack, offset, true)`)
 	// and negative shapes (`(nil, 0, false)`) live here so a missing
 	// base never re-scans every pack on the next call. Same mutex
-	// rationale as [peelCache]: lookups concentrate on a small working
-	// set of bases, so a plain [sync.Mutex] beats an [sync.RWMutex]
-	// without the reader-side bookkeeping cost.
+	// rationale as [peelCache] — plain [sync.Mutex] over [sync.RWMutex],
+	// untimed but justified by the small working set; revisit if a real
+	// workload demands it.
 	refDeltaCache map[objfmt.Hash]refDeltaCacheEntry
 	refDeltaMu    sync.Mutex
 
