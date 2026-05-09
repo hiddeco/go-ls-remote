@@ -177,19 +177,41 @@ func (r *looseRefs) walkLooseRefs() error {
 	return nil
 }
 
+// maxRefDepth caps symref-chain resolution at the same depth canonical
+// Git uses (`SYMREF_MAXDEPTH = 5` in `refs/refs-internal.h:246`, applied
+// by `refs.c::resolve_ref_unsafe` at `refs.c:2109`). A chain longer than
+// this — or any cycle — surfaces as a corruption error.
+const maxRefDepth = 5
+
 // resolveHead reads `<gitDir>/HEAD` and returns the resolved [Head].
 // The three accepted shapes are:
 //
-//   - `ref: <fully-qualified-name>\n` — symbolic HEAD. The OID is
-//     looked up in the cached refs map; an unresolvable target yields
-//     [Head.Unborn] = true with a zero OID.
+//   - `ref: <fully-qualified-name>\n` — symbolic HEAD. The target is
+//     followed through any further symref hops up to [maxRefDepth];
+//     an unresolvable terminal yields [Head.Unborn] = true with a zero
+//     OID and the last symref name in [Head.Symref].
 //   - A bare hex OID (40 chars for SHA-1, 64 for SHA-256, with optional
 //     trailing newline) — detached HEAD.
 //   - Anything else — corruption.
 //
-// A missing HEAD is also corruption: the gitdir resolver would not have
-// classified the directory as a repo without one. The check is defensive
-// in case the file vanishes between resolver and constructor.
+// Missing-HEAD handling: a missing HEAD file surfaces here as a
+// corruption error rather than an unborn-repo signal. Canonical Git
+// distinguishes `ENOENT` from other I/O errors in
+// `refs/files-backend.c:562-570` (the open-error retry path) and from
+// the lstat path at `refs/files-backend.c:504-512`, treating ENOENT as
+// the "missing/unborn" case. We do not, because `git init` writes HEAD
+// atomically as part of repo creation; a directory that passed this
+// project's gitdir resolver but has no HEAD is in practice unreachable.
+// Revisit if v0 ever needs to operate on partially-initialised
+// repositories.
+//
+// Packed-refs HEAD fallback: canonical Git also falls back to
+// `packed-refs` when the loose `HEAD` file is missing
+// (`refs/files-backend.c:504-512`), a legacy compatibility path for
+// repositories produced by very old Git versions. Modern Git keeps
+// HEAD loose unconditionally, so we omit that fallback. If a fixture
+// ever surfaces with HEAD only in `packed-refs`, this is the place to
+// add the lookup.
 func (r *looseRefs) resolveHead() (Head, error) {
 	path := filepath.Join(r.gitDir, "HEAD")
 	raw, err := os.ReadFile(path)
@@ -201,17 +223,10 @@ func (r *looseRefs) resolveHead() (Head, error) {
 		return Head{}, fmt.Errorf("objstore: %s empty: %w", path, ErrCorruptObject)
 	}
 
-	if rest, ok := strings.CutPrefix(content, "ref:"); ok {
-		target := strings.TrimSpace(rest)
-		if target == "" {
-			return Head{}, fmt.Errorf(
-				"objstore: %s: empty symref target: %w", path, ErrCorruptObject)
-		}
-		entry, found := r.refs[target]
-		if !found {
-			return Head{Symref: target, Unborn: true}, nil
-		}
-		return Head{Symref: target, OID: entry.oid}, nil
+	if target, ok, err := parseSymrefTarget(content); err != nil {
+		return Head{}, fmt.Errorf("objstore: %s: %w", path, err)
+	} else if ok {
+		return r.followSymrefChain(target)
 	}
 
 	oid, err := objfmt.ParseHex(content, r.algo)
@@ -219,6 +234,99 @@ func (r *looseRefs) resolveHead() (Head, error) {
 		return Head{}, fmt.Errorf("objstore: %s: %w: %w", path, err, ErrCorruptObject)
 	}
 	return Head{OID: oid}, nil
+}
+
+// followSymrefChain walks symref hops starting at target until either
+// a terminal OID is found, a hop is missing (unborn), or [maxRefDepth]
+// is exceeded. It detects cycles via a visited set keyed by the
+// fully-qualified symref name. Intermediate symrefs are loose ref files
+// (the eager [walkLooseRefs] pass deliberately skips them, since
+// non-HEAD symrefs are not surfaced through [RefEntry]); chain hops
+// therefore read those files on demand.
+//
+// The returned [Head.Symref] is the TERMINAL symref name — the final
+// hop, whether it resolved to an OID (then `Symref` is the symref that
+// pointed at that OID) or was missing (then `Symref` is the
+// unresolvable name and `Unborn` is true). This mirrors canonical
+// `refs.c::resolve_ref_unsafe` (`refs.c:2075`), which returns the loop's
+// last `refname` whether the resolution succeeded or terminated at a
+// missing target.
+func (r *looseRefs) followSymrefChain(target string) (Head, error) {
+	seen := make(map[string]struct{}, maxRefDepth)
+	current := target
+	for depth := 0; depth < maxRefDepth; depth++ {
+		if _, ok := seen[current]; ok {
+			return Head{}, fmt.Errorf(
+				"objstore: symref cycle at %s: %w", current, ErrCorruptObject)
+		}
+		seen[current] = struct{}{}
+
+		// Try the OID-bearing refs map first: it covers loose refs that
+		// hold an OID and packed-refs entries. A hit terminates the
+		// chain with the symref that named it.
+		if entry, found := r.refs[current]; found {
+			return Head{Symref: current, OID: entry.oid}, nil
+		}
+
+		// No OID at this name. Either it is itself a symref-loose file,
+		// or it is missing entirely (unborn terminal).
+		next, ok, err := r.readLooseSymref(current)
+		if err != nil {
+			return Head{}, err
+		}
+		if !ok {
+			return Head{Symref: current, Unborn: true}, nil
+		}
+		current = next
+	}
+	return Head{}, fmt.Errorf(
+		"objstore: symref chain exceeds depth %d: %w", maxRefDepth, ErrCorruptObject)
+}
+
+// readLooseSymref reads `<commonDir>/<name>` and returns the symref
+// target if the file exists and is a symref. A missing file returns
+// `ok=false` (the caller treats that as an unborn terminal). A file
+// whose contents are not a `ref: ...` line is corruption: by the time
+// the chain walker reaches it, the OID-bearing refs map has already
+// been consulted and missed, so any non-symref content is a malformed
+// loose ref file we declined to register at construction.
+func (r *looseRefs) readLooseSymref(name string) (string, bool, error) {
+	path := filepath.Join(r.commonDir, filepath.FromSlash(name))
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("objstore: read %s: %w", path, ErrCorruptObject)
+	}
+	content := strings.TrimRight(string(raw), " \t\r\n")
+	target, ok, err := parseSymrefTarget(content)
+	if err != nil {
+		return "", false, fmt.Errorf("objstore: %s: %w", path, err)
+	}
+	if !ok {
+		return "", false, fmt.Errorf(
+			"objstore: %s: expected symref, got OID-shaped content: %w",
+			path, ErrCorruptObject)
+	}
+	return target, true, nil
+}
+
+// parseSymrefTarget recognises the `ref: <name>` shape canonical Git
+// writes for symbolic refs (`refs/files-backend.c::parse_loose_ref_contents`
+// at `refs/files-backend.c:621`). It returns `ok=false` when the input
+// is not a symref so callers can fall through to OID parsing, and an
+// error when the input is a symref with an empty target.
+func parseSymrefTarget(content string) (string, bool, error) {
+	rest, ok := strings.CutPrefix(content, "ref:")
+	if !ok {
+		return "", false, nil
+	}
+	target := strings.TrimSpace(rest)
+	if target == "" {
+		return "", false, fmt.Errorf("empty symref target: %w", ErrCorruptObject)
+	}
+	return target, true, nil
 }
 
 // Head returns the cached [Head] resolved at construction. No I/O.

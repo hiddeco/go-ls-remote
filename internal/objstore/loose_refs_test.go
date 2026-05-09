@@ -175,6 +175,94 @@ func TestLooseRefs_Head_DetachedSHA256(t *testing.T) {
 	assert.False(t, head.Unborn)
 }
 
+// writeRefFile materialises a loose ref file at `<dir>/<name>` and
+// creates the intermediate directories. Used by chain-resolution tests
+// that build their own gitdir layouts on the fly rather than pulling a
+// committed fixture.
+func writeRefFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+	require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+}
+
+func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
+	// HEAD -> refs/heads/x -> refs/heads/y, where `y` carries an OID.
+	// The resolver follows both hops; `Head.Symref` is the terminal
+	// name (the symref that pointed at the OID), matching canonical
+	// `refs.c::resolve_ref_unsafe`'s `refname` return.
+	dir := t.TempDir()
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	writeRefFile(t, dir, "HEAD", "ref: refs/heads/x\n")
+	writeRefFile(t, dir, "refs/heads/x", "ref: refs/heads/y\n")
+	writeRefFile(t, dir, "refs/heads/y", oid+"\n")
+
+	r, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	head, err := r.Head()
+	require.NoError(t, err)
+	assert.Equal(t, "refs/heads/y", head.Symref,
+		"Symref must be the terminal symref, matching canonical resolve_ref_unsafe")
+	assert.Equal(t, hashFromHex(t, oid, objfmt.SHA1), head.OID)
+	assert.False(t, head.Unborn)
+}
+
+func TestLooseRefs_Head_ChainExceedingMaxDepthFails(t *testing.T) {
+	// Six hops: HEAD -> a -> b -> c -> d -> e -> f. Canonical's cap is
+	// `SYMREF_MAXDEPTH = 5` (`refs/refs-internal.h:246`); v0 mirrors it
+	// and the seventh lookup must surface ErrCorruptObject.
+	dir := t.TempDir()
+	writeRefFile(t, dir, "HEAD", "ref: refs/heads/a\n")
+	writeRefFile(t, dir, "refs/heads/a", "ref: refs/heads/b\n")
+	writeRefFile(t, dir, "refs/heads/b", "ref: refs/heads/c\n")
+	writeRefFile(t, dir, "refs/heads/c", "ref: refs/heads/d\n")
+	writeRefFile(t, dir, "refs/heads/d", "ref: refs/heads/e\n")
+	writeRefFile(t, dir, "refs/heads/e", "ref: refs/heads/f\n")
+	writeRefFile(t, dir, "refs/heads/f",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
+
+	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrCorruptObject),
+		"deep chain must wrap ErrCorruptObject, got %v", err)
+}
+
+func TestLooseRefs_Head_SymrefCycleDetected(t *testing.T) {
+	// A two-step cycle: HEAD -> refs/heads/a -> refs/heads/b ->
+	// refs/heads/a. The walker must spot the revisit and surface
+	// ErrCorruptObject rather than spinning until depth-cap.
+	dir := t.TempDir()
+	writeRefFile(t, dir, "HEAD", "ref: refs/heads/a\n")
+	writeRefFile(t, dir, "refs/heads/a", "ref: refs/heads/b\n")
+	writeRefFile(t, dir, "refs/heads/b", "ref: refs/heads/a\n")
+
+	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrCorruptObject),
+		"cycle must wrap ErrCorruptObject, got %v", err)
+}
+
+func TestLooseRefs_Head_ChainTerminatingInUnbornRefIsUnborn(t *testing.T) {
+	// HEAD -> refs/heads/x -> refs/heads/y, but `y` does not exist.
+	// `Head.Symref` is the LAST symref name in the chain (the
+	// unresolvable target), `OID` is zero, and `Unborn` is true.
+	dir := t.TempDir()
+	writeRefFile(t, dir, "HEAD", "ref: refs/heads/x\n")
+	writeRefFile(t, dir, "refs/heads/x", "ref: refs/heads/y\n")
+
+	r, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	head, err := r.Head()
+	require.NoError(t, err)
+	assert.Equal(t, "refs/heads/y", head.Symref)
+	assert.Equal(t, objfmt.Hash{}, head.OID)
+	assert.True(t, head.Unborn)
+}
+
 func TestLooseRefs_Traits_PeeledAndFullyPeeled(t *testing.T) {
 	// The fixture header is `# pack-refs with: peeled fully-peeled`;
 	// both flags must be true and `sorted` must remain false.
