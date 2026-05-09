@@ -159,6 +159,13 @@ func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
 // [RawObjectInfo] (used for the missing-object case).
 func parseObjectInfoLine(line string, wantSize bool) (info RawObjectInfo, drop bool, err error) {
 	oid, tail, hasSpace := strings.Cut(line, " ")
+	// `send_info` never emits an empty OID: every per-OID line in the
+	// canonical server's output begins with the lowercase hex object id.
+	// Treat an empty OID as a malformed line and drop it rather than
+	// surface a row with no usable identifier.
+	if oid == "" {
+		return RawObjectInfo{}, true, nil
+	}
 	if !hasSpace {
 		// No space at all. If the response did not advertise `size`,
 		// this is the canonical no-attribute shape. If it did, the

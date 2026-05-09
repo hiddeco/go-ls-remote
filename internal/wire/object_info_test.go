@@ -374,6 +374,24 @@ func TestDecodeObjectInfo(t *testing.T) {
 		assert.Empty(t, infos)
 	})
 
+	t.Run("empty OID lines dropped", func(t *testing.T) {
+		// Regression for a fuzz finding: a per-OID line that begins with
+		// a space (or is empty) made the decoder surface a `RawObjectInfo`
+		// with an empty `OID`. `send_info` never emits an empty OID, so
+		// such lines are malformed and must be dropped.
+		buf := buildObjectInfoStream(t,
+			"\n",     // attrs absent
+			"\n",     // empty per-OID line
+			" 42\n",  // leading space, no OID, tail "42"
+			" \n",    // leading space only
+			oid1+"\n",
+		)
+
+		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
+		require.NoError(t, err)
+		assert.Equal(t, []RawObjectInfo{{OID: oid1}}, infos)
+	})
+
 	t.Run("size attribute absent (empty attrs)", func(t *testing.T) {
 		// Degenerate but legal: server sends an empty attrs line, so
 		// per-OID lines carry no size token. Decoder returns OIDs with
