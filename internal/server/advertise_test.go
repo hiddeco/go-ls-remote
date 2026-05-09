@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -95,23 +94,24 @@ func pktLine(payload string) string {
 	return fmt.Sprintf("%04x%s", 4+len(payload), payload)
 }
 
-// runAdvertise spins up [Serve] on an in-memory pipe, returns the bytes
-// the server emitted plus any error. It blocks until the server's
-// goroutine has returned.
+// runAdvertise runs [Serve] synchronously against the given store and
+// options, returning the bytes it emitted. The client-to-server side
+// is a [bytes.Reader] preloaded with a single flush packet — the v2
+// empty-request terminator from `serve.c::process_request` lines
+// 314-321 — so the v2 command loop exits cleanly. The v0 path returns
+// before reading any client byte, so the preloaded flush is harmless
+// there too.
 func runAdvertise(t *testing.T, store *objstore.Store, opts Options) []byte {
 	t.Helper()
 
-	clientToServer, _ := io.Pipe()
-	var buf bytes.Buffer
+	src := bytes.NewReader([]byte("0000"))
+	var sink bytes.Buffer
 
-	r := pktline.NewReader(clientToServer)
-	w := pktline.NewWriter(&buf)
+	r := pktline.NewReader(src)
+	w := pktline.NewWriter(&sink)
 
-	err := Serve(context.Background(), r, w, store, opts)
-	require.NoError(t, err)
-	_ = clientToServer.Close()
-
-	return buf.Bytes()
+	require.NoError(t, Serve(context.Background(), r, w, store, opts))
+	return sink.Bytes()
 }
 
 // TestServe_V2AdvertisementBytes pins the full v2 capability
