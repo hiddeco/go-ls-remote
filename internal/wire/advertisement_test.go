@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,5 +183,58 @@ func TestParseAdvertisement(t *testing.T) {
 		ad, err := ParseAdvertisement(r, nil)
 		require.NoError(t, err)
 		assert.Equal(t, transport.ProtocolV2, ad.Version)
+	})
+
+	t.Run("CR before LF survives both v0 and v2 framing", func(t *testing.T) {
+		// Both the v0/v1 first-ref-line parser and the v2 capability
+		// pkt-line reader strip a trailing LF only — a payload ending in
+		// "\r\n" keeps the CR attached to the last token after framing.
+		// CR is also absent from the cap-list whitespace alphabet
+		// (`isWireSpace`), so `ParseCapabilities` does not split it off
+		// either. The result: a `name=value\r\n` token surfaces with
+		// `Value == "value\r"` whether routed through v0's NUL-split
+		// caps trailer or a standalone v2 capability pkt-line.
+		//
+		// Canonical Git matches the same shape: `PACKET_READ_CHOMP_NEWLINE`
+		// in `pkt-line.c:466-467` strips only `\n`, and `connect.c:134`'s
+		// `process_capabilities_v2` feeds the chomped buffer to the cap
+		// list verbatim. CR in either position is a wire-convention
+		// non-occurrence rather than something the parser actively rejects.
+		const capPayload = "agent=git\r\n"
+
+		t.Run("v0 first ref line", func(t *testing.T) {
+			r := buildAdvertisement(t,
+				packet{data: []byte(
+					"0123456789abcdef0123456789abcdef01234567" +
+						" refs/heads/main\x00" + capPayload)},
+				packet{kind: pktline.Flush},
+			)
+			ad, err := ParseAdvertisement(r, nil)
+			require.NoError(t, err)
+			assert.Equal(t, transport.ProtocolV0, ad.Version)
+			require.Len(t, ad.Caps, 1)
+			assert.Equal(t,
+				RawCapability{Name: "agent", Value: "git\r"},
+				ad.Caps[0])
+			assert.True(t, strings.HasSuffix(ad.Caps[0].Value, "\r"),
+				"v0 caps trailer must keep CR, got %q", ad.Caps[0].Value)
+		})
+
+		t.Run("v2 capability pkt-line", func(t *testing.T) {
+			r := buildAdvertisement(t,
+				packet{data: []byte("version 2\n")},
+				packet{data: []byte(capPayload)},
+				packet{kind: pktline.Flush},
+			)
+			ad, err := ParseAdvertisement(r, nil)
+			require.NoError(t, err)
+			assert.Equal(t, transport.ProtocolV2, ad.Version)
+			require.Len(t, ad.Caps, 1)
+			assert.Equal(t,
+				RawCapability{Name: "agent", Value: "git\r"},
+				ad.Caps[0])
+			assert.True(t, strings.HasSuffix(ad.Caps[0].Value, "\r"),
+				"v2 cap pkt-line must keep CR, got %q", ad.Caps[0].Value)
+		})
 	})
 }
