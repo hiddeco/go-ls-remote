@@ -109,6 +109,7 @@ func TestOpenStack(t *testing.T) {
 		assert.Equal(t, RefRecord{}, rec)
 
 		assert.Equal(t, objfmt.Algo(0), stack.HashAlgo())
+		assert.Zero(t, stack.Len())
 	})
 
 	t.Run("missing_tables_list_returns_error", func(t *testing.T) {
@@ -225,6 +226,31 @@ func TestStack_FindRef(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, ok)
 		assert.Equal(t, RefRecord{}, rec)
+	})
+}
+
+func TestStack_Len(t *testing.T) {
+	t.Run("matches_iter_count", func(t *testing.T) {
+		stack, err := OpenStack(stackDir(t, "with-index-sha1"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = stack.Close() })
+
+		var iterCount int
+		for _, err := range stack.IterRefs() {
+			require.NoError(t, err)
+			iterCount++
+		}
+		assert.Equal(t, iterCount, stack.Len())
+		assert.Greater(t, stack.Len(), 0)
+	})
+
+	t.Run("empty_stack_is_zero", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "tables.list"), nil, 0o644))
+		stack, err := OpenStack(dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = stack.Close() })
+		assert.Zero(t, stack.Len())
 	})
 }
 

@@ -63,6 +63,7 @@ var (
 type Stack struct {
 	readers []*Reader            // [0] = oldest table, [n-1] = newest
 	merged  map[string]RefRecord // pre-computed merged view
+	sorted  []string             // ref names sorted lexicographically; cached for IterRefs
 	algo    objfmt.Algo          // taken from the first reader; Algo(0) when empty
 }
 
@@ -97,7 +98,7 @@ func OpenStack(reftableDir string) (*Stack, error) {
 
 	// Empty stack: no readers, no merged entries, Algo(0).
 	if len(names) == 0 {
-		return &Stack{merged: map[string]RefRecord{}}, nil
+		return &Stack{merged: map[string]RefRecord{}, sorted: []string{}}, nil
 	}
 
 	readers := make([]*Reader, 0, len(names))
@@ -139,7 +140,12 @@ func OpenStack(reftableDir string) (*Stack, error) {
 		}
 	}
 
-	return &Stack{readers: readers, merged: merged, algo: algo}, nil
+	// Sort once at construction; [Stack.IterRefs] yields straight from
+	// this slice on every call. The merged map is immutable after Open,
+	// so callers never observe a stale order.
+	sorted := slices.Sorted(maps.Keys(merged))
+
+	return &Stack{readers: readers, merged: merged, sorted: sorted, algo: algo}, nil
 }
 
 // parseTablesList splits a `tables.list` payload into basenames.
@@ -186,6 +192,7 @@ func (s *Stack) Close() error {
 	rs := s.readers
 	s.readers = nil
 	s.merged = nil
+	s.sorted = nil
 	var firstErr error
 	for _, r := range rs {
 		if err := r.Close(); err != nil && firstErr == nil {
@@ -200,20 +207,31 @@ func (s *Stack) Close() error {
 //
 // For an empty stack (no entries in `tables.list`), HashAlgo returns
 // [objfmt.Algo](0): the zero value, which is invalid per
-// [objfmt.Algo.Size]. Callers that need to handle the empty case can
-// check `s.HashAlgo().Size() == 0` or count [Stack.IterRefs] yields.
+// [objfmt.Algo.Size]. Callers handling the empty case should use
+// [Stack.Len] rather than comparing the result against a known algo.
 func (s *Stack) HashAlgo() objfmt.Algo {
 	return s.algo
+}
+
+// Len returns the number of observable refs in the merged stack view.
+//
+// Len returns zero both for the empty-stack case (no entries in
+// `tables.list`) and for a non-empty stack whose every record was
+// shadowed by a tombstone: ls-remote consumers care only whether any
+// refs are observable, and Len answers that without forcing a walk.
+// Callers that specifically need to detect the empty-stack case can
+// check `s.HashAlgo() == objfmt.Algo(0)` alongside Len.
+func (s *Stack) Len() int {
+	return len(s.merged)
 }
 
 // IterRefs returns an iterator that yields every observable ref in the
 // merged stack view, sorted lexicographically by name.
 //
-// The merge runs once at [OpenStack] time; iteration walks the
-// pre-built map and is therefore O(N log N) for the sort plus O(N) for
-// the yield. Sorting trades a small per-call cost for deterministic
-// output that matches reftable's own on-disk ordering and keeps tests
-// stable across Go runtime map-iteration changes.
+// The merge and the sort both run once at [OpenStack] time; iteration
+// walks the cached order and is therefore O(N) per call. Deterministic
+// output matches reftable's own on-disk ordering and keeps tests stable
+// across Go runtime map-iteration changes.
 //
 // Errors short-circuit the walk: on any decode failure produced during
 // iteration (currently never — all errors surface at OpenStack time),
@@ -222,7 +240,7 @@ func (s *Stack) HashAlgo() objfmt.Algo {
 // Breaking out of the range loop is supported.
 func (s *Stack) IterRefs() iter.Seq2[RefRecord, error] {
 	return func(yield func(RefRecord, error) bool) {
-		for _, name := range slices.Sorted(maps.Keys(s.merged)) {
+		for _, name := range s.sorted {
 			if !yield(s.merged[name], nil) {
 				return
 			}
