@@ -148,9 +148,13 @@ func (r *Reader) emit(p Packet) {
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. The
-// implementation is hand-rolled rather than [strconv.ParseUint] to
-// avoid the per-call `string(b)` allocation; pkt-line streams call
-// this once per packet on a hot path. Canonical Git's `pkt-line.c`
+// implementation is hand-rolled rather than [strconv.ParseUint]
+// because the codec parses one length prefix per pkt-line on a hot
+// path; the hand-rolled version is roughly 3× faster than the
+// natural strconv alternative (`strconv.ParseUint(string(b), 16,
+// 16)`) on `arm64` — see `bench_test.go`. Go's escape analysis
+// usually keeps the `string(b)` conversion on the stack, so the
+// gap is speed, not allocations. Canonical Git's `pkt-line.c`
 // writes the prefix in lowercase but accepts either case on read,
 // and we match that.
 func parseHexLength(b [4]byte) (int, error) {
