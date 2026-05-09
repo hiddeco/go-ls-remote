@@ -41,10 +41,13 @@ func TestOpen_SHA256Repo(t *testing.T) {
 
 func TestOpen_ReftableRepo(t *testing.T) {
 	// `extensions.refStorage = reftable` must select the reftable ref
-	// backend. The fixture ships an empty `reftable/tables.list` so the
-	// opener has somewhere to point at; populated tables are exercised
-	// by the reftable-backend tests.
-	root := materializeFixture(t, "with-reftable")
+	// backend. The `with-reftable-content` fixture carries a populated
+	// stack (HEAD plus refs/heads/main) — the empty-stack `with-reftable`
+	// fixture would fail HEAD resolution, since the backend treats a
+	// missing HEAD record as corruption (canonical Git always writes one
+	// at `git init`). Backend-internal behaviour is exercised by
+	// `reftable_backend_test.go`; this test only confirms wiring.
+	root := materializeFixture(t, "with-reftable-content")
 
 	s, err := Open(root)
 	require.NoError(t, err)

@@ -67,9 +67,34 @@
 #       dotgit/objects/.gitkeep
 #       dotgit/objects/pack/.gitkeep
 #       dotgit/refs/.gitkeep
-#       dotgit/reftable/tables.list       empty placeholder; populated
-#                                          once a reftable-content fixture
-#                                          is needed
+#       dotgit/reftable/tables.list       empty placeholder; the opener
+#                                          must succeed even when the
+#                                          stack carries no entries
+#
+#   testdata/repos/with-reftable-content/
+#       dotgit/HEAD                       symref to refs/heads/main
+#                                          (canonical Git writes a HEAD
+#                                          file alongside the reftable;
+#                                          see the resolveGitDir contract)
+#       dotgit/config                     `[extensions] refStorage = reftable`
+#       dotgit/objects/.gitkeep
+#       dotgit/objects/pack/.gitkeep
+#       dotgit/refs/.gitkeep
+#       dotgit/reftable/{0001-0001-aaaaaaaa.ref,tables.list}
+#                                          one-commit reftable: HEAD →
+#                                          refs/heads/main plus
+#                                          refs/heads/main = <commit OID>
+#
+#   testdata/repos/with-reftable-unborn/
+#       Same skeleton as `with-reftable-content/` but the reftable stack
+#       comes from `git init --ref-format=reftable` with no commit, so
+#       HEAD is bound to refs/heads/main but main itself is absent —
+#       the canonical "unborn HEAD" state for reftable repos.
+#
+#   testdata/repos/with-reftable-detached/
+#       Same skeleton as `with-reftable-content/` but the reftable stack
+#       was rewritten with `git update-ref --no-deref HEAD <oid>` so HEAD
+#       carries a value record (no TargetRef) — the detached-HEAD shape.
 #
 #   testdata/repos/with-midx/
 #       dotgit/HEAD
@@ -256,8 +281,8 @@ EOF
 # Shape: same skeleton as `empty/` plus an empty `reftable/` directory
 # (the canonical Git location is `<commonDir>/reftable/tables.list` —
 # we ship an empty placeholder so the directory survives `git add` and
-# the opener can take the reftable branch). Reftable content fixtures
-# live alongside the reftable parser tests.
+# the opener can take the reftable branch). Populated reftable content
+# lives in the `with-reftable-*` siblings below.
 rt_root="$out/with-reftable"
 scaffold_minimal_repo "$rt_root"
 mkdir -p "$rt_root/dotgit/reftable"
@@ -268,6 +293,114 @@ cat >"$rt_root/dotgit/config" <<'EOF'
 [extensions]
 	refStorage = reftable
 EOF
+
+# scaffold_reftable_fixture <fixture-root> <work-repo>
+#   Lay down the canonical reftable-backed repo skeleton — HEAD, config,
+#   empty objects/pack/refs placeholders — then copy the work-repo's
+#   `.git/reftable/` payload into `dotgit/reftable/` under stable
+#   basenames so the on-disk bytes are identical across regenerations.
+#
+#   The work repo is created via `git init --ref-format=reftable` plus
+#   any caller-supplied ref operations; this helper only consumes the
+#   resulting reftable directory. Stable basenames mirror the convention
+#   used by `reftable.sh::rename_reftable_dir`: `NNNN-NNNN-<suffix>.ref`
+#   with positional pseudo-rand suffixes (`aaaaaaaa`, `bbbbbbbb`, ...).
+scaffold_reftable_fixture() {
+    local root="$1"
+    local work="$2"
+    mkdir -p "$root/dotgit/objects/pack" "$root/dotgit/refs" "$root/dotgit/reftable"
+    write_head "$root/dotgit"
+    : >"$root/dotgit/objects/.gitkeep"
+    : >"$root/dotgit/objects/pack/.gitkeep"
+    : >"$root/dotgit/refs/.gitkeep"
+    cat >"$root/dotgit/config" <<'EOF'
+[core]
+	repositoryformatversion = 1
+[extensions]
+	refStorage = reftable
+EOF
+    : >"$root/dotgit/reftable/tables.list"
+    local idx=1
+    local suffixes=("aaaaaaaa" "bbbbbbbb" "cccccccc" "dddddddd" "eeeeeeee" "ffffffff" "12345678" "9abcdef0")
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        if [ "$idx" -gt "${#suffixes[@]}" ]; then
+            echo "scaffold_reftable_fixture: too many tables ($idx) for known suffixes" >&2
+            exit 1
+        fi
+        local stable
+        stable="$(printf '%04d-%04d-%s.ref' "$idx" "$idx" "${suffixes[$((idx - 1))]}")"
+        cp "$work/.git/reftable/$line" "$root/dotgit/reftable/$stable"
+        printf '%s\n' "$stable" >>"$root/dotgit/reftable/tables.list"
+        idx=$((idx + 1))
+    done <"$work/.git/reftable/tables.list"
+}
+
+# Reftable record bytes embed the committer's wall-clock time (log
+# records carry `time_seconds`). Pin both dates so subsequent commits
+# produce identical `.ref` files across regenerations.
+export GIT_AUTHOR_DATE='2020-01-02T03:04:05+00:00'
+export GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00'
+
+# Shared scratch root for the reftable work-repos. A single trap covers
+# everything underneath; the per-fixture work directories live in here.
+rt_work_root="$(mktemp -d)"
+trap 'rm -rf "'"$rt_work_root"'"' EXIT
+
+# init_reftable_work_repo <work-dir>
+#   `git init --ref-format=reftable` plus the deterministic identity /
+#   gpgsign config the fixture commits need. Caller is responsible for
+#   committing or otherwise mutating refs.
+init_reftable_work_repo() {
+    local work="$1"
+    git -c init.defaultBranch=main \
+        -c extensions.refStorage=reftable \
+        init -q --ref-format=reftable --object-format=sha1 "$work"
+    git -C "$work" config user.email fixtures@example.invalid
+    git -C "$work" config user.name  fixtures
+    git -C "$work" config commit.gpgsign false
+}
+
+# --- with-reftable-content ---------------------------------------------------
+# A one-commit reftable-backed repo. The reftable stack carries HEAD as
+# a symref to refs/heads/main plus refs/heads/main as a value record.
+# Used by the reftable-backend tests for IterRefs and the
+# symref-to-existing-target HEAD case.
+rtc_work="$rt_work_root/with-reftable-content"
+init_reftable_work_repo "$rtc_work"
+(
+    cd "$rtc_work"
+    printf 'reftable content\n' >payload.txt
+    git add payload.txt
+    git commit -q -m "fixture: with-reftable-content"
+)
+scaffold_reftable_fixture "$out/with-reftable-content" "$rtc_work"
+
+# --- with-reftable-unborn ----------------------------------------------------
+# A `git init --ref-format=reftable` repo with no commit. The reftable
+# stack carries only HEAD (a symref to refs/heads/main) — main itself
+# is absent. Exercises the reftable-backend "unborn HEAD" path where
+# FindRef on the symref target misses.
+rtu_work="$rt_work_root/with-reftable-unborn"
+init_reftable_work_repo "$rtu_work"
+scaffold_reftable_fixture "$out/with-reftable-unborn" "$rtu_work"
+
+# --- with-reftable-detached --------------------------------------------------
+# A one-commit reftable-backed repo whose HEAD has been re-bound to the
+# commit OID with `git update-ref --no-deref HEAD <oid>`. The resulting
+# reftable carries HEAD as a value record (no TargetRef), which the
+# backend must report as Symref="" with the OID populated.
+rtd_work="$rt_work_root/with-reftable-detached"
+init_reftable_work_repo "$rtd_work"
+(
+    cd "$rtd_work"
+    printf 'reftable detached\n' >payload.txt
+    git add payload.txt
+    git commit -q -m "fixture: with-reftable-detached"
+    head_oid=$(git rev-parse HEAD)
+    git update-ref --no-deref HEAD "$head_oid"
+)
+scaffold_reftable_fixture "$out/with-reftable-detached" "$rtd_work"
 
 # --- with-midx ---------------------------------------------------------------
 # Shape: a HEAD plus an empty pack directory carrying a zero-byte
