@@ -57,6 +57,37 @@ func TestPack_OpenPack(t *testing.T) {
 		assert.Equal(t, uint32(0), p.Count())
 	})
 
+	t.Run("three-object SHA-256 pack reports three objects", func(t *testing.T) {
+		p, err := OpenPack(packFixture(t, "sha256-three.pack"), SHA256)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		assert.Equal(t, SHA256, p.Algo())
+		assert.Equal(t, uint32(2), p.Version())
+		assert.Equal(t, uint32(3), p.Count())
+	})
+
+	t.Run("accepts pack version 3", func(t *testing.T) {
+		// Version 3 is reserved by `gitformat-pack.adoc` but never
+		// emitted by canonical Git; OpenPack must still accept it
+		// since the doc declares it valid. Construct a minimal
+		// zero-object v3 pack inline rather than checking in a
+		// fixture canonical Git would not produce.
+		dir := t.TempDir()
+		hdr := make([]byte, 12)
+		copy(hdr, "PACK")
+		binary.BigEndian.PutUint32(hdr[4:8], 3)
+		binary.BigEndian.PutUint32(hdr[8:12], 0)
+		path := writeBytes(t, dir, "v3.pack", append(hdr, trailerPad(20)...))
+
+		p, err := OpenPack(path, SHA1)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		assert.Equal(t, uint32(3), p.Version())
+		assert.Equal(t, uint32(0), p.Count())
+	})
+
 	t.Run("rejects a non-PACK magic", func(t *testing.T) {
 		dir := t.TempDir()
 		buf := append([]byte("JUNK"), make([]byte, 8)...)

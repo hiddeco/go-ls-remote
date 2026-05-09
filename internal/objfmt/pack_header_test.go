@@ -62,6 +62,32 @@ func TestPack_ReadHeader(t *testing.T) {
 		assert.Equal(t, int64(133), hdr.BodyAt)
 	})
 
+	t.Run("decodes headers from a SHA-256 pack", func(t *testing.T) {
+		// Pack is SHA-256 so `algo.Size() == 32`; the peek size and
+		// any REF_DELTA stride change with the algo, but every
+		// non-delta header decodes the same way.
+		p, err := OpenPack(packFixture(t, "sha256-three.pack"), SHA256)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		// Per `sha256-three.offsets.txt`: commit at offset 12 size
+		// 202, tree at 144 size 49, blob at 206 size 13.
+		hdr, err := p.ReadHeader(12)
+		require.NoError(t, err)
+		assert.Equal(t, TypeCommit, hdr.Type)
+		assert.Equal(t, int64(202), hdr.Size)
+
+		hdr, err = p.ReadHeader(144)
+		require.NoError(t, err)
+		assert.Equal(t, TypeTree, hdr.Type)
+		assert.Equal(t, int64(49), hdr.Size)
+
+		hdr, err = p.ReadHeader(206)
+		require.NoError(t, err)
+		assert.Equal(t, TypeBlob, hdr.Type)
+		assert.Equal(t, int64(13), hdr.Size)
+	})
+
 	t.Run("decodes an OFS_DELTA header", func(t *testing.T) {
 		p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)

@@ -53,6 +53,14 @@ func TestPack_VerifyChecksum(t *testing.T) {
 		assert.NoError(t, p.VerifyChecksum())
 	})
 
+	t.Run("an intact non-empty SHA-256 pack verifies", func(t *testing.T) {
+		p, err := OpenPack(packFixture(t, "sha256-three.pack"), SHA256)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = p.Close() })
+
+		assert.NoError(t, p.VerifyChecksum())
+	})
+
 	t.Run("a flipped byte fails verification", func(t *testing.T) {
 		dst := copyFixture(t, "three-objects.pack")
 

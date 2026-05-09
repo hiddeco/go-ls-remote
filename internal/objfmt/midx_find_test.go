@@ -54,6 +54,42 @@ func TestMidx_Find(t *testing.T) {
 		}
 	})
 
+	t.Run("cross-checks every OID against the paired SHA-256 idx", func(t *testing.T) {
+		// Same round-trip as the SHA-1 case but on the SHA-256
+		// fixture, exercising the 32-byte OID stride through
+		// `OIDF`, `OIDL`, and `OOFF`.
+		midxPath := idxFixture(t, "sha256-multi-pack-index")
+		m, err := OpenMidx(midxPath, SHA256)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = m.Close() })
+
+		for _, stem := range []string{"sha256-midx-pack-1", "sha256-midx-pack-2"} {
+			idx, err := OpenIdx(idxFixture(t, stem+".idx"), SHA256)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = idx.Close() })
+
+			entries := readOffsets(t, idxFixture(t, stem+".offsets.txt"))
+			for _, e := range entries {
+				oid, err := ParseHex(e.oid, SHA256)
+				require.NoError(t, err)
+
+				packIdx, off, ok := m.Find(oid)
+				require.Truef(t, ok, "midx miss for %s", e.oid)
+				assert.Equal(t, e.off, off,
+					"oid %s offset", e.oid)
+				assert.Equal(t, stem+".idx",
+					m.PackNames()[packIdx],
+					"oid %s pack name", e.oid)
+
+				idxOff, idxOK := idx.FindOffset(oid)
+				require.Truef(t, idxOK,
+					"idx miss for %s in %s", e.oid, stem)
+				assert.Equal(t, idxOff, off,
+					"oid %s idx vs midx offset", e.oid)
+			}
+		}
+	})
+
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
 		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
