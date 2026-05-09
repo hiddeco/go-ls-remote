@@ -64,6 +64,20 @@ func materializeFixture(t *testing.T, name string) string {
 	return dst
 }
 
+// writeMinimalGitDir lays down the three signatures required by
+// canonical Git's `setup.c::is_git_directory` — a regular `HEAD`
+// file plus empty `objects/` and `refs/` directories — at dir.
+// Tests that synthesise a gitdir in `t.TempDir()` use this helper
+// so the resolver accepts the fixture under the tightened rule.
+func writeMinimalGitDir(t *testing.T, dir string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"),
+		[]byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "refs"), 0o755))
+}
+
 // splitAll splits a relative path into its components without leaving
 // a leading `.` for in-place paths.
 func splitAll(p string) []string {
@@ -85,11 +99,11 @@ func splitAll(p string) []string {
 }
 
 func TestResolveGitDir_PathIsGitDir(t *testing.T) {
-	// Rule 1: the supplied path itself contains `HEAD`, so it is the
-	// gitdir. A bare repo (or any `.git/` directory passed directly)
-	// hits this branch.
+	// Rule 1: the supplied path itself satisfies `is_git_directory`,
+	// so it is the gitdir. A bare repo (or any `.git/` directory
+	// passed directly) hits this branch.
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	writeMinimalGitDir(t, dir)
 
 	gitDir, commonDir, err := resolveGitDir(dir)
 	require.NoError(t, err)
@@ -102,8 +116,7 @@ func TestResolveGitDir_DotGitSubdirectory(t *testing.T) {
 	// resolver descends into it and returns the subdirectory.
 	work := t.TempDir()
 	gitDir := filepath.Join(work, ".git")
-	require.NoError(t, os.MkdirAll(gitDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	writeMinimalGitDir(t, gitDir)
 
 	got, commonDir, err := resolveGitDir(work)
 	require.NoError(t, err)
@@ -117,6 +130,7 @@ func TestResolveGitDir_DotGitFileAbsolute(t *testing.T) {
 	// verbatim (after `filepath.Clean`).
 	work := t.TempDir()
 	target := t.TempDir()
+	writeMinimalGitDir(t, target)
 	payload := []byte("gitdir: " + target + "\n")
 	require.NoError(t, os.WriteFile(filepath.Join(work, ".git"), payload, 0o644))
 
@@ -213,12 +227,14 @@ func TestResolveGitDir_CommondirPresentFixture(t *testing.T) {
 func TestResolveGitDir_CommondirRelativeSynthetic(t *testing.T) {
 	// Synthetic equivalent of the fixture case: open a gitdir whose
 	// `commondir` points at a sibling directory via `../repo`.
-	// Constructed in `t.TempDir()` to keep the assertion local.
+	// `objects/` and `refs/` live under the common dir (matching
+	// canonical Git's `is_git_directory`, which performs the
+	// objects/refs check post-`get_common_dir`).
 	root := t.TempDir()
 	gitDirPath := filepath.Join(root, "wt")
 	commonTarget := filepath.Join(root, "repo")
+	writeMinimalGitDir(t, commonTarget)
 	require.NoError(t, os.MkdirAll(gitDirPath, 0o755))
-	require.NoError(t, os.MkdirAll(commonTarget, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(gitDirPath, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(gitDirPath, "commondir"), []byte("../repo\n"), 0o644))
 
@@ -233,11 +249,76 @@ func TestResolveGitDir_CommondirAbsent(t *testing.T) {
 	// equal `gitDir`. Constructed in `t.TempDir()` so the test does
 	// not depend on the larger fixture trees.
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	writeMinimalGitDir(t, dir)
 
 	gitDir, commonDir, err := resolveGitDir(dir)
 	require.NoError(t, err)
 	assert.Equal(t, gitDir, commonDir)
+}
+
+func TestResolveGitDir_HeadAlonePathIsRejected(t *testing.T) {
+	// Canonical Git's `setup.c::is_git_directory` requires HEAD,
+	// `objects/`, and `refs/` together. A directory carrying only a
+	// stray `HEAD` file must not be accepted as a gitdir.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+
+	_, _, err := resolveGitDir(dir)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
+}
+
+func TestResolveGitDir_HeadPlusObjectsButNoRefsIsRejected(t *testing.T) {
+	// Two-out-of-three is not enough: `refs/` is independently
+	// required by `setup.c::is_git_directory`.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+
+	_, _, err := resolveGitDir(dir)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
+}
+
+func TestResolveGitDir_HeadPlusRefsButNoObjectsIsRejected(t *testing.T) {
+	// Symmetric to the previous case: missing `objects/` is fatal.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "refs"), 0o755))
+
+	_, _, err := resolveGitDir(dir)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
+}
+
+func TestResolveGitDir_HeadIsDirectoryIsRejected(t *testing.T) {
+	// Canonical Git's `validate_headref` rejects a HEAD that is not a
+	// regular file (or symlink to one). A directory named `HEAD` must
+	// not satisfy the gitdir signature.
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "HEAD"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "refs"), 0o755))
+
+	_, _, err := resolveGitDir(dir)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
+}
+
+func TestResolveGitDir_GitfileTargetMustBeRealRepo(t *testing.T) {
+	// A `.git` file resolves to a path; the resolved path must itself
+	// satisfy `is_git_directory`. A directory with only a stray HEAD
+	// at the resolved target is rejected just as a direct call would
+	// be.
+	work := t.TempDir()
+	bogus := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bogus, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(work, ".git"),
+		[]byte("gitdir: "+bogus+"\n"), 0o644))
+
+	_, _, err := resolveGitDir(work)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
 }
 
 func TestResolveGitDir_CommondirAbsolute(t *testing.T) {
@@ -246,6 +327,7 @@ func TestResolveGitDir_CommondirAbsolute(t *testing.T) {
 	// behaviour in `setup.c::get_common_dir_noenv`.
 	gitDirPath := t.TempDir()
 	commonTarget := t.TempDir()
+	writeMinimalGitDir(t, commonTarget)
 	require.NoError(t, os.WriteFile(filepath.Join(gitDirPath, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(gitDirPath, "commondir"), []byte(commonTarget+"\n"), 0o644))
 

@@ -9,9 +9,11 @@
 # Each fixture is a self-contained directory tree designed to exercise
 # one shape of the gitdir / common-dir resolution rules implemented in
 # `internal/objstore/gitdir.go`. The trees are deliberately minimal:
-# enough for the resolver to traverse the indirection correctly, and
-# nothing else. No commits, refs, or objects are needed because the
-# resolver does not validate that the destination is a real repo.
+# enough for the resolver to traverse the indirection correctly, plus
+# the three signatures canonical Git's `setup.c::is_git_directory`
+# requires (a regular `HEAD` file, an `objects/` entry, and a `refs/`
+# entry — the latter two looked up under the resolved common dir).
+# No commits or content are needed beyond the empty placeholders.
 #
 # # Why `dotgit` instead of `.git`
 #
@@ -33,18 +35,26 @@
 #
 #   testdata/repos/worktree-as-file/
 #       linked/dotgit                regular file: `gitdir: ../main/dotgit/worktrees/linked`
-#       main/dotgit/HEAD             trivial parent gitdir
+#       main/dotgit/HEAD             parent gitdir
+#       main/dotgit/objects/.gitkeep
+#       main/dotgit/refs/.gitkeep
 #       main/dotgit/worktrees/linked/HEAD
 #       main/dotgit/worktrees/linked/commondir   `../..`
 #       main/dotgit/worktrees/linked/gitdir      `../../../linked/.git`
 #
 #   testdata/repos/submodule-as-file/
-#       parent/dotgit/HEAD                trivial parent gitdir
-#       parent/dotgit/modules/sub/HEAD    trivial submodule gitdir
+#       parent/dotgit/HEAD                parent gitdir
+#       parent/dotgit/objects/.gitkeep
+#       parent/dotgit/refs/.gitkeep
+#       parent/dotgit/modules/sub/HEAD    submodule gitdir
+#       parent/dotgit/modules/sub/objects/.gitkeep
+#       parent/dotgit/modules/sub/refs/.gitkeep
 #       parent/sub/dotgit                 regular file: `gitdir: ../.git/modules/sub`
 #
 #   testdata/repos/worktree-with-commondir/
-#       repo/dotgit/HEAD                  trivial parent gitdir (`commonDir`)
+#       repo/dotgit/HEAD                  parent gitdir (`commonDir`)
+#       repo/dotgit/objects/.gitkeep
+#       repo/dotgit/refs/.gitkeep
 #       repo/dotgit/worktrees/wt/HEAD     the linked-worktree gitdir tested directly
 #       repo/dotgit/worktrees/wt/commondir   `../..`
 #
@@ -485,10 +495,17 @@ write_head() {
 # linked-worktree gitdir then carries a `commondir` file pointing back
 # at the parent repo's `.git/`.
 #
+# `main/dotgit/` carries `objects/` and `refs/` so the gitdir
+# satisfies canonical Git's `is_git_directory` signature. The linked
+# worktree's `commondir` redirects the objects/refs check there, so
+# the per-worktree gitdir does not need its own copies.
+#
 # All paths inside the fixture are relative so the tree is portable.
 wt_root="$out/worktree-as-file"
-mkdir -p "$wt_root/main/dotgit" "$wt_root/linked"
+mkdir -p "$wt_root/main/dotgit/objects" "$wt_root/main/dotgit/refs" "$wt_root/linked"
 write_head "$wt_root/main/dotgit"
+: >"$wt_root/main/dotgit/objects/.gitkeep"
+: >"$wt_root/main/dotgit/refs/.gitkeep"
 mkdir -p "$wt_root/main/dotgit/worktrees/linked"
 write_head "$wt_root/main/dotgit/worktrees/linked"
 # `commondir` is interpreted relative to the gitdir
@@ -509,22 +526,34 @@ printf 'gitdir: ../main/.git/worktrees/linked\n' >"$wt_root/linked/dotgit"
 # working tree carries a regular `.git` file pointing at
 # `../.git/modules/sub`, exactly as canonical Git's `submodule add`
 # writes it. No `commondir` is present because submodule gitdirs are
-# self-contained.
+# self-contained, so each gitdir scaffolds its own `objects/` and
+# `refs/`.
 sm_root="$out/submodule-as-file"
-mkdir -p "$sm_root/parent/dotgit/modules/sub" "$sm_root/parent/sub"
+mkdir -p "$sm_root/parent/dotgit/objects" "$sm_root/parent/dotgit/refs"
+mkdir -p "$sm_root/parent/dotgit/modules/sub/objects" "$sm_root/parent/dotgit/modules/sub/refs"
+mkdir -p "$sm_root/parent/sub"
 write_head "$sm_root/parent/dotgit"
 write_head "$sm_root/parent/dotgit/modules/sub"
+: >"$sm_root/parent/dotgit/objects/.gitkeep"
+: >"$sm_root/parent/dotgit/refs/.gitkeep"
+: >"$sm_root/parent/dotgit/modules/sub/objects/.gitkeep"
+: >"$sm_root/parent/dotgit/modules/sub/refs/.gitkeep"
 printf 'gitdir: ../.git/modules/sub\n' >"$sm_root/parent/sub/dotgit"
 
 # --- worktree-with-commondir -------------------------------------------------
 # Shape: a parent repo (`repo/.git/`) plus one linked-worktree gitdir
 # (`repo/.git/worktrees/wt/`). The test opens the linked-worktree
 # gitdir directly (not the working tree) and asserts that `commonDir`
-# resolves to the parent gitdir.
+# resolves to the parent gitdir. `objects/` and `refs/` live under
+# the parent so the linked-worktree gitdir satisfies
+# `is_git_directory` via its `commondir`.
 cd_root="$out/worktree-with-commondir"
+mkdir -p "$cd_root/repo/dotgit/objects" "$cd_root/repo/dotgit/refs"
 mkdir -p "$cd_root/repo/dotgit/worktrees/wt"
 write_head "$cd_root/repo/dotgit"
 write_head "$cd_root/repo/dotgit/worktrees/wt"
+: >"$cd_root/repo/dotgit/objects/.gitkeep"
+: >"$cd_root/repo/dotgit/refs/.gitkeep"
 printf '../..\n' >"$cd_root/repo/dotgit/worktrees/wt/commondir"
 
 # scaffold_minimal_repo <root>
@@ -768,8 +797,9 @@ printf '%s\n' "$oid_detached" >"$dh_root/dotgit/HEAD"
 # with a `^peel` line. Pairs with packed-refs-no-traits and
 # packed-refs-sorted to cover the trait-parser branches.
 fp_root="$out/packed-refs-fully-peeled"
-mkdir -p "$fp_root/dotgit/refs"
+mkdir -p "$fp_root/dotgit/objects" "$fp_root/dotgit/refs"
 write_head "$fp_root/dotgit"
+: >"$fp_root/dotgit/objects/.gitkeep"
 : >"$fp_root/dotgit/refs/.gitkeep"
 {
     printf '# pack-refs with: peeled fully-peeled\n'

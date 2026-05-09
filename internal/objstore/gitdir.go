@@ -23,17 +23,23 @@ const gitfilePrefix = "gitdir: "
 // The resolution order mirrors canonical Git's
 // `setup.c::is_git_directory` and `setup.c::get_common_dir_noenv`:
 //
-//  1. If path/HEAD exists, gitDir = path.
-//  2. Else if path/.git is a directory, gitDir = path/.git.
+//  1. If path is itself a git directory, gitDir = path.
+//  2. Else if path/.git is a directory and is itself a git
+//     directory, gitDir = path/.git.
 //  3. Else if path/.git is a regular file beginning with `gitdir: `,
 //     gitDir is the trimmed remainder of that line. A relative path
 //     is resolved against the directory containing the `.git` file
-//     (the worktree).
+//     (the worktree). The resolved target must itself be a git
+//     directory.
 //  4. Otherwise resolveGitDir returns [ErrNotARepo].
 //
-// Both returned paths are passed through [filepath.Clean]. The
-// function does not validate that gitDir or commonDir actually
-// contains a usable repository; that is a higher-layer concern.
+// "Is a git directory" matches canonical Git's `is_git_directory`:
+// a regular `HEAD` file, an `objects` entry, and a `refs` entry,
+// where `objects` and `refs` are looked up under the resolved
+// common directory (so a linked-worktree gitdir whose `commondir`
+// points at the parent repo passes validation).
+//
+// Both returned paths are passed through [filepath.Clean].
 func resolveGitDir(path string) (gitDir, commonDir string, err error) {
 	gitDir, err = locateGitDir(path)
 	if err != nil {
@@ -50,10 +56,9 @@ func resolveGitDir(path string) (gitDir, commonDir string, err error) {
 // locateGitDir applies the four-step resolution rule documented on
 // [resolveGitDir] and returns the cleaned gitdir path.
 func locateGitDir(path string) (string, error) {
-	// Rule 1: path itself is the gitdir if it has a `HEAD` file.
-	if ok, err := fileExists(filepath.Join(path, "HEAD")); err != nil {
-		return "", err
-	} else if ok {
+	// Rule 1: path is itself the gitdir if it satisfies the full
+	// `is_git_directory` signature.
+	if isGitDirectory(path) {
 		return filepath.Clean(path), nil
 	}
 
@@ -66,14 +71,59 @@ func locateGitDir(path string) (string, error) {
 		return "", fmt.Errorf("objstore: stat %s: %w", dotGit, err)
 	}
 
-	// Rule 2: `.git` is a directory.
+	// Rule 2: `.git` is a directory and itself a git directory.
 	if info.IsDir() {
+		if !isGitDirectory(dotGit) {
+			return "", fmt.Errorf("objstore: %s: %w", dotGit, ErrNotARepo)
+		}
 		return filepath.Clean(dotGit), nil
 	}
 
 	// Rule 3: `.git` is a regular file. `os.Stat` follows symlinks,
-	// so any non-directory mode satisfies the gitfile contract.
-	return readGitfile(dotGit)
+	// so any non-directory mode satisfies the gitfile contract. The
+	// resolved target must itself satisfy `is_git_directory` —
+	// canonical Git re-runs the check on the resolved path before
+	// accepting it.
+	target, err := readGitfile(dotGit)
+	if err != nil {
+		return "", err
+	}
+	if !isGitDirectory(target) {
+		return "", fmt.Errorf("objstore: %s: %w", target, ErrNotARepo)
+	}
+	return target, nil
+}
+
+// isGitDirectory reports whether path is a git repository directory
+// (or a per-worktree gitdir). It mirrors canonical Git's
+// `setup.c::is_git_directory` (lines 416–454 in 2.45-era Git):
+//
+//   - `HEAD` under path must be a regular file (or symlink to one).
+//   - `objects/` and `refs/` must exist as directories. They are
+//     looked up under the directory pointed at by `path/commondir`,
+//     when present, so a linked-worktree gitdir whose objects and
+//     refs live under the parent repo still validates.
+//
+// All filesystem lookups follow symlinks: canonical Git uses
+// `access(..., X_OK)`, which dereferences, and Go's [os.Stat] does
+// the same. [os.Lstat] is deliberately avoided.
+func isGitDirectory(path string) bool {
+	if info, err := os.Stat(filepath.Join(path, "HEAD")); err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+
+	common, err := resolveCommonDir(path)
+	if err != nil {
+		return false
+	}
+	return isDir(filepath.Join(common, "objects")) && isDir(filepath.Join(common, "refs"))
+}
+
+// isDir reports whether path resolves (after symlink dereferencing)
+// to a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // readGitfile parses a `.git` regular file and returns the resolved
@@ -131,19 +181,4 @@ func resolveCommonDir(gitDir string) (string, error) {
 		target = filepath.Join(gitDir, target)
 	}
 	return filepath.Clean(target), nil
-}
-
-// fileExists reports whether path exists as anything other than a
-// permission/IO failure. It distinguishes a missing entry (returns
-// false, nil) from a hard error (returns false, err) so callers can
-// fall through to the next discovery step on absence and bubble up
-// real failures.
-func fileExists(path string) (bool, error) {
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }

@@ -74,6 +74,8 @@ func TestOpen_UnknownRefStorageReturnsErrUnsupportedFormat(t *testing.T) {
 	// wrapping it into something callers cannot unwrap.
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "refs"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config"),
 		[]byte("[extensions]\n\trefStorage = packed\n"), 0o644))
 
