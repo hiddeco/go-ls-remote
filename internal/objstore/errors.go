@@ -22,4 +22,18 @@ var (
 	// directory, nor a working tree containing a `.git` file with a
 	// well-formed `gitdir:` directive.
 	ErrNotARepo = errors.New("objstore: not a git repository")
+
+	// ErrUnsupportedFormat is returned by [readGitConfig] when an
+	// `extensions.*` value names a format this implementation does
+	// not handle. It surfaces in three situations:
+	//
+	//  - `extensions.objectFormat` is neither `sha1` nor `sha256`.
+	//  - `extensions.refStorage` is a bare format name other than
+	//    `files` or `reftable`.
+	//  - `extensions.refStorage` is a `<format>://<payload>` URI
+	//    whose format prefix is not `files` or `reftable`.
+	//
+	// The wrapping `fmt.Errorf` carries the offending value so
+	// diagnostics can include both the key and the rejected token.
+	ErrUnsupportedFormat = errors.New("objstore: unsupported format")
 )
