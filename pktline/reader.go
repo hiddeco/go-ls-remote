@@ -135,15 +135,16 @@ func (r *Reader) readPacket() (Packet, error) {
 
 // emit reports p to the configured tracer, if one is wired in.
 func (r *Reader) emit(p Packet) {
-	if r.tracer != nil {
-		r.tracer.OnEvent(trace.PacketEvent{
-			Time:      time.Now(),
-			Direction: r.traceDir,
-			URL:       r.traceURL,
-			Bytes:     p.Data,
-			Kind:      kindToTracerKind(p.Kind),
-		})
+	if !trace.IsEnabled(r.tracer) {
+		return
 	}
+	r.tracer.OnEvent(trace.PacketEvent{
+		Time:      time.Now(),
+		Direction: r.traceDir,
+		URL:       r.traceURL,
+		Bytes:     p.Data,
+		Kind:      kindToTracerKind(p.Kind),
+	})
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. The

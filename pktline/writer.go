@@ -93,15 +93,16 @@ func (w *Writer) writeControl(s string, k Kind) error {
 // emit reports the just-written packet to the configured tracer (if
 // any). Called only on successful writes.
 func (w *Writer) emit(k Kind, payload []byte) {
-	if w.tracer != nil {
-		w.tracer.OnEvent(trace.PacketEvent{
-			Time:      time.Now(),
-			Direction: w.traceDir,
-			URL:       w.traceURL,
-			Bytes:     payload,
-			Kind:      kindToTracerKind(k),
-		})
+	if !trace.IsEnabled(w.tracer) {
+		return
 	}
+	w.tracer.OnEvent(trace.PacketEvent{
+		Time:      time.Now(),
+		Direction: w.traceDir,
+		URL:       w.traceURL,
+		Bytes:     payload,
+		Kind:      kindToTracerKind(k),
+	})
 }
 
 // encodeHexLength writes 4 lowercase ASCII hex digits representing v
