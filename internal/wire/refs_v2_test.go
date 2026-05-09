@@ -480,6 +480,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
 		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "access denied")
 		assert.Empty(t, refs)
 	})
@@ -492,6 +493,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
 		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "boom")
 		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
 	})

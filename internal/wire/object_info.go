@@ -91,10 +91,11 @@ func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
 
 	attrsLine := bytes.TrimSuffix(attrsPkt.Data, []byte{'\n'})
 
-	// Inline `ERR ` detection per `pkt-line.c:509-510`. A shared sentinel
-	// that lifts the detection above each command decoder is a follow-up.
-	if msg, ok := bytes.CutPrefix(attrsLine, []byte("ERR ")); ok {
-		return nil, fmt.Errorf("wire: server returned ERR: %s", msg)
+	// `ERR ` detection per `pkt-line.c:509-510`. The shared
+	// [CheckERRPacket] helper wraps [ErrServerRefused] so callers
+	// can match the sentinel via `errors.Is`.
+	if errPkt := CheckERRPacket(attrsLine); errPkt != nil {
+		return nil, errPkt
 	}
 
 	// Tokenise `attrs = attr | attrs SP attrs` (lines 576-577). Today the
@@ -126,9 +127,10 @@ func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
 
 		line := bytes.TrimSuffix(pkt.Data, []byte{'\n'})
 
-		// Inline `ERR ` detection per `pkt-line.c:509-510`.
-		if msg, ok := bytes.CutPrefix(line, []byte("ERR ")); ok {
-			return nil, fmt.Errorf("wire: server returned ERR: %s", msg)
+		// `ERR ` detection per `pkt-line.c:509-510`. The shared
+		// [CheckERRPacket] helper wraps [ErrServerRefused].
+		if errPkt := CheckERRPacket(line); errPkt != nil {
+			return nil, errPkt
 		}
 
 		info, drop, err := parseObjectInfoLine(string(line), wantSize)

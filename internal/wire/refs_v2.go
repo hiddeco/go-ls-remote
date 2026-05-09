@@ -151,12 +151,11 @@ func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 
 			line := bytes.TrimSuffix(pkt.Data, []byte{'\n'})
 
-			// Inline `ERR ` detection per `pkt-line.c:509-510`.
-			// Surface the payload text directly so callers get a
-			// usable diagnostic; a shared sentinel that lifts the
-			// detection above each command decoder is a follow-up.
-			if msg, ok := bytes.CutPrefix(line, []byte("ERR ")); ok {
-				yield(RawRef{}, fmt.Errorf("wire: server returned ERR: %s", msg))
+			// `ERR ` detection per `pkt-line.c:509-510`. The shared
+			// [CheckERRPacket] helper wraps [ErrServerRefused] so
+			// callers can match the sentinel via `errors.Is`.
+			if errPkt := CheckERRPacket(line); errPkt != nil {
+				yield(RawRef{}, errPkt)
 				return
 			}
 

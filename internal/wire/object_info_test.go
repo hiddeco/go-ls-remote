@@ -333,6 +333,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
 		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "repository disabled")
 		assert.Empty(t, infos)
 	})
@@ -342,6 +343,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
 		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "something bad")
 		assert.Empty(t, infos)
 	})
