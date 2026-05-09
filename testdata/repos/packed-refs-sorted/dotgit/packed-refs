@@ -1,0 +1,3 @@
+# pack-refs with: sorted
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main
+cccccccccccccccccccccccccccccccccccccccc refs/tags/v1

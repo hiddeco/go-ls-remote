@@ -1,0 +1,4 @@
+# pack-refs with: peeled fully-peeled
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main
+cccccccccccccccccccccccccccccccccccccccc refs/tags/v1
+^dddddddddddddddddddddddddddddddddddddddd

@@ -78,6 +78,56 @@
 #                                              non-empty content is asserted
 #                                              by the midx-backend tests
 #
+#   testdata/repos/loose-only/
+#       dotgit/HEAD                       symref to refs/heads/main
+#       dotgit/refs/heads/main            loose OID (synthetic SHA-1 hex)
+#       dotgit/refs/heads/feature/x       loose OID under a subdirectory
+#       dotgit/refs/tags/v1               loose OID
+#       (no packed-refs)
+#
+#   testdata/repos/packed-only/
+#       dotgit/HEAD                       symref to refs/heads/main
+#       dotgit/refs/.gitkeep              empty refs directory
+#       dotgit/packed-refs                header `# pack-refs with: peeled
+#                                         fully-peeled` plus refs and a
+#                                         `^peel` line for the tag
+#
+#   testdata/repos/mixed/
+#       dotgit/HEAD
+#       dotgit/refs/heads/main            loose OID-C — shadows the
+#                                         packed `refs/heads/main = OID-A`
+#       dotgit/packed-refs                refs/heads/main = OID-A and
+#                                         refs/heads/old = OID-B; the
+#                                         loose entry overrides the first
+#
+#   testdata/repos/unborn-head/
+#       dotgit/HEAD                       symref to refs/heads/main
+#       dotgit/refs/.gitkeep              empty: refs/heads/main missing
+#                                         (no loose, no packed entry)
+#
+#   testdata/repos/detached-head/
+#       dotgit/HEAD                       raw 40-char SHA-1 hex
+#       dotgit/refs/.gitkeep              empty
+#
+#   testdata/repos/packed-refs-fully-peeled/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/packed-refs                `# pack-refs with: peeled
+#                                         fully-peeled` plus a tag with
+#                                         a `^peel` line
+#
+#   testdata/repos/packed-refs-no-traits/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/packed-refs                no header line; ref entries
+#                                         from the first byte
+#
+#   testdata/repos/packed-refs-sorted/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/packed-refs                `# pack-refs with: sorted`
+#                                         plus a couple of refs in order
+#
 # Empty directories cannot be tracked by git, so each fixture that
 # needs to ship one carries a zero-byte `.gitkeep` placeholder. The
 # materializer copies it through unchanged; the resolver and backends
@@ -230,5 +280,121 @@ mkdir -p "$midx_root/dotgit/objects/pack" "$midx_root/dotgit/refs"
 write_head "$midx_root/dotgit"
 : >"$midx_root/dotgit/objects/pack/multi-pack-index"
 : >"$midx_root/dotgit/refs/.gitkeep"
+
+# --- loose-refs / packed-refs fixtures --------------------------------------
+# The loose-refs backend reads `<commonDir>/refs/...` and the optional
+# `<commonDir>/packed-refs` file. The fixtures below exercise the backend
+# in isolation: synthetic hex OIDs (deterministic, never real objects)
+# avoid pulling pack/loose-object machinery into ref tests, and stand-in
+# `dotgit/refs/.gitkeep` placeholders preserve the empty `refs/`
+# directory that canonical Git always materializes.
+
+# Synthetic SHA-1 OIDs used across the loose/packed fixtures. Distinct
+# values per role keep the assertions unambiguous when a packed ref is
+# shadowed by a loose ref.
+oid_main='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+oid_feature='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+oid_tag='cccccccccccccccccccccccccccccccccccccccc'
+oid_tag_peel='dddddddddddddddddddddddddddddddddddddddd'
+oid_packed_main='1111111111111111111111111111111111111111'
+oid_packed_old='2222222222222222222222222222222222222222'
+oid_loose_main='3333333333333333333333333333333333333333'
+oid_detached='4444444444444444444444444444444444444444'
+
+# --- loose-only --------------------------------------------------------------
+# Loose refs spanning a subdirectory (`refs/heads/feature/x`) and a tag
+# under `refs/tags/`. No `packed-refs`. HEAD is a symref to a ref that
+# exists, so the resolver picks up the loose OID.
+lo_root="$out/loose-only"
+mkdir -p "$lo_root/dotgit/refs/heads/feature" "$lo_root/dotgit/refs/tags"
+write_head "$lo_root/dotgit"
+printf '%s\n' "$oid_main"    >"$lo_root/dotgit/refs/heads/main"
+printf '%s\n' "$oid_feature" >"$lo_root/dotgit/refs/heads/feature/x"
+printf '%s\n' "$oid_tag"     >"$lo_root/dotgit/refs/tags/v1"
+
+# --- packed-only -------------------------------------------------------------
+# Only `packed-refs` carries entries; `refs/` is empty. The header
+# advertises `peeled fully-peeled` so the parser sets both traits, and a
+# `^peel` line follows the tag entry to exercise the peel-known path.
+po_root="$out/packed-only"
+mkdir -p "$po_root/dotgit/refs"
+write_head "$po_root/dotgit"
+: >"$po_root/dotgit/refs/.gitkeep"
+{
+    printf '# pack-refs with: peeled fully-peeled\n'
+    printf '%s refs/heads/main\n' "$oid_main"
+    printf '%s refs/tags/v1\n'    "$oid_tag"
+    printf '^%s\n'                "$oid_tag_peel"
+} >"$po_root/dotgit/packed-refs"
+
+# --- mixed -------------------------------------------------------------------
+# Loose `refs/heads/main` shadows the packed entry of the same name; the
+# packed-only `refs/heads/old` still surfaces. Confirms loose-overrides-
+# packed precedence and that orphaned packed entries are not dropped.
+mx_root="$out/mixed"
+mkdir -p "$mx_root/dotgit/refs/heads"
+write_head "$mx_root/dotgit"
+printf '%s\n' "$oid_loose_main" >"$mx_root/dotgit/refs/heads/main"
+{
+    printf '# pack-refs with: peeled fully-peeled sorted\n'
+    printf '%s refs/heads/main\n' "$oid_packed_main"
+    printf '%s refs/heads/old\n'  "$oid_packed_old"
+} >"$mx_root/dotgit/packed-refs"
+
+# --- unborn-head -------------------------------------------------------------
+# HEAD points at refs/heads/main but no such ref exists either loose or
+# packed: canonical "unborn" state. The resolver must report Symref set,
+# OID zero, Unborn true.
+ub_root="$out/unborn-head"
+mkdir -p "$ub_root/dotgit/refs"
+write_head "$ub_root/dotgit"
+: >"$ub_root/dotgit/refs/.gitkeep"
+
+# --- detached-head -----------------------------------------------------------
+# HEAD is a raw 40-char SHA-1 hex. Detached HEAD: Symref empty, OID set,
+# Unborn false.
+dh_root="$out/detached-head"
+mkdir -p "$dh_root/dotgit/refs"
+printf '%s\n' "$oid_detached" >"$dh_root/dotgit/HEAD"
+: >"$dh_root/dotgit/refs/.gitkeep"
+
+# --- packed-refs-fully-peeled ------------------------------------------------
+# Minimal repo carrying `peeled fully-peeled` traits and a single tag
+# with a `^peel` line. Pairs with packed-refs-no-traits and
+# packed-refs-sorted to cover the trait-parser branches.
+fp_root="$out/packed-refs-fully-peeled"
+mkdir -p "$fp_root/dotgit/refs"
+write_head "$fp_root/dotgit"
+: >"$fp_root/dotgit/refs/.gitkeep"
+{
+    printf '# pack-refs with: peeled fully-peeled\n'
+    printf '%s refs/heads/main\n' "$oid_main"
+    printf '%s refs/tags/v1\n'    "$oid_tag"
+    printf '^%s\n'                "$oid_tag_peel"
+} >"$fp_root/dotgit/packed-refs"
+
+# --- packed-refs-no-traits ---------------------------------------------------
+# `packed-refs` body without the `# pack-refs with:` header line. All
+# trait flags must remain false.
+nt_root="$out/packed-refs-no-traits"
+mkdir -p "$nt_root/dotgit/refs"
+write_head "$nt_root/dotgit"
+: >"$nt_root/dotgit/refs/.gitkeep"
+{
+    printf '%s refs/heads/main\n' "$oid_main"
+    printf '%s refs/tags/v1\n'    "$oid_tag"
+} >"$nt_root/dotgit/packed-refs"
+
+# --- packed-refs-sorted ------------------------------------------------------
+# `# pack-refs with: sorted` header only: just the sorted trait flips.
+sr_root="$out/packed-refs-sorted"
+mkdir -p "$sr_root/dotgit/refs"
+write_head "$sr_root/dotgit"
+: >"$sr_root/dotgit/refs/.gitkeep"
+{
+    printf '# pack-refs with: sorted\n'
+    printf '%s refs/heads/main\n' "$oid_main"
+    printf '%s refs/tags/v1\n'    "$oid_tag"
+} >"$sr_root/dotgit/packed-refs"
 
 echo "wrote fixtures into $out"

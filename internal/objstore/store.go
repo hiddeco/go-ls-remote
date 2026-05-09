@@ -179,7 +179,7 @@ func (s *Store) Close() error {
 func openRefBackend(gitDir, commonDir string, cfg storeConfig) (refBackend, error) {
 	switch cfg.refStorage.format {
 	case "files":
-		return openLooseRefs(gitDir, commonDir)
+		return openLooseRefs(gitDir, commonDir, cfg.algo)
 	case "reftable":
 		return openReftableBackend(gitDir, commonDir, cfg.refStorage.location)
 	default:

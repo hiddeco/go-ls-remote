@@ -1,40 +1,269 @@
 package objstore
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"iter"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // looseRefs reads refs from the canonical files-backed layout:
 // `<commonDir>/refs/...` plus `<commonDir>/packed-refs`. The backend
 // is selected when `extensions.refStorage` is `files` (the default).
 //
-// This file carries the type and constructor only. Iteration, peeling,
-// and packed-refs parsing land in a follow-up — keeping the skeleton
-// here lets the store opener compile and lets tests exercise the
-// backend selector without touching ref-reading semantics.
+// Everything is read once at construction and cached. The constructor
+// parses `packed-refs`, walks `refs/` for loose entries, lets the loose
+// set override packed entries of the same name, resolves HEAD against
+// the resulting map, and stores the materialized state on the struct.
+// The eager build avoids the consistency hazards a streaming reader
+// would face (a ref disappearing between `IterRefs` and a subsequent
+// `Head` call) and keeps every post-Open access I/O-free, which matters
+// for the read-fanout patterns the upper layers favour.
+//
+// Loose-overrides-packed mirrors canonical Git's
+// `refs/files-backend.c::loose_fill_ref_dir` precedence: when the same
+// name exists in both places the loose copy is authoritative. The peel
+// hint from `packed-refs` is intentionally dropped on override because
+// loose ref files do not encode peel state and we have no way to verify
+// the packed peel still matches the loose OID.
 type looseRefs struct {
-	gitDir    string
-	commonDir string
+	gitDir    string                 // for HEAD reading
+	commonDir string                 // for refs/ + packed-refs reading
+	algo      objfmt.Algo            // hash algorithm bound to the store
+	refs      map[string]packedEntry // built once at construction
+	head      Head                   // resolved at construction
+	traits    packedTraits           // copied from packed-refs header
+	sorted    []string               // ref names in lexical order
 }
 
-// openLooseRefs constructs a [looseRefs] backed by the given dirs.
-// It must succeed on a well-formed empty repository; per-ref errors
-// surface from [looseRefs.Head] and [looseRefs.IterRefs] later.
-func openLooseRefs(gitDir, commonDir string) (*looseRefs, error) {
-	return &looseRefs{gitDir: gitDir, commonDir: commonDir}, nil
+// openLooseRefs constructs a [looseRefs] backed by the given dirs. The
+// constructor reads `<commonDir>/packed-refs` (silent when absent),
+// walks `<commonDir>/refs/` for loose entries, and resolves HEAD. Any
+// malformed input surfaces as an error wrapping [ErrCorruptObject];
+// the constructor has no way to recover from a half-listed ref set so
+// errors propagate up rather than being recorded for later iteration.
+//
+// algo selects the hex width for ref OIDs (40 chars for SHA-1, 64 for
+// SHA-256) and is propagated to the packed-refs parser. The returned
+// `*looseRefs` satisfies [refBackend].
+func openLooseRefs(gitDir, commonDir string, algo objfmt.Algo) (*looseRefs, error) {
+	r := &looseRefs{
+		gitDir:    gitDir,
+		commonDir: commonDir,
+		algo:      algo,
+	}
+
+	packed, err := readPackedRefsFile(commonDir, algo)
+	if err != nil {
+		return nil, err
+	}
+	r.traits = packed.traits
+	r.refs = packed.refs
+
+	if err := r.walkLooseRefs(); err != nil {
+		return nil, err
+	}
+
+	r.sorted = make([]string, 0, len(r.refs))
+	for name := range r.refs {
+		r.sorted = append(r.sorted, name)
+	}
+	slices.Sort(r.sorted)
+
+	head, err := r.resolveHead()
+	if err != nil {
+		return nil, err
+	}
+	r.head = head
+
+	return r, nil
 }
 
-// Head reports an unborn HEAD by default. The real implementation
-// reads `<gitDir>/HEAD` and resolves any symbolic chain.
-func (r *looseRefs) Head() (Head, error) {
-	return Head{Unborn: true}, nil
+// readPackedRefsFile opens `<commonDir>/packed-refs` and returns the
+// parsed [packedRefs]. A missing file is not an error — it yields an
+// empty map and zero traits, the canonical "no packed refs yet" shape.
+func readPackedRefsFile(commonDir string, algo objfmt.Algo) (packedRefs, error) {
+	path := filepath.Join(commonDir, "packed-refs")
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return packedRefs{refs: make(map[string]packedEntry)}, nil
+		}
+		return packedRefs{}, fmt.Errorf("objstore: open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	parsed, err := parsePackedRefs(f, algo)
+	if err != nil {
+		return packedRefs{}, fmt.Errorf("objstore: parse %s: %w", path, err)
+	}
+	return parsed, nil
 }
 
-// IterRefs yields nothing by default. The real implementation walks
-// `<commonDir>/refs/` and merges `<commonDir>/packed-refs`.
+// walkLooseRefs descends `<commonDir>/refs/` and registers every regular
+// file as a ref entry, overriding any packed entry of the same name.
+// Symbolic loose refs (`ref: <other-name>` content) are skipped: the
+// only symref consumers care about is HEAD itself, and `Head()` reads
+// it directly. Surfacing other symrefs through [RefEntry] would require
+// the type to carry a target, which is out of scope for v0.
+//
+// A missing `refs/` directory is not an error — the empty-repo fixtures
+// ship without one — but any other read failure aborts construction so
+// a half-listed ref set does not silently mislead callers.
+func (r *looseRefs) walkLooseRefs() error {
+	refsDir := filepath.Join(r.commonDir, "refs")
+	err := filepath.WalkDir(refsDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// `.gitkeep` placeholders preserve empty `refs/` subdirectories
+		// in the test fixtures; they are not refs.
+		if d.Name() == ".gitkeep" {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("objstore: read %s: %w", path, ErrCorruptObject)
+		}
+		content := strings.TrimRight(string(raw), " \t\r\n")
+		if content == "" {
+			return fmt.Errorf("objstore: ref %s empty: %w", path, ErrCorruptObject)
+		}
+		// Symbolic loose refs are rare in `refs/` (canonical Git keeps
+		// them in `packed-refs` as direct OIDs); skip rather than
+		// surface a half-modeled entry.
+		if strings.HasPrefix(content, "ref:") {
+			return nil
+		}
+
+		oid, err := objfmt.ParseHex(content, r.algo)
+		if err != nil {
+			return fmt.Errorf("objstore: ref %s: %w: %w", path, err, ErrCorruptObject)
+		}
+
+		rel, err := filepath.Rel(r.commonDir, path)
+		if err != nil {
+			return fmt.Errorf("objstore: rel %s: %w", path, err)
+		}
+		name := filepath.ToSlash(rel)
+
+		// Loose overrides packed: drop any prior packed peel hint, since
+		// a loose ref carries no peel information and we cannot trust a
+		// stale peel against a possibly-rewritten OID.
+		r.refs[name] = packedEntry{oid: oid}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// resolveHead reads `<gitDir>/HEAD` and returns the resolved [Head].
+// The three accepted shapes are:
+//
+//   - `ref: <fully-qualified-name>\n` — symbolic HEAD. The OID is
+//     looked up in the cached refs map; an unresolvable target yields
+//     [Head.Unborn] = true with a zero OID.
+//   - A bare hex OID (40 chars for SHA-1, 64 for SHA-256, with optional
+//     trailing newline) — detached HEAD.
+//   - Anything else — corruption.
+//
+// A missing HEAD is also corruption: the gitdir resolver would not have
+// classified the directory as a repo without one. The check is defensive
+// in case the file vanishes between resolver and constructor.
+func (r *looseRefs) resolveHead() (Head, error) {
+	path := filepath.Join(r.gitDir, "HEAD")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Head{}, fmt.Errorf("objstore: read %s: %w", path, ErrCorruptObject)
+	}
+	content := strings.TrimRight(string(raw), " \t\r\n")
+	if content == "" {
+		return Head{}, fmt.Errorf("objstore: %s empty: %w", path, ErrCorruptObject)
+	}
+
+	if rest, ok := strings.CutPrefix(content, "ref:"); ok {
+		target := strings.TrimSpace(rest)
+		if target == "" {
+			return Head{}, fmt.Errorf(
+				"objstore: %s: empty symref target: %w", path, ErrCorruptObject)
+		}
+		entry, found := r.refs[target]
+		if !found {
+			return Head{Symref: target, Unborn: true}, nil
+		}
+		return Head{Symref: target, OID: entry.oid}, nil
+	}
+
+	oid, err := objfmt.ParseHex(content, r.algo)
+	if err != nil {
+		return Head{}, fmt.Errorf("objstore: %s: %w: %w", path, err, ErrCorruptObject)
+	}
+	return Head{OID: oid}, nil
+}
+
+// Head returns the cached [Head] resolved at construction. No I/O.
+func (r *looseRefs) Head() (Head, error) { return r.head, nil }
+
+// IterRefs yields every cached ref in lexical order. The iterator is
+// I/O-free and never produces an error — every entry was validated at
+// construction — but the [iter.Seq2] error slot stays in the contract
+// so other backends can surface streaming failures without changing
+// the interface.
 func (r *looseRefs) IterRefs() iter.Seq2[RefEntry, error] {
-	return func(yield func(RefEntry, error) bool) {}
+	return func(yield func(RefEntry, error) bool) {
+		for _, name := range r.sorted {
+			entry := r.refs[name]
+			if !yield(RefEntry{Name: name, OID: entry.oid}, nil) {
+				return
+			}
+		}
+	}
 }
 
-// Close releases the backend. The skeleton holds no resources.
+// peelHint reports the cached peel state for name. ok is true when the
+// ref exists; peelKnown distinguishes "this ref is peeled and the peel
+// is the returned hash" from "no peel was recorded in `packed-refs`".
+// Combined with [packedTraits.fullyPeeled] (exposed via [looseRefs.refTraits]),
+// a future Peel implementation can short-circuit non-peelable refs without
+// re-reading the file.
+//
+// Pre-installed for the Peel implementation in a follow-up; intentionally
+// unused by the package today, exercised only by tests. Kept on the
+// backend rather than the [refBackend] interface so the public surface
+// stays minimal.
+func (r *looseRefs) peelHint(name string) (peeled objfmt.Hash, peelKnown, ok bool) {
+	entry, found := r.refs[name]
+	if !found {
+		return objfmt.Hash{}, false, false
+	}
+	return entry.peeled, entry.peelKnown, true
+}
+
+// refTraits returns the cached [packedTraits] for the backend. Used by
+// peel-aware callers in the same package.
+//
+// Pre-installed for the Peel implementation in a follow-up; intentionally
+// unused by the package today, exercised only by tests.
+func (r *looseRefs) refTraits() packedTraits { return r.traits }
+
+// Close releases the backend. The eager-load constructor holds no file
+// handles or memory mappings beyond the lifetime of [openLooseRefs].
 func (r *looseRefs) Close() error { return nil }
