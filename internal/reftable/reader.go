@@ -136,6 +136,34 @@ func (r *Reader) HashAlgo() objfmt.Algo {
 // when the consumer's yield returns false.
 func (r *Reader) IterRefs() iter.Seq2[RefRecord, error] {
 	return func(yield func(RefRecord, error) bool) {
+		for rec, err := range r.iterAllRefs() {
+			if err != nil {
+				yield(RefRecord{}, err)
+				return
+			}
+			if rec.ValueType == refValueDeletion {
+				continue
+			}
+			if !yield(liftRefRecord(rec), nil) {
+				return
+			}
+		}
+	}
+}
+
+// iterAllRefs walks every ref_record in the file in on-disk (sorted)
+// order and yields the raw, internal [refRecord] — including tombstones
+// (value_type=0). It is the shared engine behind [Reader.IterRefs] and
+// [Stack]'s merged-view construction; the public iterator filters
+// tombstones, the stack uses them to delete shadowed entries.
+//
+// The walker scans ref blocks sequentially from the file header
+// onwards, stopping at the first non-ref block (obj/index/footer).
+// Block advancement uses blockLen, with the first block's length
+// folding in the file header preamble; thereafter pos rounds up to
+// blockSize when set.
+func (r *Reader) iterAllRefs() iter.Seq2[refRecord, error] {
+	return func(yield func(refRecord, error) bool) {
 		headerLen := uint32(r.header.size())
 		hashSize := r.header.algo.Size()
 
@@ -160,7 +188,7 @@ func (r *Reader) IterRefs() iter.Seq2[RefRecord, error] {
 
 			blk, err := parseBlock(slice, firstByteOffset)
 			if err != nil {
-				yield(RefRecord{}, fmt.Errorf("reftable: parse ref block at %d: %w", pos, err))
+				yield(refRecord{}, fmt.Errorf("reftable: parse ref block at %d: %w", pos, err))
 				return
 			}
 
@@ -170,13 +198,11 @@ func (r *Reader) IterRefs() iter.Seq2[RefRecord, error] {
 			for cur < recordsEnd {
 				rec, key, n, err := decodeRefRecord(blk.bytes[cur:recordsEnd], prevKey, r.header.minUpdateIndex, hashSize)
 				if err != nil {
-					yield(RefRecord{}, fmt.Errorf("reftable: decode ref_record at %d: %w", pos+cur, err))
+					yield(refRecord{}, fmt.Errorf("reftable: decode ref_record at %d: %w", pos+cur, err))
 					return
 				}
-				if rec.ValueType != refValueDeletion {
-					if !yield(liftRefRecord(rec), nil) {
-						return
-					}
+				if !yield(rec, nil) {
+					return
 				}
 				prevKey = key
 				cur += uint32(n)
@@ -192,7 +218,7 @@ func (r *Reader) IterRefs() iter.Seq2[RefRecord, error] {
 				nextPos = roundUp(nextPos, r.header.blockSize)
 			}
 			if nextPos <= pos {
-				yield(RefRecord{}, fmt.Errorf("reftable: block at %d does not advance: %w", pos, ErrTruncatedBlock))
+				yield(refRecord{}, fmt.Errorf("reftable: block at %d does not advance: %w", pos, ErrTruncatedBlock))
 				return
 			}
 			pos = nextPos
