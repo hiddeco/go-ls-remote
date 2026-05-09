@@ -127,6 +127,14 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		// future where ref names grow indentation rules.
 		line := strings.TrimRight(raw, " \t")
 		if line == "" {
+			// Note: this is *more permissive* than canonical Git. The
+			// record iterator at `refs/packed-backend.c:390` (and the
+			// `iter->eof - p < hexsz + 2` length check at line 920)
+			// dies on any line shorter than `<oid> <name>`, which
+			// includes blank lines. Canonical writers never emit blank
+			// lines so the divergence is invisible in practice; if v0
+			// gains write support this should tighten to canonical
+			// strictness so writer bugs surface as test-time failures.
 			continue
 		}
 
@@ -180,10 +188,32 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		// `^`-prefixed names so a corrupt file cannot stamp a stray peel
 		// onto the wrong ref. Canonical `git update-ref` writes a single
 		// ASCII space and no other whitespace.
+		//
+		// Note: this is *stricter* than canonical Git, which accepts any
+		// `isspace` byte between the OID and the refname
+		// (`refs/packed-backend.c:922` checks `!isspace(*p++)`).
+		// Canonical Git's writer emits exactly one ASCII space, so the
+		// divergence is invisible against canonical-Git-produced files.
+		// A future need to read non-canonical packed-refs would have to
+		// loosen this gate to match canonical's `isspace` rule.
 		if !ok || name == "" || name[0] == ' ' || name[0] == '\t' || name[0] == '^' {
 			return packedRefs{}, fmt.Errorf(
 				"objstore: packed-refs line %d: missing separator %q: %w",
 				lineNo, raw, ErrCorruptObject)
+		}
+		// Validate the refname against canonical Git's format rules
+		// (`refs.c:320` `check_refname_format` with
+		// `REFNAME_ALLOW_ONELEVEL`, the same flag the iterator uses at
+		// `refs/packed-backend.c:938`). Canonical Git would mark a
+		// non-conforming entry `REF_BAD_NAME | REF_ISBROKEN` and zero
+		// the OID; for a read-only library that surfaces refs to
+		// downstream serializers, refusing the file at parse time is
+		// safer — embedded NUL bytes or control characters in a
+		// "valid" ref would be invisible to the caller otherwise.
+		if !checkRefnameFormat(name) {
+			return packedRefs{}, fmt.Errorf(
+				"objstore: packed-refs line %d: invalid refname %q: %w",
+				lineNo, name, ErrCorruptObject)
 		}
 		if len(oidHex) != hexLen {
 			return packedRefs{}, fmt.Errorf(

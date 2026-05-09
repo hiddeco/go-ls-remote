@@ -333,6 +333,196 @@ func TestParsePackedRefs(t *testing.T) {
 				},
 			},
 		},
+
+		// Refname-format validation rows. Canonical Git's packed-refs
+		// iterator runs `check_refname_format(name, REFNAME_ALLOW_ONELEVEL)`
+		// on every record (`refs/packed-backend.c:938`) and marks
+		// non-conforming names `REF_BAD_NAME | REF_ISBROKEN` so callers
+		// see a sanitized empty OID rather than the corrupt input. For
+		// our read-only library the equivalent is to refuse the file at
+		// parse time: a downstream consumer that received a "valid" ref
+		// pointing at a broken name would have no way to flag it. The
+		// rules are taken from `refs.c::check_refname_component` and the
+		// `refname_disposition` table on `refs.c:80`.
+		{
+			name:      "refname_with_nul_byte_rejected",
+			input:     hexA + " refs/heads/ma\x00in\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_control_char_rejected",
+			input:     hexA + " refs/heads/ma\x01in\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_del_char_rejected",
+			input:     hexA + " refs/heads/ma\x7fin\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			// A space inside the refname is rejected. The grammar uses a
+			// single ASCII space as the column separator, but a *second*
+			// space inside the name still falls foul of the disposition
+			// table (32 -> 4, "bad character"). The earlier
+			// `double_space_between_oid_and_name_rejected` row exercises
+			// the separator gate; this one exercises the refname check.
+			name:      "refname_with_space_rejected",
+			input:     hexA + " refs/heads/main bar\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_tab_rejected",
+			input:     hexA + " refs/heads/main\tbar\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_tilde_rejected",
+			input:     hexA + " refs/heads/foo~1\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_caret_rejected",
+			input:     hexA + " refs/heads/foo^1\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_colon_rejected",
+			input:     hexA + " refs/heads/foo:bar\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_question_rejected",
+			input:     hexA + " refs/heads/foo?\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_asterisk_rejected",
+			input:     hexA + " refs/heads/foo*\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_open_bracket_rejected",
+			input:     hexA + " refs/heads/foo[1]\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_backslash_rejected",
+			input:     hexA + " refs/heads/foo\\bar\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_starting_with_slash_rejected",
+			input:     hexA + " /refs/heads/main\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_ending_with_slash_rejected",
+			input:     hexA + " refs/heads/main/\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_double_slash_rejected",
+			input:     hexA + " refs/heads//main\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_dotdot_rejected",
+			input:     hexA + " refs/heads/foo..bar\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_component_starting_with_dot_rejected",
+			input:     hexA + " refs/heads/.hidden\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_component_ending_with_dot_lock_rejected",
+			input:     hexA + " refs/heads/main.lock\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_with_at_brace_rejected",
+			input:     hexA + " refs/heads/foo@{bar}\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_equals_at_rejected",
+			input:     hexA + " @\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			name:      "refname_ending_with_dot_rejected",
+			input:     hexA + " refs/heads/foo.\n",
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
+		},
+		{
+			// Canonical Git's on-disk validator (`check_refname_format`
+			// with `REFNAME_ALLOW_ONELEVEL`) does not reject a leading
+			// `-` in a component — that rejection lives in argv parsing
+			// (`strbuf_check_branch_ref` and the option-name guards) and
+			// does not gate stored refs. A `refs/heads/-foo` name in
+			// `packed-refs` therefore parses cleanly here.
+			name:  "refname_component_starting_with_dash_accepted",
+			input: hexA + " refs/heads/-foo\n",
+			want: want{
+				entries: map[string]packedEntry{
+					"refs/heads/-foo": {oid: mkOID(t, hexA), fromPacked: true},
+				},
+			},
+		},
+		{
+			// Single-component name. Canonical Git passes
+			// `REFNAME_ALLOW_ONELEVEL` to `check_refname_format` from the
+			// packed-refs iterator (`refs/packed-backend.c:938`), so
+			// names like `HEAD` are tolerated even though
+			// `git update-ref` would refuse to write them outside `refs/`.
+			name:  "refname_single_component_accepted",
+			input: hexA + " HEAD\n",
+			want: want{
+				entries: map[string]packedEntry{
+					"HEAD": {oid: mkOID(t, hexA), fromPacked: true},
+				},
+			},
+		},
+		{
+			name:  "refname_with_subdir_accepted",
+			input: hexA + " refs/heads/feature/sub-branch\n",
+			want: want{
+				entries: map[string]packedEntry{
+					"refs/heads/feature/sub-branch": {oid: mkOID(t, hexA), fromPacked: true},
+				},
+			},
+		},
+		{
+			name:  "refname_remote_with_dots_accepted",
+			input: hexA + " refs/tags/v1.0.0\n",
+			want: want{
+				entries: map[string]packedEntry{
+					"refs/tags/v1.0.0": {oid: mkOID(t, hexA), fromPacked: true},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
