@@ -84,23 +84,36 @@ func TestParsePackedRefs(t *testing.T) {
 			},
 		},
 		{
-			// The parser treats the first `#` line it sees as the
-			// traits header regardless of position: blank lines and
-			// in-body refs do not flip `headerSeen`. A `#` line on
-			// line 1 is parsed as traits; a `#` line that follows a
-			// ref line is *also* parsed as traits because the parser
-			// does not pin the header to line 1. This row pins down
-			// the actual behavior so a tightening (e.g. requiring the
-			// header on line 1) becomes a visible regression.
-			name: "header_after_ref_is_still_parsed_as_traits",
+			// Canonical Git pins the traits header to the very first
+			// byte of the file: `refs/packed-backend.c:719` checks
+			// `*snapshot->buf == '#'` and only consumes one line. A
+			// `# pack-refs with:` line that follows ref lines is not a
+			// header — it is treated as a body comment and the traits
+			// remain at their zero value.
+			name: "header_after_ref_is_not_parsed_as_traits",
 			input: hexA + " refs/heads/main\n" +
 				"# pack-refs with: sorted\n" +
 				hexB + " refs/heads/feature\n",
 			want: want{
-				traits: packedTraits{sorted: true},
+				traits: packedTraits{},
 				entries: map[string]packedEntry{
 					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
+				},
+			},
+		},
+		{
+			// A `# pack-refs with:` line on line 2 (after a ref on
+			// line 1) is a body comment, not a traits header. The
+			// traits stay at the zero value and the ref on line 1
+			// registers normally.
+			name: "header_on_line_two_is_body_comment",
+			input: hexA + " refs/heads/main\n" +
+				"# pack-refs with: fully-peeled\n",
+			want: want{
+				traits: packedTraits{},
+				entries: map[string]packedEntry{
+					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
 		},
@@ -174,25 +187,18 @@ func TestParsePackedRefs(t *testing.T) {
 			},
 		},
 		{
-			// The parser does not detect a duplicate peel: the second
-			// `^<oid>` line silently overwrites the first. Pinned
-			// down here so a future tightening that rejects the
-			// duplicate (matching canonical Git's stricter readers)
-			// surfaces as a visible test failure.
-			name: "double_peel_second_overwrites_first",
+			// Canonical Git's record iterator consumes one peel line
+			// per record (`refs/packed-backend.c:952`). A second
+			// `^<oid>` line is the start of the next record, which
+			// `parse_oid_hex_algop` then rejects because `^` is not a
+			// hex digit. The Go parser surfaces the same condition as
+			// an `ErrCorruptObject`-wrapped error.
+			name: "double_peel_rejected",
 			input: hexC + " refs/tags/v1\n" +
 				"^" + hexD + "\n" +
 				"^" + hexA + "\n",
-			want: want{
-				entries: map[string]packedEntry{
-					"refs/tags/v1": {
-						oid:        mkOID(t, hexC),
-						peeled:     mkOID(t, hexA),
-						peelKnown:  true,
-						fromPacked: true,
-					},
-				},
-			},
+			wantErr:   true,
+			wantErrIs: ErrCorruptObject,
 		},
 		{
 			name:      "peel_without_preceding_ref_rejected",

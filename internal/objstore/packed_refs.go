@@ -80,18 +80,25 @@ type packedRefs struct {
 // `refs/packed-backend.c::parse_packed_refs_line`:
 //
 //   - Optional first line `# pack-refs with: <traits>` whose
-//     space-separated tokens populate [packedTraits]. Unknown tokens are
-//     ignored.
+//     space-separated tokens populate [packedTraits]. The traits header
+//     is pinned to line 1 (canonical Git checks `*snapshot->buf == '#'`
+//     in `refs/packed-backend.c:719` and consumes only one line). A
+//     `# pack-refs with:` line later in the file is a body comment, not
+//     a second traits header.
 //   - Subsequent comment lines (`#` start) and blank lines are skipped.
 //   - `<oid> <ref-name>` registers a ref entry. The OID width is
 //     dictated by algo; a single space separates the columns.
 //   - `^<oid>` immediately following a ref entry records the dereferenced
-//     commit id of the previous ref. peelKnown is set to true.
+//     commit id of the previous ref. peelKnown is set to true. A
+//     second `^<oid>` line for the same ref is rejected: canonical Git's
+//     `next_record` (`refs/packed-backend.c:952`) consumes one peel per
+//     record, and `parse_oid_hex_algop` then dies on the leading `^` of
+//     the duplicate.
 //
 // Trailing whitespace and `\r\n` line endings are tolerated. Malformed
-// lines (wrong hex length, no separator, `^` with no preceding ref)
-// surface as an error wrapping [ErrCorruptObject], with the offending
-// line number and text included for diagnostics.
+// lines (wrong hex length, no separator, `^` with no preceding ref,
+// duplicate peel) surface as an error wrapping [ErrCorruptObject], with
+// the offending line number and text included for diagnostics.
 func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 	out := packedRefs{refs: make(map[string]packedEntry)}
 
@@ -104,9 +111,9 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 	hexLen := algo.Size() * 2
 
 	var (
-		lineNo     int
-		headerSeen bool
-		lastRef    string // most recently registered ref; "" before the first ref
+		lineNo  int
+		seenAny bool   // true once any non-blank line has been observed
+		lastRef string // most recently registered ref; "" before the first ref
 	)
 	for scanner.Scan() {
 		lineNo++
@@ -121,22 +128,31 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		}
 
 		if line[0] == '#' {
-			if !headerSeen {
+			// Only the first non-blank line is eligible for the
+			// traits header. Canonical Git checks `*snapshot->buf ==
+			// '#'` at the very start of the file
+			// (`refs/packed-backend.c:719`); a `#` line anywhere
+			// later is a body comment. A leading blank line is a
+			// Go-side lenience canonical Git's writer never produces.
+			if !seenAny {
 				out.traits = parsePackedRefTraits(line)
-				headerSeen = true
-				continue
 			}
-			// Body comments are tolerated and skipped; canonical Git
-			// only writes a header comment, but a manually-edited file
-			// might carry annotations.
+			seenAny = true
 			continue
 		}
+		seenAny = true
 
 		if line[0] == '^' {
 			if lastRef == "" {
 				return packedRefs{}, fmt.Errorf(
 					"objstore: packed-refs line %d: peel without preceding ref %q: %w",
 					lineNo, raw, ErrCorruptObject)
+			}
+			entry := out.refs[lastRef]
+			if entry.peelKnown {
+				return packedRefs{}, fmt.Errorf(
+					"objstore: packed-refs line %d: duplicate peel for %q: %q: %w",
+					lineNo, lastRef, raw, ErrCorruptObject)
 			}
 			peelHex := line[1:]
 			if len(peelHex) != hexLen {
@@ -150,7 +166,6 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 					"objstore: packed-refs line %d: parse peel %q: %w",
 					lineNo, raw, ErrCorruptObject)
 			}
-			entry := out.refs[lastRef]
 			entry.peeled = peeled
 			entry.peelKnown = true
 			out.refs[lastRef] = entry
