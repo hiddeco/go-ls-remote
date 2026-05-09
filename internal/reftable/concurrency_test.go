@@ -1,6 +1,7 @@
 package reftable
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,16 @@ import (
 // any number of goroutines after construction, while Close is the
 // caller's responsibility to serialize. Run under `go test -race` to
 // let the race detector flag any unsynchronized writes.
+//
+// Each goroutine inserts a [runtime.Gosched] after every hammer
+// iteration so the Go scheduler rotates fairly across all 32 goroutines
+// inside the 100ms time budget. The allocation-free [Stack.IterRefs]
+// path is otherwise tight enough that with goroutines >> CPUs the
+// sysmon's 10ms preemption cadence can leave some goroutines unrun
+// before the time budget elapses, even though the contract under test
+// (concurrent reads remain safe and produce correct results) is met.
+// The yield does not change what is being tested; it only ensures the
+// per-goroutine progress assertion is observed deterministically.
 
 const concurrentGoroutines = 32
 
@@ -70,6 +81,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 					}
 					findHits[id]++
 				}
+				runtime.Gosched()
 			}
 		})
 	}
@@ -162,6 +174,7 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 					}
 					findHits[id]++
 				}
+				runtime.Gosched()
 			}
 		})
 	}
