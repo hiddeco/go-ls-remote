@@ -56,7 +56,7 @@ func TestOpenStack(t *testing.T) {
 		assert.False(t, ok)
 	})
 
-	t.Run("stack_shadow_sha1_table_2_shadows_table_1", func(t *testing.T) {
+	t.Run("stack_shadow_sha1_yields_top_of_stack", func(t *testing.T) {
 		stack, err := OpenStack(stackDir(t, "stack-shadow-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -76,17 +76,16 @@ func TestOpenStack(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, want, got, "stack must reflect the latest table's value")
 
-		// Sanity: the earliest table either has no refs/heads/main or a
-		// different value. Either way, the stacked view must NOT report
-		// the earliest value when a later table shadows it.
-		firstReader, err := OpenReader(fixturePath(t, "stack-shadow-sha1/0001-0001-aaaaaaaa.ref"))
+		// Sanity: table 2 carries refs/heads/main → head_a, which the
+		// later table 3 shadows. The merged view must NOT leak the
+		// earlier value through.
+		secondReader, err := OpenReader(fixturePath(t, "stack-shadow-sha1/0002-0002-bbbbbbbb.ref"))
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = firstReader.Close() })
-		first, hadFirst, err := firstReader.FindRef("refs/heads/main")
+		t.Cleanup(func() { _ = secondReader.Close() })
+		secondTable, ok, err := secondReader.FindRef("refs/heads/main")
 		require.NoError(t, err)
-		if hadFirst {
-			assert.NotEqual(t, first.Value, got.Value, "stacked main must not equal earliest table's main")
-		}
+		require.True(t, ok)
+		assert.NotEqual(t, secondTable.Value, got.Value, "stacked main must not equal earlier table's main")
 	})
 
 	t.Run("empty_tables_list_yields_empty_stack", func(t *testing.T) {
