@@ -48,9 +48,11 @@
 #                                       with the last CRC byte flipped
 #   testdata/reftable/truncated-sha1.ref
 #                                       copy of single-sha1 reftable
-#                                       with the last 8 footer bytes
-#                                       removed (CRC + part of the
-#                                       trailing offsets)
+#                                       truncated to 50 bytes — shorter
+#                                       than `headerSizeV1 + footerSizeV1`
+#                                       (24 + 68 = 92), so the trailer
+#                                       length guard rejects it before
+#                                       any field decode
 #
 # The block_size and ref_index_position assertions inside the script
 # guard against silent regressions if upstream Git changes its writer
@@ -299,15 +301,20 @@ with open(p, "wb") as fh:
 PY
 
 # --- truncated-sha1.ref ------------------------------------------------------
-# Copy the single-sha1 reftable and lop 8 bytes off the tail. The
-# reader's `OpenReader` must report a clean error rather than panic.
+# Truncate the single-sha1 reftable to 50 bytes — strictly less than
+# `headerSizeV1 + footerSizeV1` (24 + 68 = 92), so `verifyTrailer`'s
+# length guard fires before any field decode. Larger truncations leave
+# the file long enough for the footer-bytes view to be reinterpreted as
+# a header, hitting the CRC or magic checks instead of the length guard.
 cp "$src_single" "$out/truncated-sha1.ref"
 python3 - "$out/truncated-sha1.ref" <<'PY'
-import os, sys
+import sys
 p = sys.argv[1]
-sz = os.path.getsize(p)
 with open(p, "r+b") as fh:
-    fh.truncate(sz - 8)
+    fh.truncate(50)
 PY
+truncated_size=$(wc -c <"$out/truncated-sha1.ref" | tr -d ' ')
+[ "$truncated_size" -lt 92 ] \
+    || { echo "truncated-sha1.ref: size=$truncated_size (want <92)" >&2; exit 1; }
 
 echo "wrote fixtures into $out"

@@ -46,11 +46,6 @@ var (
 	// neither the ASCII tag `sha1` nor `s256`.
 	ErrBadHashID = errors.New("reftable: bad hash id")
 
-	// ErrFooterMismatch is returned when the footer's leading copy of
-	// the file header does not match the file's actual header.
-	// reftable.adoc §"Footer" requires the two to be byte-identical.
-	ErrFooterMismatch = errors.New("reftable: footer header mismatch")
-
 	// ErrTrailerChecksum is returned when the CRC-32 stored at the end
 	// of the footer does not match a fresh CRC computed over the
 	// preceding footer bytes.
@@ -185,7 +180,7 @@ func verifyTrailer(file []byte, h header) error {
 	// file header. Canonical Git checks this with memcmp before
 	// parsing footer fields; mismatch is a format error.
 	if string(footer[:headerLen]) != string(file[:headerLen]) {
-		return fmt.Errorf("reftable: footer header copy mismatch: %w", ErrFooterMismatch)
+		return fmt.Errorf("reftable: footer header copy diverges from file header")
 	}
 
 	// CRC-32 covers every footer byte before the trailing 4-byte CRC

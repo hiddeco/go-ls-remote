@@ -54,6 +54,7 @@ func Test_parseHeader(t *testing.T) {
 	t.Run("short_input", func(t *testing.T) {
 		_, err := parseHeader([]byte("REFT"))
 		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrShortFile), "want ErrShortFile, got %v", err)
 	})
 
 	t.Run("bad_magic", func(t *testing.T) {
@@ -108,10 +109,15 @@ func Test_verifyTrailer(t *testing.T) {
 	})
 
 	t.Run("truncated_fails", func(t *testing.T) {
+		// truncated-sha1.ref is shorter than headerSizeV1 + footerSizeV1
+		// (24 + 68 = 92), so verifyTrailer's length guard fires.
+		// parseHeader still succeeds because the fixture preserves the
+		// first 24 bytes of the original single-sha1 header.
 		buf := readFixture(t, "truncated-sha1.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
 		err = verifyTrailer(buf, h)
 		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrShortFile), "want ErrShortFile, got %v", err)
 	})
 }
