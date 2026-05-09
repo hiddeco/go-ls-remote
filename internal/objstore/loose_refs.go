@@ -254,23 +254,35 @@ func (r *looseRefs) Lookup(name string) (RefEntry, bool, error) {
 }
 
 // toRefEntry lifts a cached [packedEntry] into the public [RefEntry].
-// PeelKnown captures two signals:
+// PeelKnown captures three signals:
 //
 //   - The entry's own `peelKnown` bit, set when a `^<oid>` line followed
 //     the ref in `packed-refs`. The peel is recorded directly.
 //   - The file-wide `fully-peeled` trait, but only for entries that came
 //     from `packed-refs` (`fromPacked` true). The trait is a statement
 //     about the file's contents — under it, the absence of a `^<oid>`
-//     line is authoritative, so a packed entry without one definitively
-//     has no peel. A loose-override entry's OID never sat in the file,
-//     so the trait says nothing about it; PeelKnown stays false and
-//     [Store.PeelRef] falls through to a full peel.
+//     line is authoritative anywhere in the file, so a packed entry
+//     without one definitively has no peel.
+//   - The file-wide `peeled` trait, scoped to refs whose name has the
+//     `refs/tags/` prefix and (again) only for `fromPacked` entries.
+//     Canonical `next_record` (`refs/packed-backend.c:945`) sets
+//     `REF_KNOWS_PEELED` for tags under either trait; a missing
+//     `^<oid>` line on a tag means the tag is non-peelable
+//     (commit-target lightweight tag).
+//
+// In every trait-derived case the `fromPacked` gate matters: a
+// loose-override entry's OID never sat in the file, so the file-wide
+// traits say nothing about it; PeelKnown stays false and
+// [Store.PeelRef] falls through to a full peel.
 func (r *looseRefs) toRefEntry(name string, entry packedEntry) RefEntry {
+	peelKnown := entry.peelKnown ||
+		(entry.fromPacked && r.traits.fullyPeeled) ||
+		(entry.fromPacked && r.traits.peeled && strings.HasPrefix(name, "refs/tags/"))
 	return RefEntry{
 		Name:      name,
 		OID:       entry.oid,
 		Peeled:    entry.peeled,
-		PeelKnown: entry.peelKnown || (entry.fromPacked && r.traits.fullyPeeled),
+		PeelKnown: peelKnown,
 	}
 }
 

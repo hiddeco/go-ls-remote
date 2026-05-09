@@ -52,9 +52,12 @@ type packedEntry struct {
 //   - fullyPeeled: every peelable ref (anywhere, not just tags) carries
 //     its `^<oid>` line. Combined with [packedEntry.peelKnown], a
 //     missing peel becomes definitive: the ref is non-peelable.
-//   - sorted: the ref entries are sorted by name. Consumers that need
-//     ordered iteration may stream straight from the file rather than
-//     buffering the full set.
+//   - sorted: the ref entries are sorted by name. The parser verifies
+//     the trait on-the-fly during the body walk and clears it on the
+//     first out-of-order pair, mirroring `sort_snapshot` in
+//     `refs/packed-backend.c:380`. A surviving `sorted` is therefore
+//     trustworthy — consumers that need ordered iteration may stream
+//     straight from the file rather than buffering the full set.
 //
 // Unknown trait tokens in the header are tolerated and ignored so a
 // future trait the parser has not been taught about does not blow up
@@ -192,6 +195,17 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 			return packedRefs{}, fmt.Errorf(
 				"objstore: packed-refs line %d: parse oid %q: %w",
 				lineNo, raw, ErrCorruptObject)
+		}
+		// Verify the `sorted` trait on-the-fly. Canonical Git's
+		// `sort_snapshot` (`refs/packed-backend.c:380`) walks the
+		// records during iteration and clears the trait on the first
+		// out-of-order pair; a corrupt or hostile file claiming
+		// `sorted` must not be allowed to mislead downstream
+		// short-circuits that rely on the order. Equal names are not a
+		// violation — canonical Git treats them as in-order — so the
+		// comparison is strictly less-than.
+		if out.traits.sorted && lastRef != "" && name < lastRef {
+			out.traits.sorted = false
 		}
 		out.refs[name] = packedEntry{oid: oid, fromPacked: true}
 		lastRef = name

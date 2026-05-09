@@ -190,6 +190,15 @@
 #       dotgit/packed-refs                `# pack-refs with: sorted`
 #                                         plus a couple of refs in order
 #
+#   testdata/repos/packed-refs-peeled-only/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/packed-refs                `# pack-refs with: peeled`
+#                                         (without `fully-peeled`); a
+#                                         branch, a lightweight tag with
+#                                         no `^peel` line, and an
+#                                         annotated tag with one
+#
 #   testdata/repos/loose-objects/
 #       dotgit/HEAD
 #       dotgit/refs/.gitkeep
@@ -792,6 +801,32 @@ write_head "$sr_root/dotgit"
     printf '%s refs/heads/main\n' "$oid_main"
     printf '%s refs/tags/v1\n'    "$oid_tag"
 } >"$sr_root/dotgit/packed-refs"
+
+# --- packed-refs-peeled-only -------------------------------------------------
+# `# pack-refs with: peeled` (without `fully-peeled`). Canonical Git's
+# `next_record` (`refs/packed-backend.c:945`) sets `REF_KNOWS_PEELED`
+# under this trait only for refs whose name has the `refs/tags/`
+# prefix: a missing `^peel` line on a tag means the tag is non-peelable
+# (commit-target lightweight tag), but the trait says nothing about
+# non-tag refs. Three entries cover the cases:
+#
+#   - refs/heads/main      branch with no `^peel`; PeelKnown=false
+#   - refs/tags/lightweight tag with no `^peel`; PeelKnown=true,
+#                           Peeled=zero (the trait makes the absence
+#                           authoritative)
+#   - refs/tags/v1          annotated tag with `^peel`; PeelKnown=true,
+#                           Peeled=<peel oid>
+po2_root="$out/packed-refs-peeled-only"
+mkdir -p "$po2_root/dotgit/refs"
+write_head "$po2_root/dotgit"
+: >"$po2_root/dotgit/refs/.gitkeep"
+{
+    printf '# pack-refs with: peeled\n'
+    printf '%s refs/heads/main\n'        "$oid_main"
+    printf '%s refs/tags/lightweight\n'  "$oid_packed_main"
+    printf '%s refs/tags/v1\n'           "$oid_tag"
+    printf '^%s\n'                       "$oid_tag_peel"
+} >"$po2_root/dotgit/packed-refs"
 
 # --- loose-objects ----------------------------------------------------------
 # Real loose objects covering all four [objfmt.ObjectType] variants

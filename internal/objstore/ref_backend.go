@@ -92,11 +92,14 @@ type RefEntry struct {
 	//     into one call).
 	//
 	// The loose-refs backend sets PeelKnown when a `^<oid>` line follows
-	// the entry in `packed-refs` OR when the file's `# pack-refs with:`
-	// header advertises the `fully-peeled` trait — under that trait the
-	// absence of `^<oid>` is itself authoritative. The reftable backend
-	// always sets PeelKnown=true: every reftable ref record carries its
-	// peel slot (zero or set), so the merged-view lookup is definitive.
+	// the entry in `packed-refs`, when the file's `# pack-refs with:`
+	// header advertises the `fully-peeled` trait, or — under the
+	// narrower `peeled` trait — when the ref name has the `refs/tags/`
+	// prefix; canonical `refs/packed-backend.c:945` sets
+	// `REF_KNOWS_PEELED` for tags under either trait so the absence of
+	// `^<oid>` becomes authoritative. The reftable backend always sets
+	// PeelKnown=true: every reftable ref record carries its peel slot
+	// (zero or set), so the merged-view lookup is definitive.
 	PeelKnown bool
 }
 

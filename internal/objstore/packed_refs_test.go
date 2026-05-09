@@ -246,17 +246,20 @@ func TestParsePackedRefs(t *testing.T) {
 		{
 			// Comments after the header are tolerated and skipped;
 			// the parser explicitly handles `#` lines in the body.
+			// Ref names are kept in lexical order so the `sorted`
+			// trait survives the on-the-fly verification — the case
+			// targets comment handling, not sort enforcement.
 			name: "body_comments_skipped",
 			input: "# pack-refs with: sorted\n" +
 				"# a body comment\n" +
-				hexA + " refs/heads/main\n" +
+				hexB + " refs/heads/feature\n" +
 				"# another comment after a ref\n" +
-				hexB + " refs/heads/feature\n",
+				hexA + " refs/heads/main\n",
 			want: want{
 				traits: packedTraits{sorted: true},
 				entries: map[string]packedEntry{
-					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
+					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
 		},
@@ -295,6 +298,40 @@ func TestParsePackedRefs(t *testing.T) {
 				"^deadbeef\n",
 			wantErr:   true,
 			wantErrIs: ErrCorruptObject,
+		},
+		{
+			// Canonical `sort_snapshot` (`refs/packed-backend.c:380`)
+			// verifies the sort on-the-fly during record iteration: on
+			// the first out-of-order pair the snapshot's `sorted` flag is
+			// cleared. The Go parser must do the same so a corrupt or
+			// hostile file claiming `sorted` cannot mislead downstream
+			// short-circuits.
+			name: "sorted_trait_cleared_when_entries_out_of_order",
+			input: "# pack-refs with: sorted\n" +
+				hexA + " refs/heads/zebra\n" +
+				hexB + " refs/heads/apple\n",
+			want: want{
+				traits: packedTraits{sorted: false},
+				entries: map[string]packedEntry{
+					"refs/heads/zebra": {oid: mkOID(t, hexA), fromPacked: true},
+					"refs/heads/apple": {oid: mkOID(t, hexB), fromPacked: true},
+				},
+			},
+		},
+		{
+			// Companion to the above: when entries are in order the trait
+			// must remain set so callers may rely on it.
+			name: "sorted_trait_preserved_when_entries_in_order",
+			input: "# pack-refs with: sorted\n" +
+				hexA + " refs/heads/apple\n" +
+				hexB + " refs/heads/zebra\n",
+			want: want{
+				traits: packedTraits{sorted: true},
+				entries: map[string]packedEntry{
+					"refs/heads/apple": {oid: mkOID(t, hexA), fromPacked: true},
+					"refs/heads/zebra": {oid: mkOID(t, hexB), fromPacked: true},
+				},
+			},
 		},
 	}
 

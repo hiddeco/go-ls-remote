@@ -398,3 +398,48 @@ func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
 	assert.False(t, found)
 	assert.Equal(t, RefEntry{}, entry)
 }
+
+// TestLooseRefs_PeeledTrait_TagsKnowPeel exercises the `peeled`-trait
+// path in `toRefEntry`: under `# pack-refs with: peeled` (without
+// `fully-peeled`), a tag's missing `^peel` line is authoritative —
+// canonical Git's `next_record` (`refs/packed-backend.c:945`) sets
+// `REF_KNOWS_PEELED` for any ref whose name has the `refs/tags/`
+// prefix. Annotated tags with an explicit peel still surface the
+// recorded OID; commit-target lightweight tags surface a zero peel
+// with PeelKnown=true.
+func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
+	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
+
+	annotated, found, err := r.Lookup("refs/tags/v1")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, annotated.PeelKnown,
+		"annotated tag with `^peel` must surface PeelKnown=true")
+	assert.Equal(t,
+		hashFromHex(t, "dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1),
+		annotated.Peeled)
+
+	lightweight, found, err := r.Lookup("refs/tags/lightweight")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.True(t, lightweight.PeelKnown,
+		"`peeled` trait makes a tag's missing `^peel` line authoritative")
+	assert.Equal(t, objfmt.Hash{}, lightweight.Peeled,
+		"commit-target tag yields zero peel under the `peeled` trait")
+}
+
+// TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown pins down the
+// `refs/tags/` scope: the `peeled` trait says nothing about non-tag
+// refs (`refs/packed-backend.c:945` gates the `REF_KNOWS_PEELED` set
+// on `starts_with(rec->refname, "refs/tags/")`). A branch ref without
+// `^peel` must surface PeelKnown=false even when the trait is set.
+func TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown(t *testing.T) {
+	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
+
+	entry, found, err := r.Lookup("refs/heads/main")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.False(t, entry.PeelKnown,
+		"`peeled` trait does not apply to non-tag refs")
+	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+}

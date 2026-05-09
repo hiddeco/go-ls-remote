@@ -1,0 +1,5 @@
+# pack-refs with: peeled
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main
+1111111111111111111111111111111111111111 refs/tags/lightweight
+cccccccccccccccccccccccccccccccccccccccc refs/tags/v1
+^dddddddddddddddddddddddddddddddddddddddd
