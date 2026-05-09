@@ -43,26 +43,32 @@ const (
 // blockHeader carries the per-block fields decoded from a reftable
 // block, regardless of block_type.
 type blockHeader struct {
-	blockType    byte   // 'r', 'i', 'o', 'g'
-	blockLen     uint32 // bytes from block start through restart_count, excluding optional padding
+	blockType byte // 'r', 'i', 'o', 'g'
+	// blockLen is the number of bytes from the block start through
+	// restart_count, excluding optional padding. For the first ref
+	// block in a file the leading 24 (v1) or 28 (v2) bytes are the
+	// file header, included in block_len per spec.
+	blockLen     uint32
 	restartCount uint16 // number of restart_offset entries (1..65535)
 }
 
 // block is a parsed view of a reftable ref/index/obj block: the
 // decoded header plus the eagerly resolved restart-offset table. The
-// caller hands in the block's bytes; block does not own or copy them.
+// caller hands in the block's bytes; [block] does not own or copy them.
 type block struct {
 	header blockHeader
 
 	// bytes is the block payload sliced to exactly blockLen. Padding
 	// after the block (when the file aligns blocks to block_size) is
-	// excluded.
+	// excluded. For the first ref block in a file, bytes[0:firstByteOffset]
+	// is the file header and a record iterator must start at
+	// bytes[firstByteOffset+4] (skipping block_type + block_len).
 	bytes []byte
 
 	// restartOffsets[i] is the offset of the i-th restart record,
 	// expressed relative to bytes[0]. For the first ref block in a
 	// file, on-disk restart_offset values are relative to position 0
-	// (they include the 24-byte file header); parseBlock subtracts
+	// (they include the 24-byte file header); [parseBlock] subtracts
 	// firstByteOffset to bring them into the same frame.
 	restartOffsets []uint32
 }
@@ -144,7 +150,7 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 	}
 
 	restartOffsets := make([]uint32, restartCount)
-	for i := uint16(0); i < restartCount; i++ {
+	for i := range int(restartCount) {
 		off := be24(bytes[tableStart+3*int64(i) : tableStart+3*int64(i)+3])
 		// Rebase first-block offsets into the block-local frame.
 		if off < firstByteOffset {
@@ -165,7 +171,7 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 }
 
 // seekRestart returns the index of the largest restart point whose
-// record key compares ≤ probe via cmp, or -1 if probe sorts before
+// record key compares <= probe via cmp, or -1 if probe sorts before
 // every restart point.
 //
 // cmp(i) returns -1, 0, or +1 if the record at restartOffsets[i]
@@ -176,7 +182,7 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 //
 // Mirrors `reftable/block.c::block_iter_seek_key`: we binary-search
 // for the first restart strictly greater than probe and back up by
-// one to find the largest restart ≤ probe.
+// one to find the largest restart <= probe.
 func (b *block) seekRestart(cmp func(restartIdx int) int) int {
 	idx := sort.Search(int(b.header.restartCount), func(i int) bool {
 		return cmp(i) > 0
@@ -187,9 +193,9 @@ func (b *block) seekRestart(cmp func(restartIdx int) int) int {
 // be24 decodes a 3-byte big-endian unsigned integer.
 //
 // reftable.adoc encodes block_len and each restart_offset as uint24;
-// encoding/binary has no Uint24 helper. parseHeader spells the same
+// encoding/binary has no Uint24 helper. [parseHeader] spells the same
 // math out inline because it only needs to read one such value;
-// parseBlock reads many in a hot loop, so factoring the helper here
+// [parseBlock] reads many in a hot loop, so factoring the helper here
 // keeps the loop tight.
 func be24(buf []byte) uint32 {
 	return uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
