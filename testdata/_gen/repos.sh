@@ -192,6 +192,43 @@
 #       Same shape as `loose-objects/` but with `--object-format=sha256`
 #       so the fanout is taken from a 64-char hex OID.
 #
+#   testdata/repos/idx-single/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/three-objects.{idx,pack}
+#                                          single canonical pack/idx pair
+#                                          copied verbatim from
+#                                          `testdata/objfmt/`. Exercises
+#                                          the `idxCatalog` happy path.
+#
+#   testdata/repos/idx-multi/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/{ofs-delta,three-objects}.{idx,pack}
+#                                          two pack/idx pairs so iteration
+#                                          order matters; the second-pack
+#                                          hit case asserts that the
+#                                          backend visits packs in
+#                                          basename-sorted order.
+#
+#   testdata/repos/idx-corrupt/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/bogus.idx     fixed garbage payload (16 bytes
+#                                          of zeros) so the opener exercises
+#                                          the corrupt-idx path. Synthetic
+#                                          rather than truncated-real to
+#                                          avoid accidentally producing a
+#                                          file that happens to parse.
+#
+#   testdata/repos/idx-missing-pack/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/three-objects.idx   no `.pack` sibling; the
+#                                          opener must surface an error
+#                                          referencing both paths and not
+#                                          leak the already-opened idx.
+#
 # Empty directories cannot be tracked by git, so each fixture that
 # needs to ship one carries a zero-byte `.gitkeep` placeholder. The
 # materializer copies it through unchanged; the resolver and backends
@@ -671,5 +708,69 @@ for fanout in "$lo256_work"/.git/objects/*/; do
     mkdir -p "$loobj256_root/dotgit/objects/$name"
     cp "$fanout"/* "$loobj256_root/dotgit/objects/$name/"
 done
+
+# --- idx catalog fixtures ---------------------------------------------------
+# Pack/idx fixtures for the per-`.idx` catalogue backend. These reuse
+# the canonical bytes already shipped under `testdata/objfmt/`, so no
+# `git` invocation is required: each fixture is a `cp` of pre-built
+# pack/idx pairs into a minimal repo skeleton.
+
+# scaffold_idx_repo <root>
+#   Lay down a minimal repo skeleton with an empty `objects/pack/`
+#   directory ready to receive committed pack/idx fixtures.
+scaffold_idx_repo() {
+    local root="$1"
+    mkdir -p "$root/dotgit/objects/pack" "$root/dotgit/refs"
+    write_head "$root/dotgit"
+    : >"$root/dotgit/refs/.gitkeep"
+}
+
+# --- idx-single --------------------------------------------------------------
+# One pack/idx pair under `objects/pack/`. Used to assert the happy
+# path: a known OID resolves to the correct (`*Pack`, offset) tuple.
+idx_single_root="$out/idx-single"
+scaffold_idx_repo "$idx_single_root"
+cp "$root/testdata/objfmt/three-objects.idx" \
+    "$idx_single_root/dotgit/objects/pack/three-objects.idx"
+cp "$root/testdata/objfmt/three-objects.pack" \
+    "$idx_single_root/dotgit/objects/pack/three-objects.pack"
+
+# --- idx-multi ---------------------------------------------------------------
+# Two pack/idx pairs so the iteration-order assertions have something
+# to bite on. `ofs-delta` sorts before `three-objects` lexically, which
+# makes "OID lives in second pack" exercise the post-first-miss path.
+idx_multi_root="$out/idx-multi"
+scaffold_idx_repo "$idx_multi_root"
+cp "$root/testdata/objfmt/three-objects.idx" \
+    "$idx_multi_root/dotgit/objects/pack/three-objects.idx"
+cp "$root/testdata/objfmt/three-objects.pack" \
+    "$idx_multi_root/dotgit/objects/pack/three-objects.pack"
+cp "$root/testdata/objfmt/ofs-delta.idx" \
+    "$idx_multi_root/dotgit/objects/pack/ofs-delta.idx"
+cp "$root/testdata/objfmt/ofs-delta.pack" \
+    "$idx_multi_root/dotgit/objects/pack/ofs-delta.pack"
+
+# --- idx-corrupt -------------------------------------------------------------
+# An idx file whose first bytes are neither the v2 magic nor a
+# plausible v1 fan-out. Sixteen zero bytes are short enough to trip the
+# v1 truncation check (`v1` requires `256*4` bytes for the fan-out
+# alone) and synthetic enough that no future edit of the canonical
+# fixtures could accidentally produce parsable bytes.
+idx_corrupt_root="$out/idx-corrupt"
+scaffold_idx_repo "$idx_corrupt_root"
+# 16 NULs: classified as v1 (no v2 magic) and immediately rejected for
+# truncation. Written with `dd` because `printf` cannot emit raw NULs
+# portably across shells.
+dd if=/dev/zero of="$idx_corrupt_root/dotgit/objects/pack/bogus.idx" \
+    bs=1 count=16 status=none
+
+# --- idx-missing-pack --------------------------------------------------------
+# An idx with no `.pack` sibling. Surfaces the constructor's pairing
+# check: the opener must close the already-opened idx and return an
+# error mentioning both paths.
+idx_missing_root="$out/idx-missing-pack"
+scaffold_idx_repo "$idx_missing_root"
+cp "$root/testdata/objfmt/three-objects.idx" \
+    "$idx_missing_root/dotgit/objects/pack/three-objects.idx"
 
 echo "wrote fixtures into $out"
