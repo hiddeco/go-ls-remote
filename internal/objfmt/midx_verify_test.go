@@ -27,8 +27,11 @@ func TestMidx_VerifyChecksum(t *testing.T) {
 
 	t.Run("a flipped byte fails verification", func(t *testing.T) {
 		// Copy the fixture so the on-disk original is untouched, then
-		// flip a byte well inside the body — comfortably away from
-		// the trailing 20-byte SHA-1.
+		// flip a byte inside the trailing 20-byte SHA-1. Flipping the
+		// trailer keeps the body parseable — `OpenMidx` still
+		// validates the chunk table and OOFF pack-index range — so
+		// the failure surfaces from `VerifyChecksum` rather than at
+		// open time.
 		dst := filepath.Join(t.TempDir(), "multi-pack-index")
 		src, err := os.Open(idxFixture(t, "multi-pack-index"))
 		require.NoError(t, err)
@@ -43,7 +46,7 @@ func TestMidx_VerifyChecksum(t *testing.T) {
 		require.NoError(t, err)
 		st, err := f.Stat()
 		require.NoError(t, err)
-		off := st.Size() - 60
+		off := st.Size() - 5 // inside the SHA-1 trailer
 		var b [1]byte
 		_, err = f.ReadAt(b[:], off)
 		require.NoError(t, err)

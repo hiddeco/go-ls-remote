@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
+	"math"
 )
 
 // ReadLooseHeader reads the type and size header from a zlib-compressed
@@ -49,17 +49,49 @@ func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadClose
 		return 0, 0, nil, fmt.Errorf("objfmt: read size: %w", err)
 	}
 	sizeStr = sizeStr[:len(sizeStr)-1] // drop trailing NUL
-	size, err = strconv.ParseInt(sizeStr, 10, 64)
+	size, err = parseLooseSize(sizeStr)
 	if err != nil {
 		_ = zr.Close()
-		return 0, 0, nil, fmt.Errorf("objfmt: parse size %q: %w", sizeStr, err)
-	}
-	if size < 0 {
-		_ = zr.Close()
-		return 0, 0, nil, fmt.Errorf("objfmt: negative loose object size %d", size)
+		return 0, 0, nil, err
 	}
 
 	return typ, size, &looseBody{r: br, closer: zr}, nil
+}
+
+// parseLooseSize decodes the size field of a loose-object header,
+// accepting only canonical decimal: a single `0`, or one or more digits
+// where the first digit is in `1`..`9`. Leading zeros (`010`), a leading
+// sign, surrounding whitespace, and any non-digit character are
+// rejected.
+//
+// Mirrors the manual digit-by-digit loop in canonical Git's
+// `object-file.c:369-380` (`parse_loose_header`), which comments "The
+// length must follow immediately, and be in canonical decimal format
+// (ie '010' is not valid)." `strconv.ParseInt` is too permissive for
+// the same input — it tolerates leading zeros, leading `+`, and
+// surrounding whitespace — so the validation is rolled here.
+func parseLooseSize(s string) (int64, error) {
+	if len(s) == 0 {
+		return 0, fmt.Errorf("objfmt: empty loose object size: %w", ErrCorrupt)
+	}
+	if len(s) > 1 && s[0] == '0' {
+		return 0, fmt.Errorf("objfmt: non-canonical loose object size %q: %w", s, ErrCorrupt)
+	}
+	var n int64
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("objfmt: non-canonical loose object size %q: %w", s, ErrCorrupt)
+		}
+		// Overflow guard mirrors `st_add(st_mult(size, 10), c)` in
+		// `parse_loose_header`. The multiplication is checked before
+		// the addition; either overflow rejects the header.
+		if n > (math.MaxInt64-int64(c-'0'))/10 {
+			return 0, fmt.Errorf("objfmt: loose object size %q overflows int64: %w", s, ErrCorrupt)
+		}
+		n = n*10 + int64(c-'0')
+	}
+	return n, nil
 }
 
 // parseLooseTypeName maps the loose-object type-name field to an

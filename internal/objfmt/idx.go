@@ -111,6 +111,9 @@ func (i *Idx) parseHeader() error {
 		if len(i.data) < 256*4 {
 			return fmt.Errorf("objfmt: idx v1 truncated before fan-out: %w", ErrTruncated)
 		}
+		if err := validateIdxFanout(i.data[:256*4]); err != nil {
+			return err
+		}
 		i.count = binary.BigEndian.Uint32(i.data[255*4 : 256*4])
 		// 20 is hard-coded because v1 never stored SHA-256.
 		want := 256*4 + int(i.count)*(4+20) + 20 + 20
@@ -122,6 +125,9 @@ func (i *Idx) parseHeader() error {
 		if len(i.data) < fanoutEnd {
 			return fmt.Errorf("objfmt: idx v2 truncated before fan-out: %w", ErrTruncated)
 		}
+		if err := validateIdxFanout(i.data[idxV2HeaderLen:fanoutEnd]); err != nil {
+			return err
+		}
 		i.count = binary.BigEndian.Uint32(i.data[fanoutEnd-4 : fanoutEnd])
 		// Minimum size with no large-offset overflow.
 		want := fanoutEnd + int(i.count)*hashLen + int(i.count)*4 + int(i.count)*4 + 2*hashLen
@@ -130,6 +136,27 @@ func (i *Idx) parseHeader() error {
 		}
 	default:
 		return fmt.Errorf("objfmt: unsupported idx version %d: %w", i.ver, ErrUnsupportedVersion)
+	}
+	return nil
+}
+
+// validateIdxFanout checks that the 256 big-endian uint32 entries of an
+// idx fan-out table are non-decreasing. The fan-out at index N records
+// the cumulative count of OIDs whose first byte is ≤ N, so it must be
+// monotonically non-decreasing across the full table.
+//
+// Mirrors `packfile.c:215-220` — the same check Git applies at idx-load
+// time (`for (i = 0; i < 256; i++) { if (n < nr) return error(...);
+// nr = n; }`).
+func validateIdxFanout(fanout []byte) error {
+	var prev uint32
+	for k := 0; k < 256; k++ {
+		n := binary.BigEndian.Uint32(fanout[k*4 : (k+1)*4])
+		if n < prev {
+			return fmt.Errorf("objfmt: idx non-monotonic fanout at %d: %d < %d: %w",
+				k, n, prev, ErrCorrupt)
+		}
+		prev = n
 	}
 	return nil
 }

@@ -76,6 +76,13 @@ type chunkExtent struct {
 const (
 	midxHeaderSize    = 12
 	midxChunkTOCEntry = 4 + 8
+
+	// midxChunkAlignment is the byte alignment every chunk's start
+	// offset must satisfy in the chunk-format file family. Mirrors
+	// `MIDX_CHUNK_ALIGNMENT` in `midx.h` and the `expected_alignment`
+	// argument passed to `read_table_of_contents` in
+	// `chunk-format.c:127-130`.
+	midxChunkAlignment = 4
 )
 
 // midxMagic is the four-byte ASCII signature that introduces every
@@ -213,6 +220,13 @@ func (m *Midx) parseChunkTable(numChunks int) error {
 		if e.id == (chunkID{}) {
 			return fmt.Errorf("objfmt: premature midx chunk terminator at index %d: %w", i, ErrCorrupt)
 		}
+		// Each chunk's start offset must be `midxChunkAlignment`-byte
+		// aligned; canonical Git rejects misaligned offsets at TOC
+		// parse time (`chunk-format.c:127-130`).
+		if e.off%midxChunkAlignment != 0 {
+			return fmt.Errorf("objfmt: midx chunk %s offset %d not %d-byte aligned: %w",
+				e.id, e.off, midxChunkAlignment, ErrCorrupt)
+		}
 		next := entries[i+1].off
 		if next < e.off || next > bodyEnd {
 			return fmt.Errorf("objfmt: midx chunk %s out of range (%d..%d): %w",
@@ -262,13 +276,25 @@ func (m *Midx) parsePackNames() error {
 }
 
 // parseFanout validates that the OIDF chunk is the canonical 1024
-// bytes (256 × uint32) and reads the count out of its last slot.
+// bytes (256 × uint32), checks that the entries are non-decreasing
+// (`midx.c:62-71` rejects "oid fanout out of order"), and reads the
+// count out of the last slot.
 func (m *Midx) parseFanout() error {
 	ext := m.chunks[chunkOIDF]
 	if ext.len != 256*4 {
 		return fmt.Errorf("objfmt: midx OIDF wrong size (%d, want 1024): %w", ext.len, ErrCorrupt)
 	}
-	m.count = binary.BigEndian.Uint32(m.data[ext.off+255*4 : ext.off+256*4])
+	fanout := m.data[ext.off : ext.off+256*4]
+	var prev uint32
+	for k := 0; k < 256; k++ {
+		n := binary.BigEndian.Uint32(fanout[k*4 : (k+1)*4])
+		if n < prev {
+			return fmt.Errorf("objfmt: midx non-monotonic fanout at %d: %d < %d: %w",
+				k, n, prev, ErrCorrupt)
+		}
+		prev = n
+	}
+	m.count = prev
 
 	// Cross-check OIDL while we are here: the lookup table must hold
 	// exactly count × hashLen bytes.
@@ -282,6 +308,20 @@ func (m *Midx) parseFanout() error {
 	ooff := m.chunks[chunkOOFF]
 	if ooff.len != int64(m.count)*8 {
 		return fmt.Errorf("objfmt: midx OOFF size %d != count*8: %w", ooff.len, ErrCorrupt)
+	}
+	// Validate OOFF pack indices against `num_packs` at parse time.
+	// A stray packIdx ≥ num_packs would otherwise reach
+	// `midxBackend.Lookup` as a slice-bounds-out-of-range panic on
+	// `coveredByMidxIndex[packIdx]`. Canonical Git also surfaces this
+	// at lookup time via `nth_midxed_pack_int_id`; checking it once
+	// at open keeps the lookup hot path free of the bounds test.
+	for k := uint32(0); k < m.count; k++ {
+		base := ooff.off + int64(k)*midxOOFFRecordSize
+		packIdx := binary.BigEndian.Uint32(m.data[base : base+4])
+		if packIdx >= m.numPacks {
+			return fmt.Errorf("objfmt: midx OOFF pack index %d >= num_packs %d at entry %d: %w",
+				packIdx, m.numPacks, k, ErrCorrupt)
+		}
 	}
 	return nil
 }

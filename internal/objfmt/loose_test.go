@@ -141,6 +141,60 @@ func TestReadLooseHeader(t *testing.T) {
 		assert.Nil(t, rc)
 	})
 
+	t.Run("rejects leading-zero size", func(t *testing.T) {
+		// Canonical decimal: `010` is not valid. See
+		// `object-file.c:369-380` (`parse_loose_header`).
+		in := zlibLoose(t, "blob 010", make([]byte, 10))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.Error(t, err)
+		assert.Nil(t, rc)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "010")
+	})
+
+	t.Run("rejects leading-plus size", func(t *testing.T) {
+		in := zlibLoose(t, "blob +10", make([]byte, 10))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.Error(t, err)
+		assert.Nil(t, rc)
+		assert.ErrorIs(t, err, ErrCorrupt)
+	})
+
+	t.Run("rejects leading-space size", func(t *testing.T) {
+		// Two spaces between type and size means the size field begins
+		// with a space; canonical Git's manual digit loop rejects it.
+		in := zlibLoose(t, "blob  10", make([]byte, 10))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.Error(t, err)
+		assert.Nil(t, rc)
+		assert.ErrorIs(t, err, ErrCorrupt)
+	})
+
+	t.Run("rejects trailing-space size", func(t *testing.T) {
+		in := zlibLoose(t, "blob 10 ", make([]byte, 10))
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.Error(t, err)
+		assert.Nil(t, rc)
+		assert.ErrorIs(t, err, ErrCorrupt)
+	})
+
+	t.Run("accepts single zero size", func(t *testing.T) {
+		in := zlibLoose(t, "blob 0", nil)
+		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.NoError(t, err)
+		assert.Equal(t, TypeBlob, typ)
+		assert.Equal(t, int64(0), size)
+		require.NoError(t, rc.Close())
+	})
+
+	t.Run("rejects empty size field", func(t *testing.T) {
+		in := zlibLoose(t, "blob ", nil)
+		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
+		require.Error(t, err)
+		assert.Nil(t, rc)
+		assert.ErrorIs(t, err, ErrCorrupt)
+	})
+
 	t.Run("invalid zlib header errors", func(t *testing.T) {
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader([]byte("not zlib")))
 		require.Error(t, err)

@@ -2,6 +2,7 @@ package objfmt
 
 import (
 	"bufio"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,6 +144,111 @@ func TestMidx_OpenMidx(t *testing.T) {
 		assert.NoError(t, m.Close())
 		assert.NoError(t, m.Close())
 	})
+
+	t.Run("rejects non-monotonic OIDF fanout", func(t *testing.T) {
+		// Build a clean midx, locate its OIDF chunk via the TOC, and
+		// patch fanout[5] above fanout[6]. Mirrors `midx.c:62-71`,
+		// which rejects "oid fanout out of order".
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+
+		oidfOff := findChunkOffset(t, raw, "OIDF")
+		// fanout[5] = 100, well above fanout[6] = 1.
+		binary.BigEndian.PutUint32(raw[oidfOff+5*4:oidfOff+6*4], 100)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "fanout")
+	})
+
+	t.Run("rejects OOFF packIdx out of range", func(t *testing.T) {
+		// One pack listed in PNAM, but the object's packIdx is 7 —
+		// past the end. A corrupt midx must not become a runtime
+		// slice-bounds panic at the downstream `midxBackend.Lookup`
+		// layer; reject at parse time instead. Canonical Git's
+		// `midx.c::nth_midxed_pack_int_id` likewise validates the
+		// pack-int-id against `num_packs`.
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 7, offset: 12}},
+		})
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "pack")
+	})
+
+	t.Run("rejects misaligned chunk offset", func(t *testing.T) {
+		// Patch the TOC entry for OIDF to a misaligned absolute
+		// offset (off by 1). Mirrors `chunk-format.c:127-130`, which
+		// rejects "chunk id ... not 4-byte aligned" with
+		// `MIDX_CHUNK_ALIGNMENT = 4` in `midx.h`.
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeMidx(t, t.TempDir(), midxFixture{
+			algo:  SHA1,
+			packs: []string{"a.idx"},
+			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+
+		// Locate the TOC entry for OIDF and shift its offset by 1.
+		// The body is now misaligned but still inside the file, so
+		// only the alignment check should reject the open.
+		tocStart := 12
+		numChunks := int(raw[6])
+		var oidfTOC int
+		found := false
+		for i := 0; i < numChunks; i++ {
+			base := tocStart + i*12
+			if string(raw[base:base+4]) == "OIDF" {
+				oidfTOC = base
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "OIDF entry missing from TOC")
+		curOff := binary.BigEndian.Uint64(raw[oidfTOC+4 : oidfTOC+12])
+		binary.BigEndian.PutUint64(raw[oidfTOC+4:oidfTOC+12], curOff+1)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenMidx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "align")
+	})
+}
+
+// findChunkOffset returns the absolute byte offset of the named chunk's
+// body in raw by walking the chunk TOC. Used by tests that need to
+// surgically corrupt one chunk's contents.
+func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
+	t.Helper()
+	require.Equal(t, 4, len(id))
+	tocStart := 12
+	numChunks := int(raw[6])
+	for i := 0; i < numChunks; i++ {
+		base := tocStart + i*12
+		if string(raw[base:base+4]) == id {
+			return int64(binary.BigEndian.Uint64(raw[base+4 : base+12]))
+		}
+	}
+	t.Fatalf("chunk %s not found", id)
+	return 0
 }
 
 func TestMidx_PackNames(t *testing.T) {

@@ -161,4 +161,43 @@ func TestIdx_OpenIdx(t *testing.T) {
 		assert.NoError(t, idx.Close())
 		assert.NoError(t, idx.Close())
 	})
+
+	t.Run("rejects v1 idx with non-monotonic fanout", func(t *testing.T) {
+		// Synthesise a v1 idx then patch fanout[5] to a value larger
+		// than fanout[6]. Mirrors `packfile.c:215-220`, which rejects
+		// non-monotonic indices with "non-monotonic index ...".
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		// Fanout entries are at offsets [N*4, N*4+4). Set fanout[5]=100,
+		// leaving fanout[6] (and everything above) at 1.
+		binary.BigEndian.PutUint32(raw[5*4:6*4], 100)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenIdx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "fanout")
+	})
+
+	t.Run("rejects v2 idx with non-monotonic fanout", func(t *testing.T) {
+		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		require.NoError(t, err)
+		path := writeV2Idx(t, t.TempDir(), []v2Entry{
+			{oid: oid, offset: 12, crc: 0xdeadbeef},
+		})
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		// v2 fanout starts at byte 8 (after `\xfftOc` + version uint32).
+		const fanoutStart = idxV2HeaderLen
+		binary.BigEndian.PutUint32(raw[fanoutStart+5*4:fanoutStart+6*4], 100)
+		require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+		_, err = OpenIdx(path, SHA1)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCorrupt)
+		assert.Contains(t, err.Error(), "fanout")
+	})
 }
