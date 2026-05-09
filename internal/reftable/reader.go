@@ -36,13 +36,23 @@ type RefRecord struct {
 //
 // A Reader memory-maps its file at construction and keeps the mapping
 // live for the entire lifetime of the value; [Reader.Close] releases
-// the mapping. Read methods are safe for concurrent use by multiple
-// goroutines, but no read may overlap with [Reader.Close].
+// the mapping.
 //
 // Reader does not merge across tables — that is the job of a future
 // stack reader. A single Reader sees only the records present in the
 // file it was opened on, including any tombstones (which are filtered
 // out before the public surface).
+//
+// # Concurrency
+//
+// After [OpenReader] returns, the read methods ([Reader.HashAlgo],
+// [Reader.IterRefs], [Reader.FindRef]) are safe for concurrent use by
+// any number of goroutines: every field they touch is set once at
+// construction and never written again. [Reader.Close] is NOT safe to
+// call concurrently with read methods or with itself; callers must
+// drain in-flight reads before closing and serialize Close calls. Once
+// drained, Close is idempotent — a second call returns nil without
+// touching the OS.
 type Reader struct {
 	mmap   *mmap.ReaderAt
 	file   []byte
@@ -95,9 +105,11 @@ func OpenReader(path string) (*Reader, error) {
 
 // Close releases the memory mapping that backs r.
 //
-// Close is idempotent: calling it on an already-closed Reader returns
-// nil without touching the OS. Calling any read method after Close is
-// undefined; callers must serialize Close against in-flight reads.
+// Close is idempotent: a second call on an already-closed Reader
+// returns nil without touching the OS. Close is NOT safe to call
+// concurrently with read methods or with itself; see the [Reader]
+// concurrency contract. Calling any read method after Close is
+// undefined.
 func (r *Reader) Close() error {
 	if r.mmap == nil {
 		return nil

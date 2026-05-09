@@ -50,8 +50,16 @@ var (
 // outside the ref namespace: those live outside the public surface
 // described by [Stack.IterRefs] and [Stack.FindRef].
 //
-// Read methods are safe for concurrent use by multiple goroutines, but
-// no read may overlap with [Stack.Close].
+// # Concurrency
+//
+// After [OpenStack] returns, the read methods ([Stack.HashAlgo],
+// [Stack.IterRefs], [Stack.FindRef]) are safe for concurrent use by
+// any number of goroutines: the merged map and the underlying readers
+// are populated once at construction and never written again.
+// [Stack.Close] is NOT safe to call concurrently with read methods or
+// with itself; callers must drain in-flight reads before closing and
+// serialize Close calls. Once drained, Close is idempotent — a second
+// call returns nil without touching the OS.
 type Stack struct {
 	readers []*Reader            // [0] = oldest table, [n-1] = newest
 	merged  map[string]RefRecord // pre-computed merged view
@@ -166,10 +174,11 @@ func parseTablesList(raw []byte) ([]string, error) {
 
 // Close releases every underlying [Reader].
 //
-// Close is idempotent: calling it on an already-closed Stack returns
-// nil without touching the OS. The first non-nil reader error is
-// returned; subsequent reader closes still run so no mapping is leaked.
-// Callers must serialize Close against in-flight reads.
+// Close is idempotent: a second call on an already-closed Stack
+// returns nil without touching the OS. The first non-nil reader error
+// is returned; subsequent reader closes still run so no mapping is
+// leaked. Close is NOT safe to call concurrently with read methods or
+// with itself; see the [Stack] concurrency contract.
 func (s *Stack) Close() error {
 	if s.readers == nil {
 		return nil
