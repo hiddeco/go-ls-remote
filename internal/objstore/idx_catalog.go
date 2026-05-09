@@ -47,6 +47,12 @@ type idxCatalog struct {
 	// unused today.
 	byChecksum map[objfmt.Hash]*objfmt.Pack
 
+	// idxByPack maps each open pack to its paired idx. The CRC
+	// verification path on [Store.ObjectInfo] reaches for an idx by pack
+	// pointer, and a map lookup keeps that hot path O(1) regardless of
+	// how many packs the catalog tracks.
+	idxByPack map[*objfmt.Pack]*objfmt.Idx
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -89,6 +95,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 				commonDir:  commonDir,
 				algo:       algo,
 				byChecksum: map[objfmt.Hash]*objfmt.Pack{},
+				idxByPack:  map[*objfmt.Pack]*objfmt.Idx{},
 			}, nil
 		}
 		return nil, fmt.Errorf("objstore: stat %s: %w", packDir, err)
@@ -98,6 +105,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 		commonDir:  commonDir,
 		algo:       algo,
 		byChecksum: map[objfmt.Hash]*objfmt.Pack{},
+		idxByPack:  map[*objfmt.Pack]*objfmt.Idx{},
 	}
 
 	// closeOpened tears down everything established so far. Used on
@@ -161,6 +169,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 			mtime: st.ModTime(),
 		})
 		c.byChecksum[idx.PackChecksum()] = pack
+		c.idxByPack[pack] = idx
 	}
 
 	// Sort by pack mtime (younger first) with idx basename as a
@@ -226,6 +235,14 @@ func (c *idxCatalog) AllPacks() iter.Seq[*objfmt.Pack] {
 func (c *idxCatalog) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
 	p, ok := c.byChecksum[h]
 	return p, ok
+}
+
+// IdxFor returns the [objfmt.Idx] paired with pack via the open-time
+// [idxCatalog.idxByPack] map — see [packBackend.IdxFor] for the
+// contract. ok=false signals that pack is not one this catalog opened.
+func (c *idxCatalog) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
+	idx, ok := c.idxByPack[pack]
+	return idx, ok
 }
 
 // Close releases every opened idx and pack. Errors from each are joined

@@ -68,6 +68,12 @@ type midxBackend struct {
 	// resolver in a follow-up; intentionally unused today.
 	packsByChecksum map[objfmt.Hash]*objfmt.Pack
 
+	// idxByPack maps every opened pack — midx-covered AND sibling — to
+	// its paired idx. The CRC verification path on [Store.ObjectInfo]
+	// reaches for an idx by pack pointer, and a map lookup keeps that
+	// hot path O(1) regardless of how many packs the backend tracks.
+	idxByPack map[*objfmt.Pack]*objfmt.Idx
+
 	// siblings carries every (idx, pack) pair from the directory that
 	// is NOT covered by the midx. [midxBackend.Lookup] falls through to
 	// these on a midx miss — matching canonical Git's "midx is
@@ -137,6 +143,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		coveredByMidxIndex: make([]*objfmt.Pack, len(packNames)),
 		coveredIdxs:        make([]*objfmt.Idx, len(packNames)),
 		packsByChecksum:    map[objfmt.Hash]*objfmt.Pack{},
+		idxByPack:          map[*objfmt.Pack]*objfmt.Idx{},
 	}
 
 	// coveredMtimes parallels `coveredByMidxIndex`, recording each
@@ -234,6 +241,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		mtime := st.ModTime()
 
 		b.packsByChecksum[idx.PackChecksum()] = pack
+		b.idxByPack[pack] = idx
 		if i, covered := nameIndex[name]; covered {
 			b.coveredByMidxIndex[i] = pack
 			b.coveredIdxs[i] = idx
@@ -378,6 +386,16 @@ func (b *midxBackend) AllPacks() iter.Seq[*objfmt.Pack] {
 func (b *midxBackend) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
 	p, ok := b.packsByChecksum[h]
 	return p, ok
+}
+
+// IdxFor returns the [objfmt.Idx] paired with pack via the open-time
+// [midxBackend.idxByPack] map — see [packBackend.IdxFor] for the
+// contract. The map covers both midx-covered and sibling packs, so the
+// CRC path resolves either bucket through a single probe. ok=false
+// signals that pack is not one this backend opened.
+func (b *midxBackend) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
+	idx, ok := b.idxByPack[pack]
+	return idx, ok
 }
 
 // Close releases the midx, every covered idx, and every (idx, pack)

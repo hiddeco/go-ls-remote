@@ -181,7 +181,7 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 				// lookup, the header read, and the CRC verification
 				// path. Every worker hammering this in lockstep is the
 				// only place an unsynchronised read of `pack` /
-				// `idxForPack` would surface.
+				// `IdxFor` would surface.
 				gotPacked, err := s.ObjectInfo(packedOID)
 				if !assert.NoErrorf(t, err, "worker %d iter %d: ObjectInfo packed", w, i) {
 					return

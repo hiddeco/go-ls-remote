@@ -31,6 +31,15 @@ type packBackend interface {
 	// across renames or restamps); correctness must not depend on it.
 	AllPacks() iter.Seq[*objfmt.Pack]
 
+	// IdxFor returns the [objfmt.Idx] paired with pack, if pack is one
+	// the backend opened. The lookup is O(1) so callers on the CRC
+	// verification hot path can pair (pack, idx) without rescanning the
+	// backend's internal storage. ok=false signals the pack was not
+	// produced by this backend — typically a sign the pack escaped from
+	// a different backend or has been closed mid-flight; callers should
+	// treat it as defence in depth rather than a recoverable miss.
+	IdxFor(pack *objfmt.Pack) (idx *objfmt.Idx, ok bool)
+
 	// Close releases the index file handles and pack mappings held by
 	// the backend. It must be safe to call exactly once; idempotency
 	// is the [Store]'s responsibility.

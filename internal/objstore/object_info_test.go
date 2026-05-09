@@ -13,6 +13,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
@@ -245,6 +246,90 @@ func TestObjectInfo_CRC32MismatchWrapsErrCorruptObject(t *testing.T) {
 		"expected ErrCorruptObject in chain, got %v", err)
 	assert.Contains(t, err.Error(), "crc32",
 		"error must mention the CRC failure for diagnostics, got %v", err)
+}
+
+func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
+	// Construct a three-pack catalog by cloning the canonical
+	// `three-objects.{pack,idx}` to three distinct basenames. Every pack
+	// in the resulting store must round-trip through
+	// `packBackend.IdxFor` to its own paired idx — never a miss, never
+	// another pack's idx. Pins the (Pack -> Idx) lookup's correctness
+	// independent of the underlying map vs. linear-scan implementation,
+	// so the same assertion guards future re-shuffles of the backend's
+	// internal storage.
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "objects", "pack"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"),
+		[]byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "refs"), 0o755))
+
+	srcDir := filepath.Join(packFixtureRoot(t, "idx-single"), "objects", "pack")
+	dstDir := filepath.Join(gitDir, "objects", "pack")
+	for _, base := range []string{"alpha", "beta", "gamma"} {
+		clonePackPair(t, srcDir, "three-objects", dstDir, base)
+	}
+
+	s, err := Open(gitDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	cat, ok := s.packs.(*idxCatalog)
+	require.True(t, ok, "fixture must select the idx-catalog backend")
+	require.Len(t, cat.packs, 3,
+		"three cloned pairs must surface as three catalog entries")
+
+	for i, e := range cat.packs {
+		got, ok := s.packs.IdxFor(e.pack)
+		assert.Truef(t, ok,
+			"slot %d: IdxFor must report the catalog's pack as known", i)
+		assert.Samef(t, e.idx, got,
+			"slot %d: IdxFor must return the entry's paired idx", i)
+	}
+}
+
+func TestObjectInfo_MultiPackCRC32MismatchTripsRightPack(t *testing.T) {
+	// Three-pack catalog where one pack's commit body has been flipped:
+	// `Store.ObjectInfo` for the OID present in every pack must walk to
+	// the youngest pack first (the corrupted one) and trip its CRC. A
+	// regression where `IdxFor` returned the wrong pair would either
+	// surface a clean answer (verifying against the wrong idx) or skip
+	// verification entirely, both of which this assertion catches.
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "objects", "pack"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"),
+		[]byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "refs"), 0o755))
+
+	srcDir := filepath.Join(packFixtureRoot(t, "idx-single"), "objects", "pack")
+	dstDir := filepath.Join(gitDir, "objects", "pack")
+	for _, base := range []string{"oldest", "middle", "youngest"} {
+		clonePackPair(t, srcDir, "three-objects", dstDir, base)
+	}
+	stampPackMtimes(t, gitDir, map[string]time.Time{
+		"oldest.pack":   packMtimeAnchor,
+		"middle.pack":   packMtimeAnchor.Add(time.Hour),
+		"youngest.pack": packMtimeAnchor.Add(2 * time.Hour),
+	})
+
+	// Corrupt the youngest pack — that is the one `Lookup` walks to
+	// first under canonical pack ordering, so its CRC is what
+	// verification consults.
+	corruptByte(t, filepath.Join(dstDir, "youngest.pack"), 64)
+
+	s, err := Open(gitDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	_, err = s.ObjectInfo(hashFromHex(t, threeCommitOID, objfmt.SHA1))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrCorruptObject),
+		"corrupted youngest pack must trip CRC, got %v", err)
+	assert.Contains(t, err.Error(), "crc32",
+		"error must name the CRC failure for diagnostics, got %v", err)
+	assert.Contains(t, err.Error(), "youngest",
+		"error must name the youngest pack as the offender, got %v", err)
 }
 
 func TestObjectInfo_WithoutCRCCheckBypassesVerification(t *testing.T) {

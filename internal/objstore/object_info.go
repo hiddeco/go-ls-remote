@@ -261,10 +261,10 @@ func (s *Store) verifyPackCRC(pack *objfmt.Pack, oid objfmt.Hash, at int64) erro
 	if !s.cfg.verifyCRC {
 		return nil
 	}
-	idx := s.idxForPack(pack)
-	if idx == nil {
+	idx, ok := s.packs.IdxFor(pack)
+	if !ok {
 		// Defence in depth: every backend wires every open pack
-		// through its idx-checksum map at construction, so a nil here
+		// through its idx-checksum map at construction, so a miss here
 		// would mean the pack escaped from a different backend or
 		// has been closed mid-flight. Skip verification rather than
 		// surface a confusing error.
@@ -302,34 +302,6 @@ func (s *Store) verifyPackCRC(pack *objfmt.Pack, oid objfmt.Hash, at int64) erro
 		return fmt.Errorf(
 			"objstore: pack %s offset %d crc32 mismatch: %w",
 			idx.Path(), at, ErrCorruptObject)
-	}
-	return nil
-}
-
-// idxForPack returns the `*objfmt.Idx` paired with pack inside this
-// store's [packBackend], or nil when no such pairing is recorded
-// (defence in depth: every backend wires every open pack through its
-// idx-checksum map at construction, so a nil here would mean the
-// pack escaped from a different backend or has been closed).
-func (s *Store) idxForPack(pack *objfmt.Pack) *objfmt.Idx {
-	switch b := s.packs.(type) {
-	case *idxCatalog:
-		for _, e := range b.packs {
-			if e.pack == pack {
-				return e.idx
-			}
-		}
-	case *midxBackend:
-		for i, p := range b.coveredByMidxIndex {
-			if p == pack {
-				return b.coveredIdxs[i]
-			}
-		}
-		for _, e := range b.siblings {
-			if e.pack == pack {
-				return e.idx
-			}
-		}
 	}
 	return nil
 }
