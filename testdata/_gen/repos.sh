@@ -96,12 +96,49 @@
 #       was rewritten with `git update-ref --no-deref HEAD <oid>` so HEAD
 #       carries a value record (no TargetRef) — the detached-HEAD shape.
 #
-#   testdata/repos/with-midx/
+#   testdata/repos/midx-with-siblings/
 #       dotgit/HEAD
-#       dotgit/objects/pack/multi-pack-index   zero-byte placeholder so the
-#                                              opener takes the midx branch;
-#                                              non-empty content is asserted
-#                                              by the midx-backend tests
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/multi-pack-index   real midx body copied from
+#                                              `testdata/objfmt/`
+#       dotgit/objects/pack/midx-pack-1.{idx,pack}
+#       dotgit/objects/pack/midx-pack-2.{idx,pack}
+#                                              the two packs the midx covers
+#       dotgit/objects/pack/three-objects.{idx,pack}
+#                                              a sibling pack added after
+#                                              midx generation; exercises the
+#                                              `midxBackend` fallback scan
+#
+#   testdata/repos/midx-no-siblings/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/multi-pack-index
+#       dotgit/objects/pack/midx-pack-{1,2}.{idx,pack}
+#                                              same midx as above but no
+#                                              sibling pack; the fallback
+#                                              list must be empty.
+#
+#   testdata/repos/midx-corrupt/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/multi-pack-index   16 bytes of garbage so the
+#                                              midx parser rejects it on
+#                                              `OpenMidx`. Synthetic rather
+#                                              than truncated-real to avoid
+#                                              accidentally producing bytes
+#                                              that happen to parse.
+#
+#   testdata/repos/midx-missing-pack/
+#       dotgit/HEAD
+#       dotgit/refs/.gitkeep
+#       dotgit/objects/pack/multi-pack-index   real midx body whose `PNAM`
+#                                              chunk lists midx-pack-1 AND
+#                                              midx-pack-2.
+#       dotgit/objects/pack/midx-pack-1.{idx,pack}
+#                                              only pack-1 is present; the
+#                                              opener must reject the catalog
+#                                              with `ErrCorruptObject` and
+#                                              name the missing pack.
 #
 #   testdata/repos/loose-only/
 #       dotgit/HEAD                       symref to refs/heads/main
@@ -498,18 +535,6 @@ init_reftable_work_repo "$rtd_work"
 )
 scaffold_reftable_fixture "$out/with-reftable-detached" "$rtd_work"
 
-# --- with-midx ---------------------------------------------------------------
-# Shape: a HEAD plus an empty pack directory carrying a zero-byte
-# `multi-pack-index` placeholder. The opener uses the file's presence
-# (not its contents) to choose the midx pack backend over the loose
-# `.idx` catalogue. Real midx bodies are exercised by the midx-backend
-# tests and live alongside their pack/idx fixtures.
-midx_root="$out/with-midx"
-mkdir -p "$midx_root/dotgit/objects/pack" "$midx_root/dotgit/refs"
-write_head "$midx_root/dotgit"
-: >"$midx_root/dotgit/objects/pack/multi-pack-index"
-: >"$midx_root/dotgit/refs/.gitkeep"
-
 # --- loose-refs / packed-refs fixtures --------------------------------------
 # The loose-refs backend reads `<commonDir>/refs/...` and the optional
 # `<commonDir>/packed-refs` file. The fixtures below exercise the backend
@@ -772,5 +797,67 @@ idx_missing_root="$out/idx-missing-pack"
 scaffold_idx_repo "$idx_missing_root"
 cp "$root/testdata/objfmt/three-objects.idx" \
     "$idx_missing_root/dotgit/objects/pack/three-objects.idx"
+
+# --- midx fixtures ----------------------------------------------------------
+# Real `multi-pack-index` bodies plus their paired packs. Reuses the
+# canonical bytes already shipped under `testdata/objfmt/`, so no `git`
+# invocation is required: each fixture is a `cp` of pre-built artifacts
+# into a minimal repo skeleton.
+
+# --- midx-with-siblings -----------------------------------------------------
+# A real midx covering `midx-pack-{1,2}.{idx,pack}` plus a sibling pack
+# (`three-objects.{idx,pack}`) added after midx generation. The midx
+# backend must consult the midx for OIDs in the covered packs and fall
+# through to the sibling pack for OIDs only that pack carries. Doubles
+# as the opener's selector fixture: presence of `multi-pack-index`
+# flips `openPackBackend` to `*midxBackend`.
+midx_sib_root="$out/midx-with-siblings"
+scaffold_idx_repo "$midx_sib_root"
+cp "$root/testdata/objfmt/multi-pack-index" \
+    "$midx_sib_root/dotgit/objects/pack/multi-pack-index"
+for stem in midx-pack-1 midx-pack-2 three-objects; do
+    cp "$root/testdata/objfmt/$stem.idx" \
+        "$midx_sib_root/dotgit/objects/pack/$stem.idx"
+    cp "$root/testdata/objfmt/$stem.pack" \
+        "$midx_sib_root/dotgit/objects/pack/$stem.pack"
+done
+
+# --- midx-no-siblings -------------------------------------------------------
+# Same midx + the two covered packs only. The fallback sibling list is
+# empty; midx lookups must still resolve.
+midx_nosib_root="$out/midx-no-siblings"
+scaffold_idx_repo "$midx_nosib_root"
+cp "$root/testdata/objfmt/multi-pack-index" \
+    "$midx_nosib_root/dotgit/objects/pack/multi-pack-index"
+for stem in midx-pack-1 midx-pack-2; do
+    cp "$root/testdata/objfmt/$stem.idx" \
+        "$midx_nosib_root/dotgit/objects/pack/$stem.idx"
+    cp "$root/testdata/objfmt/$stem.pack" \
+        "$midx_nosib_root/dotgit/objects/pack/$stem.pack"
+done
+
+# --- midx-corrupt -----------------------------------------------------------
+# A `multi-pack-index` whose first bytes are 16 zero bytes — neither
+# the `MIDX` magic nor a plausible header. `OpenMidx` rejects it.
+# Synthetic rather than truncated-real so no future edit of the
+# canonical fixture could accidentally produce parsable bytes.
+midx_corrupt_root="$out/midx-corrupt"
+scaffold_idx_repo "$midx_corrupt_root"
+dd if=/dev/zero of="$midx_corrupt_root/dotgit/objects/pack/multi-pack-index" \
+    bs=1 count=16 status=none
+
+# --- midx-missing-pack ------------------------------------------------------
+# A real midx whose `PNAM` chunk lists both `midx-pack-1.idx` and
+# `midx-pack-2.idx`, but only pack-1 is present in the directory. The
+# constructor must surface `ErrCorruptObject` naming the missing pack
+# and leak no file handles.
+midx_missing_root="$out/midx-missing-pack"
+scaffold_idx_repo "$midx_missing_root"
+cp "$root/testdata/objfmt/multi-pack-index" \
+    "$midx_missing_root/dotgit/objects/pack/multi-pack-index"
+cp "$root/testdata/objfmt/midx-pack-1.idx" \
+    "$midx_missing_root/dotgit/objects/pack/midx-pack-1.idx"
+cp "$root/testdata/objfmt/midx-pack-1.pack" \
+    "$midx_missing_root/dotgit/objects/pack/midx-pack-1.pack"
 
 echo "wrote fixtures into $out"

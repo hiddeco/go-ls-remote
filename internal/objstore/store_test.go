@@ -128,10 +128,11 @@ func TestStore_AlgoDelegatesToConfig(t *testing.T) {
 
 func TestOpen_SelectsMidxWhenPresent(t *testing.T) {
 	// A `multi-pack-index` file under `objects/pack/` flips the pack
-	// backend selector to the midx variant. The presence of the file —
-	// not its contents — drives the choice; the midx-backend tests
-	// exercise a non-empty body.
-	root := materializeFixture(t, "with-midx")
+	// backend selector to the midx variant. `midx-with-siblings/`
+	// carries a real midx body (plus its packs and one sibling pack)
+	// so the selector and the constructor exercise the same shape end
+	// to end.
+	root := materializeFixture(t, "midx-with-siblings")
 
 	s, err := Open(root)
 	require.NoError(t, err)
