@@ -25,7 +25,7 @@ func (p *Pack) VerifyChecksum() error {
 	if hashLen == 0 {
 		return fmt.Errorf("objfmt: unsupported algo %v: %w", p.algo, ErrUnsupportedAlgo)
 	}
-	totalLen := int64(p.r.Len())
+	totalLen := p.r.Len()
 	if totalLen < hashLen+12 {
 		return fmt.Errorf("objfmt: pack file too short for trailer: %w", ErrShortFile)
 	}

@@ -101,7 +101,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
-		_, err = p.ReadHeader(int64(p.r.Len()) + 16)
+		_, err = p.ReadHeader(p.r.Len() + 16)
 		assert.Error(t, err)
 	})
 

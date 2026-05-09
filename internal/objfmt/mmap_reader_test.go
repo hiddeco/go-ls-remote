@@ -24,7 +24,7 @@ func TestPack_openPackReader(t *testing.T) {
 		// Satisfies the interface contract.
 		var _ io.ReaderAt = r
 		var _ io.Closer = r
-		assert.Equal(t, len(want), r.Len())
+		assert.Equal(t, int64(len(want)), r.Len())
 
 		got := make([]byte, 4)
 		n, err := r.ReadAt(got, 0)

@@ -47,7 +47,7 @@ func TestPack_ReadDeltaHeader(t *testing.T) {
 		t.Cleanup(func() { _ = p.Close() })
 
 		// Far-past-EOF offset: zlib initialisation will fail.
-		_, _, err = p.ReadDeltaHeader(int64(p.r.Len()) - 4)
+		_, _, err = p.ReadDeltaHeader(p.r.Len() - 4)
 		assert.Error(t, err)
 	})
 }

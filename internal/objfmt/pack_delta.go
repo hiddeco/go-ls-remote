@@ -20,7 +20,7 @@ import (
 // "+1 per continuation byte" quirk that OFS_DELTA's offset varint
 // uses (see [Pack.ReadHeader]).
 func (p *Pack) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err error) {
-	if bodyAt < 0 || bodyAt >= int64(p.r.Len()) {
+	if bodyAt < 0 || bodyAt >= p.r.Len() {
 		return 0, 0, fmt.Errorf("objfmt: delta body offset %d out of range", bodyAt)
 	}
 
@@ -29,7 +29,7 @@ func (p *Pack) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err 
 	// payload may be shorter — for tiny deltas the inflated stream
 	// can fall short of 64 bytes — so a short read is not an error.
 	const peek = 64
-	section := io.NewSectionReader(p.r, bodyAt, int64(p.r.Len())-bodyAt)
+	section := io.NewSectionReader(p.r, bodyAt, p.r.Len()-bodyAt)
 	zr, err := zlib.NewReader(section)
 	if err != nil {
 		return 0, 0, fmt.Errorf("objfmt: delta zlib init: %w", err)

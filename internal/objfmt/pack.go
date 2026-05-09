@@ -51,7 +51,7 @@ func OpenPack(path string, algo Algo) (*Pack, error) {
 	if err != nil {
 		return nil, err
 	}
-	if int64(r.Len()) < int64(12+algo.Size()) {
+	if r.Len() < int64(12+algo.Size()) {
 		_ = r.Close()
 		return nil, fmt.Errorf("objfmt: pack file too short (%d bytes): %w", r.Len(), ErrShortFile)
 	}

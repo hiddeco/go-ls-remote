@@ -16,12 +16,17 @@ import (
 // `*os.File` via [io.ReaderAt] is the fallback used when mmap fails
 // (read-only filesystems, 32-bit hosts holding multi-gigabyte packs,
 // or platforms where `golang.org/x/exp/mmap` returns an error).
+//
+// Len returns int64 so callers do not need to widen for arithmetic
+// against [io.ReaderAt.ReadAt] offsets, and so a multi-gigabyte pack
+// on a 32-bit host (where `int` is 32 bits) does not silently
+// truncate.
 type packReader interface {
 	io.ReaderAt
 	io.Closer
 
 	// Len returns the size of the underlying file in bytes.
-	Len() int
+	Len() int64
 }
 
 // openPackReader opens path for random-access read. It first attempts
@@ -30,7 +35,7 @@ type packReader interface {
 // [io.ReaderAt.ReadAt] calls.
 func openPackReader(path string) (packReader, error) {
 	if r, err := mmap.Open(path); err == nil {
-		return r, nil
+		return mmapReader{r}, nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -43,6 +48,14 @@ func openPackReader(path string) (packReader, error) {
 	}
 	return &fileReader{f: f, size: st.Size()}, nil
 }
+
+// mmapReader widens `golang.org/x/exp/mmap.ReaderAt`'s `Len() int` to
+// the int64 contract of [packReader].
+type mmapReader struct {
+	*mmap.ReaderAt
+}
+
+func (r mmapReader) Len() int64 { return int64(r.ReaderAt.Len()) }
 
 // fileReader is the non-mmap fallback. ReadAt rejects negative or
 // past-end offsets up front so the caller sees a deterministic error
@@ -59,5 +72,5 @@ func (r *fileReader) ReadAt(p []byte, off int64) (int, error) {
 	return r.f.ReadAt(p, off)
 }
 
-func (r *fileReader) Len() int     { return int(r.size) }
+func (r *fileReader) Len() int64   { return r.size }
 func (r *fileReader) Close() error { return r.f.Close() }

@@ -60,7 +60,7 @@ type DeltaRef struct {
 // `algo.Size()` raw bytes are the base hash. Reserved type 5 is
 // rejected; types 1..4, 6, 7 are accepted.
 func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
-	if at < 0 || at >= int64(p.r.Len()) {
+	if at < 0 || at >= p.r.Len() {
 		return ObjectHeader{}, fmt.Errorf("objfmt: header offset %d out of range", at)
 	}
 
@@ -69,7 +69,7 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	// algo.Size() bytes cover REF_DELTA.
 	const peek = 32
 	want := peek + p.algo.Size()
-	if rem := int64(p.r.Len()) - at; rem < int64(want) {
+	if rem := p.r.Len() - at; rem < int64(want) {
 		want = int(rem)
 	}
 	buf := make([]byte, want)
