@@ -42,10 +42,8 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 		iterRuns = make([]int, concurrentGoroutines)
 	)
 
-	for i := 0; i < concurrentGoroutines; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+	for id := range concurrentGoroutines {
+		wg.Go(func() {
 			for !stop.Load() {
 				// Walk the iterator end-to-end at least once per round.
 				for _, err := range r.IterRefs() {
@@ -73,7 +71,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 					findHits[id]++
 				}
 			}
-		}(i)
+		})
 	}
 
 	// Let the goroutines hammer the reader for a short, fixed window.
@@ -83,13 +81,13 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 	stop.Store(true)
 	wg.Wait()
 
-	for i := 0; i < concurrentGoroutines; i++ {
+	for i := range concurrentGoroutines {
 		assert.Greater(t, findHits[i], 0, "goroutine %d completed no FindRef hits", i)
 		assert.Greater(t, iterRuns[i], 0, "goroutine %d completed no IterRefs walks", i)
 	}
 }
 
-func TestReader_close_idempotent_under_concurrent_reads(t *testing.T) {
+func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 	r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 
@@ -100,11 +98,9 @@ func TestReader_close_idempotent_under_concurrent_reads(t *testing.T) {
 	// twice" rather than "Close called twice concurrently".
 	const workers = 8
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for n := 0; n < 50; n++ {
+	for range workers {
+		wg.Go(func() {
+			for range 50 {
 				rec, ok, err := r.FindRef("refs/heads/main")
 				if err != nil {
 					t.Errorf("FindRef error: %v", err)
@@ -119,7 +115,7 @@ func TestReader_close_idempotent_under_concurrent_reads(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -139,10 +135,8 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 		iterRuns = make([]int, concurrentGoroutines)
 	)
 
-	for i := 0; i < concurrentGoroutines; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+	for id := range concurrentGoroutines {
+		wg.Go(func() {
 			for !stop.Load() {
 				for _, err := range s.IterRefs() {
 					if err != nil {
@@ -169,14 +163,14 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 					findHits[id]++
 				}
 			}
-		}(i)
+		})
 	}
 
 	time.Sleep(100 * time.Millisecond)
 	stop.Store(true)
 	wg.Wait()
 
-	for i := 0; i < concurrentGoroutines; i++ {
+	for i := range concurrentGoroutines {
 		assert.Greater(t, findHits[i], 0, "goroutine %d completed no FindRef hits", i)
 		assert.Greater(t, iterRuns[i], 0, "goroutine %d completed no IterRefs walks", i)
 	}
