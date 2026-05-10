@@ -279,13 +279,11 @@ func newConn(resp *http.Response, rdr *pktline.Reader, cfg connConfig, dumb bool
 	}
 }
 
-// finalRespURL returns the URL of the final hop of the redirect
-// chain that produced resp, redacted via [transport.RedactURL]. It
-// is used to pin a [trace.PacketEvent] URL on a freshly constructed
-// [pktline.Reader] for an HTTP response body. When `resp.Request`
-// is unset (a defensive case modern `net/http` does not produce on
-// the success path), the empty string is returned: an empty URL on
-// a [trace.PacketEvent] is preferable to a panic.
+// finalRespURL returns the redacted URL of the final hop of the
+// redirect chain that produced resp, used to pin a
+// [trace.PacketEvent] URL to a freshly constructed [pktline.Reader].
+// Returns the empty string when `resp.Request` is unset; an empty
+// URL on the event beats a panic.
 func finalRespURL(resp *http.Response) string {
 	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
 		return ""
@@ -360,12 +358,11 @@ func buildInfoRefsURL(u *transport.URL) string {
 	return out.String()
 }
 
-// joinHostPort renders u.Host (bracketing IPv6 literals) and appends
-// u.Port when set, producing the `host` field expected by [url.URL].
+// joinHostPort renders u as the `host` field expected by [url.URL],
+// bracketing IPv6 literals so the optional port disambiguates.
 func joinHostPort(u *transport.URL) string {
 	host := u.Host
 	if strings.Contains(host, ":") {
-		// IPv6 literal: bracket so the optional port disambiguates.
 		host = "[" + host + "]"
 	}
 	if u.Port != "" {
@@ -391,10 +388,9 @@ func resolveUserAgent(transportUA, openUA string) string {
 // indefinitely.
 const drainCap = 1 << 14
 
-// drainAndClose reads up to [drainCap] bytes from body so the
-// underlying connection can be returned to the [http.Client] pool,
-// then closes the body. Errors are intentionally swallowed: the
-// caller has already decided what error to surface.
+// drainAndClose reads up to [drainCap] bytes from body and then
+// closes it, swallowing any error so the caller's decided error is
+// what surfaces.
 func drainAndClose(body io.ReadCloser) {
 	if body == nil {
 		return

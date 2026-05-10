@@ -7,11 +7,8 @@ import (
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
-// defaultUserAgent is the User-Agent string the HTTP transport sends
-// when no per-Transport or per-call override applies. It carries the
-// project name and a major-version digit so server-side analytics can
-// distinguish this client from canonical Git without misrepresenting
-// it as `git/...`.
+// defaultUserAgent is the User-Agent header value the HTTP transport
+// sends when no per-Transport or per-call override applies.
 const defaultUserAgent = "lsremote/0"
 
 // defaultMaxRedirects bounds the number of HTTP redirects the probe
