@@ -87,12 +87,11 @@ var (
 // callers are nevertheless encouraged to populate the field with an
 // already-redacted value.
 //
-// [ProtocolError.Server] is bounded to at most 1 KiB. Truncation is
-// the caller's responsibility at every construction site via
-// [truncateServer]; the type itself does not re-truncate, so a
-// caller who bypasses the helper can store a longer string. Use
-// [truncateServer] (or the equivalent inline slice) when constructing
-// a [ProtocolError] from a server response body.
+// [ProtocolError.Server] is bounded to at most 1 KiB. The library
+// truncates server-supplied diagnostics at every construction site;
+// the type itself does not re-truncate, so a caller who constructs a
+// [ProtocolError] from a server response body should cap the message
+// at 1 KiB before storing it.
 //
 // # Format
 //
@@ -122,7 +121,7 @@ type ProtocolError struct {
 
 	// Server is the server-supplied error message (a `ERR` pkt-line
 	// payload, an HTTP body excerpt, or similar). Bounded to at most
-	// 1 KiB by [truncateServer] at every construction site.
+	// 1 KiB; library construction sites truncate before storing.
 	Server string
 
 	// Err is the wrapped cause. It typically matches one of the

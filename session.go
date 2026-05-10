@@ -73,7 +73,7 @@ type Session struct {
 // the result of a later call.
 //
 // The fields are populated per the rules documented on [Capabilities]
-// itself; see also [convertCaps] for the wire-to-public translation.
+// itself.
 func (s *Session) Capabilities() Capabilities {
 	return cloneCapabilities(s.caps)
 }
