@@ -10,7 +10,7 @@ import (
 
 // Package-level sinks defeat dead-code elimination on micro-benchmarks
 // whose results would otherwise be unused — without them the compiler
-// can erase loops that look like `for i := 0; i < b.N; i++ { f() }`.
+// can erase loops that look like `for b.Loop() { f() }`.
 var (
 	benchUintSink uint64
 	benchByteSink byte
@@ -46,7 +46,7 @@ func BenchmarkReader_ReadPacket_Data(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := r.ReadPacket(); err != nil {
 			b.Fatal(err)
 		}
@@ -61,7 +61,7 @@ func BenchmarkReader_ReadPacket_Flush(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := r.ReadPacket(); err != nil {
 			b.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func BenchmarkWriter_WritePacket(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := w.WritePacket(payload); err != nil {
 			b.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func BenchmarkParseHexLength(b *testing.B) {
 	var acc int
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		v, err := parseHexLength(hdr)
 		if err != nil {
 			b.Fatal(err)
@@ -109,7 +109,7 @@ func BenchmarkParseHexLength_Strconv(b *testing.B) {
 	var acc uint64
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Mirrors how a strconv-based reader would have to call it:
 		// the byte slice must be converted to a string.
 		v, err := strconv.ParseUint(string(hdr[:]), 16, 16)
