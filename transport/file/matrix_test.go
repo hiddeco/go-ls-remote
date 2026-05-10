@@ -3,6 +3,7 @@ package filet
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -359,10 +360,8 @@ func requireDataLine(t *testing.T, lines []string, want string) {
 // the assertion only checks membership.
 func assertHasCap(t *testing.T, caps []string, want string) {
 	t.Helper()
-	for _, c := range caps {
-		if c == want {
-			return
-		}
+	if slices.Contains(caps, want) {
+		return
 	}
 	assert.Failf(t, "missing capability",
 		"expected %q in advertised caps %q", want, caps)
