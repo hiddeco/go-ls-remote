@@ -219,10 +219,8 @@ func testMatrixSHA256(t *testing.T) {
 	// `object-format=sha256` capability so callers (and a peer's
 	// `parse_advertised_object_format`) can pick the right hash.
 	assertHasCap(t, caps, "object-format=sha256")
-	for _, c := range caps {
-		assert.NotEqual(t, "object-format=sha1", c,
-			"a sha256 fixture must not also advertise object-format=sha1")
-	}
+	assert.NotContains(t, caps, "object-format=sha1",
+		"a sha256 fixture must not also advertise object-format=sha1")
 }
 
 func testMatrixMidxWithSiblings(t *testing.T) {
