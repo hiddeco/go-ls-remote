@@ -1,37 +1,49 @@
 package httpt
 
 import (
-	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // Sentinel errors returned by [Transport.Open] for the auth and
 // not-found branches of the smart-HTTP probe. Callers match with
 // [errors.Is].
 //
-// Each sentinel carries the `transport/http:` prefix so a stray log
-// line is grep-friendly. The root `lsremote` package re-wraps these
-// into its own public sentinels; inside this package the sentinels
-// below are the canonical match targets.
+// Each sentinel is a [*transport.SchemeError] whose `Parent` points
+// at the corresponding generic identity in the `transport` package.
+// `errors.Is(ErrNotFound, transport.ErrNotFound)` therefore succeeds,
+// so the root `lsremote` package can match on generic identities
+// without re-exporting per-scheme sentinels. The rendered `Error()`
+// text keeps the `transport/http:` prefix for grep-friendly logs.
 var (
 	// ErrAuthRequired is returned when the server demands
 	// authentication and the [Transport] has no [CredentialResolver]
 	// (or the resolver yielded `(nil, nil)`). The caller is expected
 	// to plug in credentials and retry.
-	ErrAuthRequired = errors.New("transport/http: authentication required")
+	ErrAuthRequired = &transport.SchemeError{
+		Parent: transport.ErrAuthRequired,
+		Msg:    "transport/http: authentication required",
+	}
 
 	// ErrAuthFailed is returned when the server rejected an
 	// authenticated request: a `401` after the [CredentialResolver]
 	// was consulted (no further retry happens), or any `403` (no
 	// retry attempted).
-	ErrAuthFailed = errors.New("transport/http: authentication failed")
+	ErrAuthFailed = &transport.SchemeError{
+		Parent: transport.ErrAuthFailed,
+		Msg:    "transport/http: authentication failed",
+	}
 
 	// ErrNotFound is returned when the server reports `404 Not Found`
 	// for the discovery URL. Canonical Git surfaces the same condition
 	// as `repository '%s' not found` (see `remote-curl.c::discover_refs`,
 	// `HTTP_MISSING_TARGET`).
-	ErrNotFound = errors.New("transport/http: repository not found")
+	ErrNotFound = &transport.SchemeError{
+		Parent: transport.ErrNotFound,
+		Msg:    "transport/http: repository not found",
+	}
 
 	// ErrUnsupportedProtocol is returned by [Conn.Command] when the
 	// connection was opened against a dumb-HTTP server. The dumb body
@@ -40,7 +52,10 @@ var (
 	// `remote-curl.c::discover_refs` when the server's response is not
 	// the smart advertisement and the user later asks for a v2-only
 	// operation.
-	ErrUnsupportedProtocol = errors.New("transport/http: server does not support v2 commands")
+	ErrUnsupportedProtocol = &transport.SchemeError{
+		Parent: transport.ErrUnsupportedProtocol,
+		Msg:    "transport/http: server does not support v2 commands",
+	}
 )
 
 // ProtocolError reports an HTTP-layer protocol failure that does not

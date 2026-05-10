@@ -3,12 +3,22 @@ package filet
 import (
 	"errors"
 	"strings"
+
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // Sentinel errors returned by [Transport.Open]. Callers match with
 // [errors.Is]; the wrapping `*ProtocolError` carries the offending URL
 // and operation so a stray log line is diagnostic without leaking
 // userinfo.
+//
+// `ErrNotFound` and `ErrUnsupportedProtocol` are declared as
+// [*transport.SchemeError] values whose `Parent` points at the
+// corresponding generic identity in the `transport` package, so a
+// caller's `errors.Is(err, transport.ErrNotFound)` matches without
+// having to know which scheme produced the failure. The two
+// transport-local sentinels (`ErrUnsupportedFormat`,
+// `ErrServerRefused`) have no generic analog and stay scheme-local.
 var (
 	// ErrNotFound is returned when the supplied URL does not name a
 	// readable Git repository. The local-filesystem transport surfaces
@@ -18,14 +28,20 @@ var (
 	// all. Both shapes are callable equivalents to canonical Git's
 	// `repository '%s' not found` (`remote-curl.c::discover_refs`,
 	// `HTTP_MISSING_TARGET`).
-	ErrNotFound = errors.New("transport/file: repository not found")
+	ErrNotFound = &transport.SchemeError{
+		Parent: transport.ErrNotFound,
+		Msg:    "transport/file: repository not found",
+	}
 
 	// ErrUnsupportedProtocol is returned when [transport.OpenOptions.PreferredProtocol]
 	// pins a wire-protocol version this transport does not implement.
 	// The in-process emulator speaks v0 and v2; v1 is effectively
 	// unused in the canonical Git ecosystem (`serve.c` and
 	// `upload-pack.c` advertise v0 and v2 only).
-	ErrUnsupportedProtocol = errors.New("transport/file: unsupported protocol version")
+	ErrUnsupportedProtocol = &transport.SchemeError{
+		Parent: transport.ErrUnsupportedProtocol,
+		Msg:    "transport/file: unsupported protocol version",
+	}
 
 	// ErrUnsupportedFormat is returned when the underlying repository's
 	// on-disk format is not supported by this transport. The wrapped
