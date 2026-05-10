@@ -118,6 +118,16 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 			return nil, ErrAuthRequired
 		}
 
+		// The redirector is reused across the two probe attempts so the
+		// caller's [http.Client] keeps its single `CheckRedirect` hook.
+		// In the current control flow `resolveErr` is unreachable at this
+		// point — the only path that sets it returns a redirect error
+		// from the first `doProbe` and short-circuits the function — but
+		// resetting it here keeps the invariant explicit so a future
+		// refactor cannot leak first-attempt state into the retry's
+		// classification.
+		redir.resolveErr = nil
+
 		resp, err = doProbe(ctx, client, retryURL, ua, gitProto, creds, opts.Tracer)
 		if err != nil {
 			if resp != nil && resp.Body != nil {
