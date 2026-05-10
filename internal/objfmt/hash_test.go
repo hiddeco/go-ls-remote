@@ -53,6 +53,57 @@ func TestHash_Hex(t *testing.T) {
 	})
 }
 
+func TestHash_AppendHex(t *testing.T) {
+	t.Run("SHA1 appends 40 lowercase hex chars to existing dst", func(t *testing.T) {
+		var h Hash
+		for i := range 20 {
+			h[i] = byte(i)
+		}
+		dst := []byte("prefix:")
+		got := h.AppendHex(dst, SHA1)
+		want := "prefix:000102030405060708090a0b0c0d0e0f10111213"
+		if string(got) != want {
+			t.Fatalf("AppendHex SHA1: got %q want %q", string(got), want)
+		}
+	})
+
+	t.Run("SHA256 appends 64 lowercase hex chars", func(t *testing.T) {
+		var h Hash
+		for i := range 32 {
+			h[i] = byte(i)
+		}
+		got := h.AppendHex(nil, SHA256)
+		want := "000102030405060708090a0b0c0d0e0f" +
+			"101112131415161718191a1b1c1d1e1f"
+		if string(got) != want {
+			t.Fatalf("AppendHex SHA256: got %q want %q", string(got), want)
+		}
+	})
+
+	t.Run("unknown algo appends nothing", func(t *testing.T) {
+		var h Hash
+		dst := []byte("keep:")
+		got := h.AppendHex(dst, Algo(99))
+		if string(got) != "keep:" {
+			t.Fatalf("AppendHex unknown algo: got %q want \"keep:\"", string(got))
+		}
+	})
+
+	t.Run("agrees byte-for-byte with Hex", func(t *testing.T) {
+		var h Hash
+		for i := range 32 {
+			h[i] = byte(i*7 + 3)
+		}
+		for _, a := range []Algo{SHA1, SHA256} {
+			str := h.Hex(a)
+			buf := h.AppendHex(nil, a)
+			if string(buf) != str {
+				t.Fatalf("AppendHex(%v) = %q, Hex = %q", a, string(buf), str)
+			}
+		}
+	})
+}
+
 func TestParseHex(t *testing.T) {
 	t.Run("SHA1 round-trips with Hex", func(t *testing.T) {
 		in := "0123456789abcdef0123456789abcdef01234567"

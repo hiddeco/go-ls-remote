@@ -40,6 +40,23 @@ func (h Hash) Hex(a Algo) string {
 	return hex.EncodeToString(h[:n])
 }
 
+// AppendHex appends the lowercase hex encoding of h interpreted under a
+// to dst and returns the extended slice: 40 chars of the low 20 bytes
+// for [SHA1], 64 chars of all 32 bytes for [SHA256]. An unknown
+// algorithm appends nothing.
+//
+// AppendHex pairs with [Hash.Hex] the same way `strconv.AppendInt`
+// pairs with `strconv.Itoa`: callers on a hot loop pass a scratch
+// buffer to avoid the per-call string allocation that Hex's return
+// type forces.
+func (h Hash) AppendHex(dst []byte, a Algo) []byte {
+	n := a.Size()
+	if n == 0 {
+		return dst
+	}
+	return hex.AppendEncode(dst, h[:n])
+}
+
 // ParseHex decodes s into a Hash, requiring exactly `a.Size()*2` hex
 // characters. Bytes beyond `a.Size()` are left zero so SHA-1 ids parsed
 // this way compare equal to other SHA-1 ids with the same low 20 bytes.
