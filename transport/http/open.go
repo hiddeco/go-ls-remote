@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/dumbhttp"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
@@ -60,9 +62,10 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		redir:             redir,
 		userAgent:         ua,
 		gitProtocolHeader: gitProto,
+		tracer:            opts.Tracer,
 	}
 
-	resp, err := doProbe(ctx, client, probeURL, ua, gitProto, nil)
+	resp, err := doProbe(ctx, client, probeURL, ua, gitProto, nil, opts.Tracer)
 	if err != nil {
 		// `client.Do` may return both a non-nil response and a non-nil
 		// error (e.g. a `CheckRedirect` rejection). Modern `net/http`
@@ -115,7 +118,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 			return nil, ErrAuthRequired
 		}
 
-		resp, err = doProbe(ctx, client, retryURL, ua, gitProto, creds)
+		resp, err = doProbe(ctx, client, retryURL, ua, gitProto, creds, opts.Tracer)
 		if err != nil {
 			if resp != nil && resp.Body != nil {
 				drainAndClose(resp.Body)
@@ -173,6 +176,7 @@ type connConfig struct {
 	client            *http.Client
 	creds             CredentialResolver
 	redir             *probeRedirector
+	tracer            trace.Tracer
 	userAgent         string
 	gitProtocolHeader string
 }
@@ -207,8 +211,14 @@ func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.C
 // invoke the preamble strip — `internal/dumbhttp` synthesises a v0
 // advertisement directly without a service preamble — so the strip
 // runs only on this branch.
+//
+// The reader is constructed with the per-request URL pinned for
+// [trace.PacketEvent] emission. HTTP redirects mean the URL the
+// response actually came from may differ from the original probe
+// URL, so the URL is taken from `resp.Request` (the final hop)
+// rather than the caller-known original.
 func handleSmart(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
-	rdr := pktline.NewReader(resp.Body)
+	rdr := pktline.NewReader(resp.Body, inboundReaderOpts(cfg.tracer, finalRespURL(resp))...)
 	if err := stripSmartPreamble(rdr); err != nil {
 		drainAndClose(resp.Body)
 		return nil, &ProtocolError{
@@ -224,8 +234,12 @@ func handleSmart(resp *http.Response, redacted string, cfg connConfig) (transpor
 // handleDumb finalises a dumb-HTTP probe response by handing the body
 // to [dumbhttp.NewAdapter]. The Conn is flagged dumb so [Conn.Command]
 // short-circuits to [ErrUnsupportedProtocol] without dialing.
+//
+// The adapter's synthesised pkt-line stream carries the tracer so
+// [trace.PacketEvent] values reflect the v0-shaped output the wire
+// layer would have observed against a real smart-v0 server.
 func handleDumb(resp *http.Response, cfg connConfig) transport.Conn {
-	rdr := dumbhttp.NewAdapter(resp.Body)
+	rdr := dumbhttp.NewAdapter(resp.Body, inboundReaderOpts(cfg.tracer, finalRespURL(resp))...)
 	return newConn(resp, rdr, cfg, true)
 }
 
@@ -250,8 +264,23 @@ func newConn(resp *http.Response, rdr *pktline.Reader, cfg connConfig, dumb bool
 		userAgent:         cfg.userAgent,
 		gitProtocolHeader: cfg.gitProtocolHeader,
 		redir:             cfg.redir,
+		tracer:            cfg.tracer,
 		dumb:              dumb,
 	}
+}
+
+// finalRespURL returns the URL of the final hop of the redirect
+// chain that produced resp, redacted via [transport.RedactURL]. It
+// is used to pin a [trace.PacketEvent] URL on a freshly constructed
+// [pktline.Reader] for an HTTP response body. When `resp.Request`
+// is unset (a defensive case modern `net/http` does not produce on
+// the success path), the empty string is returned: an empty URL on
+// a [trace.PacketEvent] is preferable to a panic.
+func finalRespURL(resp *http.Response) string {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return ""
+	}
+	return transport.RedactURL(resp.Request.URL.String())
 }
 
 // stripSmartPreamble consumes the `# service=git-upload-pack\n`
@@ -283,8 +312,12 @@ func stripSmartPreamble(r *pktline.Reader) error {
 }
 
 // doProbe issues a single GET against probeURL with the supplied
-// headers and (optional) credentials.
-func doProbe(ctx context.Context, client *http.Client, probeURL, ua, gitProto string, creds Credentials) (*http.Response, error) {
+// headers and (optional) credentials. When tracer is non-nil it
+// records one [trace.HTTPEvent] for the call regardless of how many
+// redirect hops the chain follows: per-hop events would require
+// either a custom round-tripper or a tracer-aware `CheckRedirect`,
+// neither of which the current design takes on.
+func doProbe(ctx context.Context, client *http.Client, probeURL, ua, gitProto string, creds Credentials, tracer trace.Tracer) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
 	if err != nil {
 		return nil, err
@@ -296,7 +329,10 @@ func doProbe(ctx context.Context, client *http.Client, probeURL, ua, gitProto st
 			return nil, fmt.Errorf("apply credentials: %w", err)
 		}
 	}
-	return client.Do(req)
+	start := time.Now()
+	resp, err := client.Do(req)
+	emitHTTPEvent(tracer, req, resp, err, start)
+	return resp, err
 }
 
 // buildInfoRefsURL assembles the discovery URL from u. Userinfo is

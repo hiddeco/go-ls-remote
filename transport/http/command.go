@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
@@ -73,13 +75,13 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	}
 	redacted := transport.RedactURL(postURL.String())
 
-	body := encodeCommandBody(name, args, caps)
+	body := encodeCommandBody(name, args, caps, c.tracer, redacted)
 
 	creds, err := resolveCommandCreds(ctx, c.creds, postURL, redacted)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := doCommandPOST(ctx, c.client, postURL, body, c.userAgent, c.gitProtocolHeader, creds)
+	resp, err := doCommandPOST(ctx, c.client, postURL, body, c.userAgent, c.gitProtocolHeader, creds, c.tracer)
 	if err != nil {
 		// `client.Do` may return both a non-nil response and a non-nil
 		// error — most notably when `CheckRedirect` rejects a 3xx hop.
@@ -98,7 +100,7 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 		return nil, &ProtocolError{URL: redacted, Op: "command", Err: err}
 	}
 
-	rdr, err := handleCommandResponse(resp, redacted, creds != nil)
+	rdr, err := handleCommandResponse(resp, redacted, creds != nil, c.tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +139,17 @@ func commandPostURL(base *url.URL) (*url.URL, error) {
 // `pktline.Writer` directly so this package keeps to its documented
 // import set. Writing to a [bytes.Buffer] never fails, so the writer's
 // error returns are intentionally swallowed.
-func encodeCommandBody(name string, args, caps []string) []byte {
+//
+// When tracer is non-nil the writer carries the redacted POST URL so
+// each pkt-line written emits a [trace.PacketEvent] with
+// [trace.DirectionOutbound]. The redacted URL is the request URL at
+// the time of the call, NOT the post-redirect URL: a redirect-driven
+// POST may resend the body against a different URL, but the body is
+// constructed once here and a single tracer URL must apply to every
+// pkt-line in it.
+func encodeCommandBody(name string, args, caps []string, tracer trace.Tracer, redactedURL string) []byte {
 	var buf bytes.Buffer
-	w := pktline.NewWriter(&buf)
+	w := pktline.NewWriter(&buf, outboundWriterOpts(tracer, redactedURL)...)
 	_ = w.WritePacket([]byte("command=" + name + "\n"))
 	for _, cap := range caps {
 		_ = w.WritePacket([]byte(cap + "\n"))
@@ -172,8 +182,13 @@ func resolveCommandCreds(ctx context.Context, r CredentialResolver, postURL *url
 // then dispatches via the [Conn]'s [http.Client] so the redirect
 // policy, cookie jar, and any test hooks the caller installed
 // continue to apply.
+//
+// When tracer is non-nil the call emits one [trace.HTTPEvent] for
+// the round-trip; redirects (which `client.Do` follows under the
+// configured policy) collapse into a single event whose Status
+// reflects the final response.
 func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, body []byte,
-	ua, gitProto string, creds Credentials) (*http.Response, error) {
+	ua, gitProto string, creds Credentials, tracer trace.Tracer) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -187,7 +202,10 @@ func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, b
 			return nil, fmt.Errorf("apply credentials: %w", err)
 		}
 	}
-	return client.Do(req)
+	start := time.Now()
+	resp, err := client.Do(req)
+	emitHTTPEvent(tracer, req, resp, err, start)
+	return resp, err
 }
 
 // handleCommandResponse maps the server's status code to either a
@@ -198,10 +216,10 @@ func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, b
 // because the probe has already paid the anonymous-then-creds round
 // trip and the server's challenge state is not expected to change
 // between the probe and the first command.
-func handleCommandResponse(resp *http.Response, redacted string, credsApplied bool) (*pktline.Reader, error) {
+func handleCommandResponse(resp *http.Response, redacted string, credsApplied bool, tracer trace.Tracer) (*pktline.Reader, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return pktline.NewReader(resp.Body), nil
+		return pktline.NewReader(resp.Body, inboundReaderOpts(tracer, finalRespURL(resp))...), nil
 	case http.StatusUnauthorized:
 		drainAndClose(resp.Body)
 		if !credsApplied {

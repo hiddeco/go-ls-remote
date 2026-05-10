@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/trace"
 )
 
 // Conn is the HTTP-transport [transport.Conn]. It is constructed by
@@ -79,6 +80,13 @@ type Conn struct {
 	// probe uses, so the cross-origin auth-strip and resolver-error
 	// surfacing apply uniformly across GET and POST.
 	redir *probeRedirector
+
+	// tracer is the [trace.Tracer] captured at probe time from
+	// [transport.OpenOptions]. It is consulted on every command POST
+	// and threaded into the per-request [pktline.Reader] / [pktline.Writer]
+	// so HTTP and packet events surface uniformly across the probe and
+	// command paths. nil means tracing is disabled.
+	tracer trace.Tracer
 
 	// dumb is true when the connection came up via the dumb-HTTP
 	// adapter. A dumb [Conn] short-circuits [Conn.Command] to

@@ -92,8 +92,16 @@ const hexDigits = "0123456789abcdef"
 // `<oid> <refname>\n` data packets; a flush packet terminates the
 // stream. An empty body produces the empty-repo placeholder followed
 // by a flush.
-func NewAdapter(src io.Reader) *pktline.Reader {
-	return pktline.NewReader(newSynth(src))
+//
+// opts are forwarded to the internal [pktline.NewReader] call so a
+// caller wiring a tracer (typically via
+// [pktline.WithReaderTracerURL]) sees [trace.PacketEvent] values for
+// the synthesised stream rather than the raw HTTP body. That matches
+// what the wire layer would observe had the server spoken smart-v0
+// directly: tracer events reflect the synthetic v0 shape this adapter
+// produces, not the dumb body's `<oid> HTAB <refname>` text.
+func NewAdapter(src io.Reader, opts ...pktline.ReaderOption) *pktline.Reader {
+	return pktline.NewReader(newSynth(src), opts...)
 }
 
 // state names the adapter's progress through the synthesised stream.
