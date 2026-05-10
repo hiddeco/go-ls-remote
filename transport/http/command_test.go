@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,57 +21,10 @@ import (
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/server"
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
-
-// materializeRepoFixture mirrors the helper of the same name in
-// `internal/server`: it copies the named fixture from
-// `testdata/repos/<name>/` into a fresh `t.TempDir()`, renaming the
-// committed `dotgit` component to `.git`. Canonical Git refuses to
-// track a path containing a literal `.git` component (see
-// `path.c::is_dotgit_path`), so the on-disk fixtures store the gitdir
-// under a `dotgit/` directory and tests rename it on materialization.
-func materializeRepoFixture(t *testing.T, name string) string {
-	t.Helper()
-
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	src := filepath.Join(wd, "..", "..", "testdata", "repos", name)
-	info, err := os.Stat(src)
-	require.NoError(t, err, "fixture %q missing", name)
-	require.True(t, info.IsDir())
-
-	dst := t.TempDir()
-	require.NoError(t, filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		var parts []string
-		if rel != "." {
-			parts = strings.Split(filepath.ToSlash(rel), "/")
-		}
-		for i, part := range parts {
-			if part == "dotgit" {
-				parts[i] = ".git"
-			}
-		}
-		target := filepath.Join(append([]string{dst}, parts...)...)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	}))
-	return filepath.Join(dst, ".git")
-}
 
 // openFixtureStore materialises the named fixture, ensures a
 // `objects/pack/` directory exists (some ref-only fixtures ship
@@ -80,7 +32,7 @@ func materializeRepoFixture(t *testing.T, name string) string {
 // when the test ends.
 func openFixtureStore(t *testing.T, name string) *objstore.Store {
 	t.Helper()
-	gitdir := materializeRepoFixture(t, name)
+	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open(gitdir)
 	require.NoError(t, err)

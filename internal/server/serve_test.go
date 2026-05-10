@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,7 @@ import (
 // fixture-name plumbing and the cleanup wiring at every call site.
 func openEmptyStore(t *testing.T) *objstore.Store {
 	t.Helper()
-	gitdir := materializeRepoFixture(t, "empty")
+	gitdir := testfixture.MaterializeRepo(t, "empty")
 	s, err := objstore.Open(gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })

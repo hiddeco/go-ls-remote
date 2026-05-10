@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/transport"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +24,7 @@ import (
 // gitdir shape so the empty objects directory is conjured here.
 func openStoreFromFixture(t *testing.T, name string) *objstore.Store {
 	t.Helper()
-	gitdir := materializeRepoFixture(t, name)
+	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open(gitdir)
 	require.NoError(t, err)

@@ -408,10 +408,10 @@ func TestObjectInfo_CorruptObject(t *testing.T) {
 	assert.Equal(t, pktline.Flush, pkt.Kind)
 }
 
-// copyFixtureTree mirrors `materializeRepoFixture`'s walk but keeps the
-// `dotgit/` component intact (the corrupt-object test needs to flip a
-// byte before opening the store, so the rename to `.git` is performed
-// explicitly by the caller after `copyFixtureTree` returns).
+// copyFixtureTree mirrors `testfixture.MaterializeRepo`'s walk but
+// keeps the `dotgit/` component intact (the corrupt-object test needs
+// to flip a byte before opening the store, so the rename to `.git` is
+// performed explicitly by the caller after `copyFixtureTree` returns).
 func copyFixtureTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

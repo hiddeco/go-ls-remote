@@ -97,7 +97,7 @@ func BenchmarkWriteObjectInfoResponse(b *testing.B) {
 // openBenchPackOnlyStore copies the committed `pack-only` fixture
 // into a fresh `b.TempDir()`, renames the `dotgit` component to
 // `.git`, and opens an `objstore.Store` rooted at it with the CRC
-// check disabled. Mirrors `materializeRepoFixture` in shape but
+// check disabled. Mirrors `testfixture.MaterializeRepo` in shape but
 // takes a `*testing.B` and returns the opened store directly so the
 // bench loop stays terse.
 //

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -72,7 +73,7 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // over the missing-pack-dir gap.
 func materializeServeableFixture(t *testing.T, name string) string {
 	t.Helper()
-	gitdir := materializeRepoFixture(t, name)
+	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	return gitdir
 }

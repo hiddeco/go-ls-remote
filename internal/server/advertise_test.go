@@ -4,67 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// materializeRepoFixture copies the named fixture from
-// `testdata/repos/<name>/` into a fresh `t.TempDir()`, renaming the
-// committed `dotgit` component to `.git`. Canonical Git refuses to
-// track a path containing a literal `.git` component (see
-// `path.c::is_dotgit_path`), so the on-disk fixtures store the
-// gitdir under a `dotgit/` directory and tests rename it on
-// materialization.
-func materializeRepoFixture(t *testing.T, name string) string {
-	t.Helper()
-
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	src := filepath.Join(wd, "..", "..", "testdata", "repos", name)
-	info, err := os.Stat(src)
-	require.NoError(t, err, "fixture %q missing; regenerate with testdata/_gen/repos.sh", name)
-	require.True(t, info.IsDir())
-
-	dst := t.TempDir()
-	require.NoError(t, filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		var parts []string
-		if rel != "." {
-			parts = strings.Split(filepath.ToSlash(rel), "/")
-		}
-		for i, part := range parts {
-			if part == "dotgit" {
-				parts[i] = ".git"
-			}
-		}
-		target := filepath.Join(append([]string{dst}, parts...)...)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	}))
-	return filepath.Join(dst, ".git")
-}
 
 // pktLine encodes payload as a single pkt-line, prefixing it with a
 // 4-hex-digit length field that includes the prefix itself. The helper
@@ -137,7 +86,7 @@ func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 // lines 53-58 (canonical Git emits the repository's
 // `the_hash_algo->name`).
 func TestServe_V2AdvertisementSHA256(t *testing.T) {
-	gitdir := materializeRepoFixture(t, "sha256")
+	gitdir := testfixture.MaterializeRepo(t, "sha256")
 	store, err := objstore.Open(gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })

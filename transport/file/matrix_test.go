@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -258,16 +259,13 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 
 func testMatrixWithAlternatesChain(t *testing.T) {
 	// The chain fixture ships three sibling repos (a/, b/, c/) under a
-	// single fixture root; the standard `materializeRepoFixture`
-	// helper would point at `<dst>/.git`, which does not exist for
-	// this layout. Materialise the whole tree and target `a/.git`
-	// instead — that is the entry point the alternates-chain test in
+	// single fixture root with no top-level dotgit/. `MaterializeRepo`
+	// would fail the test on that layout; `MaterializeRepoTree`
+	// returns the destination root so the test can target `a/.git`
+	// directly — that is the entry point the alternates-chain test in
 	// `internal/objstore` uses too.
-	root := materializeRepoFixture(t, "with-alternates-chain")
-	// `materializeRepoFixture` returns `<dst>/.git`; reach back to the
-	// dst root to find the per-repo subdirs.
-	dst := filepath.Dir(root)
-	gitdir := filepath.Join(dst, "a", ".git")
+	root := testfixture.MaterializeRepoTree(t, "with-alternates-chain")
+	gitdir := filepath.Join(root, "a", ".git")
 
 	c, caps := openMatrixConn(t, gitdir)
 	assertHasCap(t, caps, "object-format=sha1")
