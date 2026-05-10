@@ -9,6 +9,7 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/server"
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
@@ -113,37 +114,46 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		Tracer:            opts.Tracer,
 	}
 
-	serverTracer := serverEndpointTracer(t, opts.Tracer)
-	go func() {
-		defer close(conn.done)
-
-		// Closing the server-side pipe ends with the `Serve` error
-		// surfaces it on the client's next read or write rather than
-		// silently dropping bytes. `io.PipeWriter.CloseWithError`
-		// stores the error so the matching `clientReader.Read`
-		// returns it directly, matching how a real transport would
-		// propagate a server-side fault.
-		//
-		// Any client request bytes still buffered in `serverReader`
-		// at this point — i.e. a request frame the client wrote but
-		// `Serve` had not yet read before returning (e.g. on context
-		// cancellation) — are dropped on the floor. The server has
-		// already returned; there is no dispatch path left to
-		// receive them.
-		srvErr := server.Serve(derivedCtx,
-			pktline.NewReader(serverReader, inboundReaderOpts(serverTracer, redacted)...),
-			pktline.NewWriter(serverWriter, outboundWriterOpts(serverTracer, redacted)...),
-			store,
-			srvOpts,
-		)
-
-		conn.serverErr = srvErr
-
-		_ = serverWriter.CloseWithError(srvErr)
-		_ = serverReader.CloseWithError(srvErr)
-	}()
+	go conn.runServer(derivedCtx, srvOpts, serverEndpointTracer(t, opts.Tracer), redacted)
 
 	return conn, nil
+}
+
+// runServer drives `server.Serve` against the [Conn]'s server-side
+// pipe ends and is the body of the goroutine spawned by [Transport.Open].
+// It runs for the [Conn]'s lifetime, returning when [server.Serve]
+// returns (cleanly, on context cancellation, or on a pipe close
+// installed by [Conn.Close]). On return, the captured `Serve` error is
+// stored in `c.serverErr` and surfaced to the client side by closing
+// each server pipe end with that error; the caller observes it on the
+// next read or write of the client-side reader/writer.
+//
+// Any client request bytes still buffered in `c.serverReader` at the
+// point `Serve` returns — for example a request frame the client wrote
+// but `Serve` had not yet read before returning under context
+// cancellation — are dropped on the floor. The server has already
+// returned; there is no dispatch path left to receive them.
+//
+// `tracer` is the [trace.Tracer] to wire at the server-side pkt-line
+// endpoints. It is non-nil only when the [Transport] was constructed
+// with [WithEndpointTrace]; the default-off path passes nil so each
+// pkt-line crossing the pipe pair produces a single [trace.PacketEvent]
+// from the client side rather than two. `redacted` is the dial URL with
+// credentials redacted, attached to every emitted event.
+func (c *Conn) runServer(ctx context.Context, srvOpts server.Options, tracer trace.Tracer, redacted string) {
+	defer close(c.done)
+
+	srvErr := server.Serve(ctx,
+		pktline.NewReader(c.serverReader, inboundReaderOpts(tracer, redacted)...),
+		pktline.NewWriter(c.serverWriter, outboundWriterOpts(tracer, redacted)...),
+		c.store,
+		srvOpts,
+	)
+
+	c.serverErr = srvErr
+
+	_ = c.serverWriter.CloseWithError(srvErr)
+	_ = c.serverReader.CloseWithError(srvErr)
 }
 
 // resolvePreferredProtocol turns a caller-supplied
