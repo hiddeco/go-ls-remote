@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -694,8 +694,8 @@ func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.Hash {
 	pack.Write(trailer[:])
 
 	// --- Idx (v2 SHA-1) ---------------------------------------------
-	sort.Slice(records, func(i, j int) bool {
-		return bytes.Compare(records[i].oid[:20], records[j].oid[:20]) < 0
+	slices.SortFunc(records, func(a, b entryRecord) int {
+		return bytes.Compare(a.oid[:20], b.oid[:20])
 	})
 
 	idx := new(bytes.Buffer)
@@ -840,8 +840,8 @@ func buildSinglePackAndIdx(t *testing.T, entries []packEntryWire) (packBytes, id
 
 	// --- Idx (v2 SHA-1) ---------------------------------------------
 	// Sort records by OID so the binary-search invariant holds.
-	sort.Slice(records, func(i, j int) bool {
-		return bytes.Compare(records[i].oid[:20], records[j].oid[:20]) < 0
+	slices.SortFunc(records, func(a, b recorded) int {
+		return bytes.Compare(a.oid[:20], b.oid[:20])
 	})
 
 	idx := new(bytes.Buffer)

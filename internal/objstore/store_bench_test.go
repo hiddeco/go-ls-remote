@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -452,8 +452,8 @@ func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byt
 	trailer := sha1.Sum(pack.Bytes())
 	pack.Write(trailer[:])
 
-	sort.Slice(records, func(i, j int) bool {
-		return bytes.Compare(records[i].oid[:20], records[j].oid[:20]) < 0
+	slices.SortFunc(records, func(a, b entry) int {
+		return bytes.Compare(a.oid[:20], b.oid[:20])
 	})
 
 	idx := new(bytes.Buffer)
