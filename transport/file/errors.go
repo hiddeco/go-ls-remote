@@ -21,12 +21,20 @@ var (
 	ErrNotFound = errors.New("transport/file: repository not found")
 
 	// ErrUnsupportedProtocol is returned when [transport.OpenOptions.PreferredProtocol]
-	// pins a wire version this transport does not implement. The
-	// emulator speaks v0 and v2; v1 is effectively unused in the
-	// canonical Git ecosystem (`serve.c` and `upload-pack.c` advertise
-	// v0 and v2 only). A future reftable-aware variant may surface the
-	// same sentinel for unsupported repository formats.
-	ErrUnsupportedProtocol = errors.New("transport/file: unsupported repository format")
+	// pins a wire-protocol version this transport does not implement.
+	// The in-process emulator speaks v0 and v2; v1 is effectively
+	// unused in the canonical Git ecosystem (`serve.c` and
+	// `upload-pack.c` advertise v0 and v2 only).
+	ErrUnsupportedProtocol = errors.New("transport/file: unsupported protocol version")
+
+	// ErrUnsupportedFormat is returned when the underlying repository's
+	// on-disk format is not supported by this transport. The wrapped
+	// cause typically matches `objstore.ErrUnsupportedFormat`; the
+	// trigger is a `core.repositoryformatversion` or `extensions.*`
+	// value the parser in `internal/objstore/config.go` rejects (e.g.
+	// a future reftable variant or an unrecognised core repository
+	// extension).
+	ErrUnsupportedFormat = errors.New("transport/file: unsupported repository format")
 
 	// ErrServerRefused is returned when the underlying object store
 	// rejects the open with a structural error a fresh-dial caller
@@ -61,7 +69,8 @@ type ProtocolError struct {
 
 	// Err is the wrapped cause. It typically matches one of this
 	// package's sentinels (`ErrNotFound`, `ErrUnsupportedProtocol`,
-	// `ErrServerRefused`) so [errors.Is] sees through the wrapper.
+	// `ErrUnsupportedFormat`, `ErrServerRefused`) so [errors.Is] sees
+	// through the wrapper.
 	Err error
 }
 

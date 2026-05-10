@@ -39,8 +39,9 @@ import (
 //   - `objstore.ErrNotARepo` → `ErrNotFound`. A `file://` URL pointing
 //     at a non-repo path is the local equivalent of HTTP 404; the
 //     caller's intent ("query this repo") cannot be served.
-//   - `objstore.ErrUnsupportedFormat` → `ErrUnsupportedProtocol`.
-//     Future reftable variants surface here.
+//   - `objstore.ErrUnsupportedFormat` → `ErrUnsupportedFormat`. A
+//     `core.repositoryformatversion` or `extensions.*` value the
+//     parser rejects (e.g. a future reftable variant) surfaces here.
 //   - `objstore.ErrCorruptObject` → `ErrServerRefused`. Rare at
 //     `Open`, but possible when an alternates-chain entry refers to a
 //     corrupt store; `*ProtocolError.Server` carries the corruption
@@ -158,7 +159,7 @@ func mapOpenError(err error, redacted string) error {
 	case errors.Is(err, objstore.ErrNotARepo):
 		return &ProtocolError{URL: redacted, Op: "dial", Err: ErrNotFound}
 	case errors.Is(err, objstore.ErrUnsupportedFormat):
-		return &ProtocolError{URL: redacted, Op: "dial", Err: ErrUnsupportedProtocol}
+		return &ProtocolError{URL: redacted, Op: "dial", Err: ErrUnsupportedFormat}
 	case errors.Is(err, objstore.ErrCorruptObject):
 		return &ProtocolError{URL: redacted, Op: "dial", Server: err.Error(), Err: ErrServerRefused}
 	default:

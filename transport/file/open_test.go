@@ -103,6 +103,37 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 		"v1 pin must surface ErrUnsupportedProtocol; got %v", err)
 }
 
+func TestTransport_Open_UnsupportedFormat(t *testing.T) {
+	// A gitdir with `extensions.refStorage = packed` is rejected by
+	// `objstore.Open` with `objstore.ErrUnsupportedFormat`. The dial
+	// path must surface that as the format-specific sentinel
+	// [ErrUnsupportedFormat], not the protocol-pin sentinel.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"),
+		[]byte("ref: refs/heads/main\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "refs"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config"),
+		[]byte("[extensions]\n\trefStorage = packed\n"), 0o644))
+
+	u, err := transport.ParseURL("file://" + dir)
+	require.NoError(t, err)
+
+	tr := New()
+	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	require.Error(t, err)
+	assert.Nil(t, conn)
+	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+		"unsupported repo format must surface ErrUnsupportedFormat; got %v", err)
+	assert.False(t, errors.Is(err, ErrUnsupportedProtocol),
+		"format errors must not match the protocol-pin sentinel; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"unsupported format must surface as *ProtocolError; got %T", err)
+	assert.Equal(t, "dial", pe.Op)
+}
+
 func TestTransport_Open_CloseMidStreamIsIdempotent(t *testing.T) {
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	u, err := transport.ParseURL("file://" + gitdir)
