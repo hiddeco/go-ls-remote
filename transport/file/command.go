@@ -76,7 +76,10 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 // the frame: the underlying [pktline.Writer] writes each pkt-line in a
 // single [io.Writer.Write] call, so a partial frame on the wire is
 // possible only when the underlying sink itself fails mid-frame, in
-// which case there is nothing more this side can usefully emit.
+// which case there is nothing more this side can usefully emit. The
+// wire is then in a corrupted mid-frame state the server cannot
+// recover from, so the [Conn] must be considered dead and the caller
+// must invoke [Conn.Close].
 func encodeV2CommandRequest(w *pktline.Writer, name string, args, caps []string) error {
 	if err := w.WritePacket([]byte("command=" + name + "\n")); err != nil {
 		return err

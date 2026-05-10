@@ -94,6 +94,12 @@ type Conn struct {
 // Advertisement returns the cached pkt-line reader. The reader is
 // positioned at the first byte of the advertisement; for v2 that is
 // the `version 2\n` data packet, for v0 it is the first ref line.
+//
+// The same reader is returned by every subsequent [Conn.Command]
+// call: a single in-process server goroutine streams the
+// advertisement and every command response onto one pkt-line pipe
+// pair, so callers see one persistent stream for the lifetime of the
+// [Conn]. [Conn.Close] releases it.
 func (c *Conn) Advertisement() *pktline.Reader {
 	return c.reader
 }
