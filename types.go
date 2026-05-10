@@ -118,9 +118,12 @@ const (
 //     server advertised, or the empty string when the server did
 //     not send one.
 //   - [Capabilities.ObjectFormat] is the negotiated repository
-//     object format. v0/v1 servers omit the capability when they
-//     speak only `sha1`; the library normalises that to
-//     [ObjectFormatSHA1].
+//     object format. v0/v1 servers commonly omit the `object-format`
+//     capability; the field is then the empty string. Callers
+//     comparing against [ObjectFormatSHA1] should treat the empty
+//     string as equivalent — v0/v1 servers that do not advertise
+//     `object-format` always speak `sha1`. Unknown values are
+//     preserved verbatim so callers can detect future formats.
 //   - [Capabilities.Commands] lists the v2 commands the server
 //     advertised under the `command=` capability. It is empty for
 //     v0/v1 handshakes, where command-style negotiation does not
