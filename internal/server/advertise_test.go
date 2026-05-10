@@ -123,7 +123,7 @@ func TestWriteV0Advertisement_AllocsPerRef(t *testing.T) {
 	const maxAllocsPerRef = 3.0
 
 	for _, tc := range []struct {
-		name    string
+		name     string
 		withPeel bool
 	}{
 		{name: "no-peel", withPeel: false},
