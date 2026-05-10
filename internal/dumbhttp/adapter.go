@@ -52,6 +52,22 @@ import (
 // against it with [errors.Is].
 var ErrMalformedRefLine = errors.New("dumbhttp: malformed ref line")
 
+// ErrRefLineTooLarge is returned (wrapped) when a ref record is too
+// long to fit into a single pkt-line under [pktline.MaxPayload].
+// Refusing the line at synthesis time avoids wrapping the 4-byte
+// hex length prefix, which would misalign every byte downstream
+// before the wire layer's own size check could fire. Callers match
+// against it with [errors.Is].
+var ErrRefLineTooLarge = errors.New("dumbhttp: ref line exceeds maximum pkt-line payload")
+
+// maxRefLineBytes caps the synthesised payload size at one byte less
+// than the worst-case suffix the adapter appends. The first ref
+// pkt-line carries a `\x00\n` (2-byte) NUL/cap-list trailer; later
+// refs carry only `\n`. Reserving 2 bytes covers both shapes without
+// branching, leaving `pktline.MaxPayload - 2` (= 65514) bytes for
+// `<oid> <SP> <refname>`.
+const maxRefLineBytes = pktline.MaxPayload - 2
+
 // emptyRepoPlaceholder is the synthetic pkt-line payload used when
 // the dumb body carries zero refs. Its shape mirrors the
 // `<zero-oid> capabilities^{}` line canonical Git's
@@ -63,6 +79,10 @@ const emptyRepoPlaceholder = "0000000000000000000000000000000000000000 capabilit
 
 // pktLengthPrefix is the size of a pkt-line length prefix in bytes.
 const pktLengthPrefix = 4
+
+// hexDigits is the alphabet used by [encodePktLine] when writing the
+// 4-byte ASCII hex length prefix.
+const hexDigits = "0123456789abcdef"
 
 // NewAdapter returns a [pktline.Reader] whose source is a synthetic
 // v0-shaped pkt-line stream produced from the dumb HTTP `info/refs`
@@ -232,8 +252,28 @@ func (s *synth) nextRefLine() (string, bool, error) {
 // (`gitprotocol-http.adoc` lines 158-200); we tolerate runs of
 // whitespace as well, matching real-world servers that emit a
 // space. A line with fewer than two fields surfaces
-// [ErrMalformedRefLine] wrapped with the offending text.
+// [ErrMalformedRefLine] wrapped with the offending text. A line
+// whose `<oid> <SP> <refname>` size would exceed [maxRefLineBytes]
+// surfaces [ErrRefLineTooLarge] instead — synthesising it would
+// require a pkt-line length prefix wider than 4 hex nibbles.
 func splitRefLine(line string) (string, string, error) {
+	oid, name, err := splitOIDAndName(line)
+	if err != nil {
+		return "", "", err
+	}
+	// `<oid> <SP> <refname>` plus the suffix the caller will append
+	// must fit within [pktline.MaxPayload]; see [maxRefLineBytes].
+	if n := len(oid) + 1 + len(name); n > maxRefLineBytes {
+		return "", "", fmt.Errorf("dumbhttp: ref line %d bytes: %w", n, ErrRefLineTooLarge)
+	}
+	return oid, name, nil
+}
+
+// splitOIDAndName extracts the OID and refname fields without
+// applying the size cap. It exists so [splitRefLine] can layer the
+// [ErrRefLineTooLarge] check on top without duplicating field
+// parsing.
+func splitOIDAndName(line string) (string, string, error) {
 	if oid, name, ok := strings.Cut(line, "\t"); ok {
 		oid = strings.TrimSpace(oid)
 		name = strings.TrimSpace(name)
@@ -262,18 +302,21 @@ func splitRefLine(line string) (string, string, error) {
 // because the synthesiser already owns its destination buffer
 // (pending) and using the writer would require an intermediate
 // destination [io.Writer].
+//
+// Callers MUST refuse oversized payloads upstream — see
+// [splitRefLine] and [ErrRefLineTooLarge]. The panic below is a
+// belt-and-braces guard against future regressions; it should
+// never fire in practice.
 func encodePktLine(payload string) []byte {
 	total := pktLengthPrefix + len(payload)
-	// A refname long enough to overflow [pktline.MaxPayload] is
-	// pathological — well past `MAX_PATH` on every supported OS — so
-	// we let the encoded prefix exceed the cap and trust the wire
-	// layer's `ErrPayloadTooLarge` check to reject it.
-	const hex = "0123456789abcdef"
+	if total > 0xffff {
+		panic("dumbhttp: payload exceeds pkt-line max — should have been refused upstream")
+	}
 	buf := make([]byte, total)
-	buf[0] = hex[(total>>12)&0xf]
-	buf[1] = hex[(total>>8)&0xf]
-	buf[2] = hex[(total>>4)&0xf]
-	buf[3] = hex[total&0xf]
+	buf[0] = hexDigits[(total>>12)&0xf]
+	buf[1] = hexDigits[(total>>8)&0xf]
+	buf[2] = hexDigits[(total>>4)&0xf]
+	buf[3] = hexDigits[total&0xf]
 	copy(buf[pktLengthPrefix:], payload)
 	return buf
 }

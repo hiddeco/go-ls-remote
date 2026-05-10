@@ -108,9 +108,10 @@ func TestNewAdapter_MalformedLine(t *testing.T) {
 	pr := dumbhttp.NewAdapter(strings.NewReader(body))
 
 	var sawErr error
-	for i := 0; i < 16 && sawErr == nil; i++ {
+	for i := 0; i < 16; i++ {
 		_, err := pr.ReadPacket()
 		if err != nil {
+			// stop scanning at the first error
 			sawErr = err
 			break
 		}
@@ -118,6 +119,40 @@ func TestNewAdapter_MalformedLine(t *testing.T) {
 	require.Error(t, sawErr)
 	assert.True(t, errors.Is(sawErr, dumbhttp.ErrMalformedRefLine),
 		"expected error wrapping ErrMalformedRefLine, got %v", sawErr)
+}
+
+func TestNewAdapter_OverlongRefLine(t *testing.T) {
+	// Construct a ref record whose `<oid> <SP> <refname>` payload
+	// exceeds the synthesis cap by one byte. The adapter must refuse
+	// it before encodePktLine wraps the 4-byte length prefix; the
+	// error read off the pkt-line stream must wrap
+	// [dumbhttp.ErrRefLineTooLarge].
+	//
+	// pktline.MaxPayload is 65516; maxRefLineBytes (= MaxPayload - 2)
+	// is 65514. With a 40-char OID and one HTAB separator, the refname
+	// length needed to push the line just over the cap is
+	// `65514 - 40 - 1 + 1` = 65474 bytes. Total line bytes including
+	// the trailing `\n` are 65516 — comfortably within the
+	// `bufio.Scanner` default 64 KiB token cap (65536), so the
+	// adapter, not the scanner, is the component that refuses.
+	const refnameLen = 65474
+	overlong := strings.Repeat("a", refnameLen)
+	body := oidMaint + "\t" + overlong + "\n"
+
+	pr := dumbhttp.NewAdapter(strings.NewReader(body))
+
+	var sawErr error
+	for i := 0; i < 16; i++ {
+		_, err := pr.ReadPacket()
+		if err != nil {
+			// stop scanning at the first error
+			sawErr = err
+			break
+		}
+	}
+	require.Error(t, sawErr)
+	assert.True(t, errors.Is(sawErr, dumbhttp.ErrRefLineTooLarge),
+		"expected error wrapping ErrRefLineTooLarge, got %v", sawErr)
 }
 
 func TestNewAdapter_BlankAndCommentLines(t *testing.T) {
