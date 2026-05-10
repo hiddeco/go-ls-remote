@@ -3,10 +3,12 @@ package server
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
+	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -309,4 +311,47 @@ func TestLSRefs_UnknownArg(t *testing.T) {
 
 	want := pktLine(`ERR ls-refs: unknown argument "blah"`+"\n") + "0000"
 	assert.Equal(t, want, string(resp))
+}
+
+// TestWriteLSRefsResponse_AllocsPerRef pins the per-ref allocation
+// budget for `writeLSRefsResponse`'s ref-emission loop. The pre-fix
+// shape — a fresh `strings.Builder` per ref plus an
+// `[]byte(line.String())` conversion — costs ~5 allocs/ref. The
+// post-fix shape reuses a single `[]byte` scratch across the loop
+// and appends OID hex / refname directly, leaving only the
+// unavoidable `OID.Hex` string allocs per ref. The budget is set
+// loose enough not to flake on an off-by-one ref-count rounding but
+// tight enough to fail against the pre-fix five-alloc shape.
+//
+// The fixture carries 1000 packed refs to amortise per-call constant
+// overhead (the HEAD line, the iterator setup) so the per-ref
+// average isolates the loop body's work.
+func TestWriteLSRefsResponse_AllocsPerRef(t *testing.T) {
+	const refCount = 1000
+	const maxAllocsPerRef = 3.0
+
+	for _, tc := range []struct {
+		name string
+		args wire.RefsArgs
+	}{
+		{name: "plain", args: wire.RefsArgs{}},
+		{name: "peel", args: wire.RefsArgs{Peel: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := buildBenchPackedRefsRepo(t, refCount, true)
+			w := pktline.NewWriter(io.Discard)
+
+			avg := testing.AllocsPerRun(20, func() {
+				if err := writeLSRefsResponse(w, store, tc.args); err != nil {
+					t.Fatal(err)
+				}
+			})
+
+			perRef := avg / float64(refCount)
+			if perRef > maxAllocsPerRef {
+				t.Fatalf("post-fix allocs/ref = %.2f (total %.0f / %d refs), want <= %.1f",
+					perRef, avg, refCount, maxAllocsPerRef)
+			}
+		})
+	}
 }

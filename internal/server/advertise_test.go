@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -103,4 +104,50 @@ func TestServe_V2AdvertisementSHA256(t *testing.T) {
 		pktLine("object-info\n") +
 		"0000"
 	assert.Equal(t, want, string(got))
+}
+
+// TestWriteV0Advertisement_AllocsPerRef pins the per-ref allocation
+// budget for `writeV0Advertisement`'s ref-emission loop. The pre-fix
+// shape — a reused `strings.Builder` plus a per-iteration
+// `[]byte(line.String())` conversion — still costs ~5 allocs/ref
+// because the conversion is mandatory copy. The post-fix shape
+// reuses a single `[]byte` scratch and hands it directly to
+// `WritePacket`, leaving only the unavoidable `OID.Hex` allocs per
+// ref (one extra per peeled tag).
+//
+// The fixture carries 1000 packed refs (with a peel mix on one arm)
+// to amortise the HEAD line and the cap-list assembly so the per-ref
+// average isolates the loop body's allocation cost.
+func TestWriteV0Advertisement_AllocsPerRef(t *testing.T) {
+	const refCount = 1000
+	const maxAllocsPerRef = 3.0
+
+	for _, tc := range []struct {
+		name    string
+		withPeel bool
+	}{
+		{name: "no-peel", withPeel: false},
+		{name: "with-peel", withPeel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := buildBenchPackedRefsRepo(t, refCount, tc.withPeel)
+			opts := Options{
+				Agent:             "test-agent/0.0",
+				PreferredProtocol: transport.ProtocolV0,
+			}
+			w := pktline.NewWriter(io.Discard)
+
+			avg := testing.AllocsPerRun(20, func() {
+				if err := writeV0Advertisement(w, store, opts); err != nil {
+					t.Fatal(err)
+				}
+			})
+
+			perRef := avg / float64(refCount)
+			if perRef > maxAllocsPerRef {
+				t.Fatalf("post-fix allocs/ref = %.2f (total %.0f / %d refs), want <= %.1f",
+					perRef, avg, refCount, maxAllocsPerRef)
+			}
+		})
+	}
 }

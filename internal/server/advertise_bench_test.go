@@ -89,7 +89,7 @@ func BenchmarkWriteV2Advertisement(b *testing.B) {
 	}
 }
 
-// buildBenchPackedRefsRepo materialises a gitdir under `b.TempDir()`
+// buildBenchPackedRefsRepo materialises a gitdir under `tb.TempDir()`
 // with HEAD pointing at refs/heads/main and a `packed-refs` file
 // carrying n synthetic refs in C-locale byte order. When withPeel is
 // true, ~5% of the refs are annotated tags with recorded `^<peel>`
@@ -99,29 +99,33 @@ func BenchmarkWriteV2Advertisement(b *testing.B) {
 // The store is opened with the default sha1 algo (no config file is
 // written, matching `objstore.Config`'s documented default at
 // `internal/objstore/config.go:22`) and its `Close` is registered
-// with `b.Cleanup`. The shape is deliberately ref-only — no
+// with `tb.Cleanup`. The shape is deliberately ref-only — no
 // objects, no pack — so the v0 / v2 advertisement and ls-refs
 // benches measure ref-iteration and pkt-line emission cost rather
 // than blob/tree resolution. Object-info benches reuse the
 // committed `pack-only` fixture instead.
 //
+// Accepts [testing.TB] so the per-ref allocation regression tests in
+// `ls_refs_test.go` and `advertise_test.go` can reuse the synthetic
+// fixture without growing a parallel constructor.
+//
 // Refnames carry a six-digit zero-padded index so the lexicographic
 // ordering matches the natural numerical ordering — without padding,
 // `branch-10` would sort before `branch-2` and the benchmarks across
 // `n` would not be directly comparable.
-func buildBenchPackedRefsRepo(b *testing.B, n int, withPeel bool) *objstore.Store {
-	b.Helper()
+func buildBenchPackedRefsRepo(tb testing.TB, n int, withPeel bool) *objstore.Store {
+	tb.Helper()
 
-	root := b.TempDir()
+	root := tb.TempDir()
 	gitDir := filepath.Join(root, ".git")
 	for _, sub := range []string{"refs", "objects/pack"} {
 		if err := os.MkdirAll(filepath.Join(gitDir, sub), 0o755); err != nil {
-			b.Fatal(err)
+			tb.Fatal(err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"),
 		[]byte("ref: refs/heads/main\n"), 0o644); err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	var pr strings.Builder
@@ -146,14 +150,14 @@ func buildBenchPackedRefsRepo(b *testing.B, n int, withPeel bool) *objstore.Stor
 	}
 	if err := os.WriteFile(filepath.Join(gitDir, "packed-refs"),
 		[]byte(pr.String()), 0o644); err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	s, err := objstore.Open(gitDir)
 	if err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
-	b.Cleanup(func() { _ = s.Close() })
+	tb.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

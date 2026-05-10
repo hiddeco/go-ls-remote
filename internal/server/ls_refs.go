@@ -165,12 +165,21 @@ func writeLSRefsResponse(w *pktline.Writer, store *objstore.Store, args wire.Ref
 	if err != nil {
 		return err
 	}
+	// One scratch buffer is reused across every ref pkt-line. After
+	// the first ref grows it, subsequent iterations reslice to zero
+	// length and append into the existing capacity, eliminating the
+	// per-ref `strings.Builder` growth + `[]byte(...)` conversion
+	// allocs. `WritePacket` copies the payload into its own
+	// length-prefixed scratch (`pkt-line.c:509`), so reusing this
+	// slice across calls is safe.
+	var line []byte
 	for _, ref := range refs {
-		line, err := formatRefLine(store, algo, ref, args)
+		line = line[:0]
+		line, err = formatRefLine(line, store, algo, ref, args)
 		if err != nil {
 			return err
 		}
-		if err := w.WritePacket([]byte(line)); err != nil {
+		if err := w.WritePacket(line); err != nil {
 			return fmt.Errorf("server: ls-refs: write ref %q: %w", ref.Name, err)
 		}
 	}
@@ -226,31 +235,38 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 	return nil
 }
 
-// formatRefLine builds the per-ref data pkt-line payload for a non-HEAD
-// ref. The line is `<oid> <refname>` plus optional ` peeled:<oid>`
-// (canonical Git also emits `symref-target:` for non-HEAD symrefs; our
+// formatRefLine appends the per-ref data pkt-line payload for a
+// non-HEAD ref into dst and returns the extended slice. The line is
+// `<oid> <refname>` plus optional ` peeled:<oid>` (canonical Git also
+// emits `symref-target:` for non-HEAD symrefs; our
 // [objstore.Store.IterRefs] resolves them to their terminal OID, so we
 // never reach this code path with `RefEntry`s flagged as symbolic and
 // the attribute is unreachable in practice — see the doc comment on
 // [handleLSRefs]).
-func formatRefLine(store *objstore.Store, algo objfmt.Algo,
-	ref objstore.RefEntry, args wire.RefsArgs) (string, error) {
-	var b strings.Builder
-	b.WriteString(ref.OID.Hex(algo))
-	b.WriteByte(' ')
-	b.WriteString(ref.Name)
+//
+// The caller passes `dst[:0]` once per ref so the underlying capacity
+// is preserved across iterations. Appending into a reused slice and
+// handing it straight to [pktline.Writer.WritePacket] saves the
+// per-iteration `strings.Builder` growth and the
+// `[]byte(line.String())` conversion that the previous shape
+// allocated. Only the unavoidable `OID.Hex` strings are left.
+func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
+	ref objstore.RefEntry, args wire.RefsArgs) ([]byte, error) {
+	dst = append(dst, ref.OID.Hex(algo)...)
+	dst = append(dst, ' ')
+	dst = append(dst, ref.Name...)
 	if args.Peel {
 		peeled, ok, err := refPeel(store, ref)
 		if err != nil {
-			return "", fmt.Errorf("server: ls-refs: peel %q: %w", ref.Name, err)
+			return nil, fmt.Errorf("server: ls-refs: peel %q: %w", ref.Name, err)
 		}
 		if ok && !peeled.IsZero() {
-			b.WriteString(" peeled:")
-			b.WriteString(peeled.Hex(algo))
+			dst = append(dst, " peeled:"...)
+			dst = append(dst, peeled.Hex(algo)...)
 		}
 	}
-	b.WriteByte('\n')
-	return b.String(), nil
+	dst = append(dst, '\n')
+	return dst, nil
 }
 
 // collectLSRefsRefs drains the backend's ref iterator into a slice

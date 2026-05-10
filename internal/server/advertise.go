@@ -135,35 +135,40 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 		return nil
 	}
 
-	// Reused across every ref pkt-line and its optional peel line so
-	// the loop allocates only when the buffer grows past its current
-	// capacity, not once per `+=`.
-	var line strings.Builder
+	// Reused across every ref pkt-line and its optional peel line.
+	// Appending into the slice and handing it directly to
+	// [pktline.Writer.WritePacket] avoids the per-iteration
+	// `strings.Builder` growth and the `[]byte(line.String())`
+	// conversion the previous shape allocated; `WritePacket` copies
+	// the payload into its own length-prefixed scratch
+	// (`pkt-line.c:509`), so reusing this slice across calls is
+	// safe.
+	var line []byte
 
 	capsEmitted := false
 	if headValid {
-		line.WriteString(head.OID.Hex(algo))
-		line.WriteString(" HEAD\x00")
-		line.WriteString(caps)
-		line.WriteByte('\n')
-		if err := w.WritePacket([]byte(line.String())); err != nil {
+		line = append(line, head.OID.Hex(algo)...)
+		line = append(line, " HEAD\x00"...)
+		line = append(line, caps...)
+		line = append(line, '\n')
+		if err := w.WritePacket(line); err != nil {
 			return fmt.Errorf("server: write v0 HEAD ref: %w", err)
 		}
 		capsEmitted = true
 	}
 
 	for _, ref := range refs {
-		line.Reset()
-		line.WriteString(ref.OID.Hex(algo))
-		line.WriteByte(' ')
-		line.WriteString(ref.Name)
+		line = line[:0]
+		line = append(line, ref.OID.Hex(algo)...)
+		line = append(line, ' ')
+		line = append(line, ref.Name...)
 		if !capsEmitted {
-			line.WriteByte('\x00')
-			line.WriteString(caps)
+			line = append(line, '\x00')
+			line = append(line, caps...)
 			capsEmitted = true
 		}
-		line.WriteByte('\n')
-		if err := w.WritePacket([]byte(line.String())); err != nil {
+		line = append(line, '\n')
+		if err := w.WritePacket(line); err != nil {
 			return fmt.Errorf("server: write v0 ref %q: %w", ref.Name, err)
 		}
 
@@ -172,12 +177,12 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 			return fmt.Errorf("server: peel ref %q: %w", ref.Name, err)
 		}
 		if ok && !peeled.IsZero() {
-			line.Reset()
-			line.WriteString(peeled.Hex(algo))
-			line.WriteByte(' ')
-			line.WriteString(ref.Name)
-			line.WriteString("^{}\n")
-			if err := w.WritePacket([]byte(line.String())); err != nil {
+			line = line[:0]
+			line = append(line, peeled.Hex(algo)...)
+			line = append(line, ' ')
+			line = append(line, ref.Name...)
+			line = append(line, "^{}\n"...)
+			if err := w.WritePacket(line); err != nil {
 				return fmt.Errorf("server: write v0 peel for %q: %w", ref.Name, err)
 			}
 		}
