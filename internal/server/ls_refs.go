@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -72,7 +73,7 @@ func parseLSRefsArgs(r *pktline.Reader, w *pktline.Writer) (wire.RefsArgs, error
 	for {
 		pkt, err := r.ReadPacket()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return wire.RefsArgs{}, io.ErrUnexpectedEOF
 			}
 			return wire.RefsArgs{}, fmt.Errorf("server: ls-refs: read arg: %w", err)
@@ -87,12 +88,12 @@ func parseLSRefsArgs(r *pktline.Reader, w *pktline.Writer) (wire.RefsArgs, error
 			return wire.RefsArgs{}, refuseUnknownArg(w, fmt.Sprintf("<pkt-kind=%d>", pkt.Kind))
 		}
 		line := string(trimTrailingLF(pkt.Data))
-		switch {
-		case line == "peel":
+		switch line {
+		case "peel":
 			args.Peel = true
-		case line == "symrefs":
+		case "symrefs":
 			args.Symrefs = true
-		case line == "unborn":
+		case "unborn":
 			args.Unborn = true
 		default:
 			if rest, ok := strings.CutPrefix(line, "ref-prefix "); ok {

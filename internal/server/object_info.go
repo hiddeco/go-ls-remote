@@ -117,7 +117,7 @@ func parseObjectInfoArgs(r *pktline.Reader, w *pktline.Writer) (wire.ObjectInfoA
 	for {
 		pkt, err := r.ReadPacket()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return wire.ObjectInfoArgs{}, nil, io.ErrUnexpectedEOF
 			}
 			return wire.ObjectInfoArgs{}, nil, fmt.Errorf("server: object-info: read arg: %w", err)
@@ -137,8 +137,8 @@ func parseObjectInfoArgs(r *pktline.Reader, w *pktline.Writer) (wire.ObjectInfoA
 			continue
 		}
 		line := string(trimTrailingLF(pkt.Data))
-		switch {
-		case line == "size":
+		switch line {
+		case "size":
 			args.Size = true
 		default:
 			if rest, ok := strings.CutPrefix(line, "oid "); ok {

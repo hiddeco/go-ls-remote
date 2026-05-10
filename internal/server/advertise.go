@@ -56,9 +56,9 @@ func writeV2Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 		"object-format=" + store.Algo().String(),
 		"object-info",
 	}
-	for _, cap := range caps {
-		if err := w.WritePacket([]byte(cap + "\n")); err != nil {
-			return fmt.Errorf("server: write v2 capability %q: %w", cap, err)
+	for _, c := range caps {
+		if err := w.WritePacket([]byte(c + "\n")); err != nil {
+			return fmt.Errorf("server: write v2 capability %q: %w", c, err)
 		}
 	}
 
