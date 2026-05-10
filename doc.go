@@ -11,12 +11,12 @@
 // preference the library asks for v2 and gracefully falls back to
 // v0 when the server only speaks the original protocol.
 //
-// The library exposes two layers. One-shot helpers — see [LsRefs],
-// [Refs], and [ObjectInfos] — open a connection, run a single
+// The library exposes two layers. One-shot helpers — see [Refs],
+// [ListRefs], and [ObjectInfos] — open a connection, run a single
 // discovery command, and close it; they fit the common case where
 // the caller only wants a ref list or a few object sizes. The
 // session layer — see [Dial] and [Session] — keeps a connection
-// open across multiple v2 commands so callers can issue [Session.LsRefs]
+// open across multiple v2 commands so callers can issue [Session.Refs]
 // followed by [Session.ObjectInfo] without re-handshaking.
 //
 // # Primary types
