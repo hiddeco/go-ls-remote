@@ -14,9 +14,8 @@ import "errors"
 // header readers, and the trailer-checksum verifiers.
 var (
 	// ErrUnsupportedAlgo is returned when the caller-supplied [Algo]
-	// has zero hash size — i.e. it is neither [SHA1] nor [SHA256] —
-	// or when a midx's `hash_version` byte cannot be mapped to one of
-	// those algos.
+	// is nil, or when a midx's `hash_version` byte cannot be mapped
+	// to [SHA1] or [SHA256].
 	ErrUnsupportedAlgo = errors.New("objfmt: unsupported algo")
 
 	// ErrShortFile is returned when a pack, idx, or midx file is too

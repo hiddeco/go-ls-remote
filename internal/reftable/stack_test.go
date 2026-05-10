@@ -108,7 +108,7 @@ func TestOpenStack(t *testing.T) {
 		assert.False(t, ok)
 		assert.Equal(t, RefRecord{}, rec)
 
-		assert.Equal(t, objfmt.Algo(0), stack.HashAlgo())
+		assert.Nil(t, stack.HashAlgo())
 		assert.Zero(t, stack.Len())
 	})
 

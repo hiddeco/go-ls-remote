@@ -128,8 +128,8 @@ func TestMidx_OpenMidx(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("rejects an unknown algo", func(t *testing.T) {
-		_, err := OpenMidx(idxFixture(t, "multi-pack-index"), Algo(0))
+	t.Run("rejects a nil algo", func(t *testing.T) {
+		_, err := OpenMidx(idxFixture(t, "multi-pack-index"), nil)
 		require.Error(t, err)
 	})
 

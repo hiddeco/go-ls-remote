@@ -64,7 +64,7 @@ type Stack struct {
 	readers []*Reader            // [0] = oldest table, [n-1] = newest
 	merged  map[string]RefRecord // pre-computed merged view
 	sorted  []string             // ref names sorted lexicographically; cached for IterRefs
-	algo    objfmt.Algo          // taken from the first reader; Algo(0) when empty
+	algo    objfmt.Algo          // taken from the first reader; nil when empty
 }
 
 // OpenStack reads `<reftableDir>/tables.list`, opens each listed
@@ -96,7 +96,7 @@ func OpenStack(reftableDir string) (*Stack, error) {
 		return nil, err
 	}
 
-	// Empty stack: no readers, no merged entries, Algo(0).
+	// Empty stack: no readers, no merged entries, nil algo.
 	if len(names) == 0 {
 		return &Stack{merged: map[string]RefRecord{}, sorted: []string{}}, nil
 	}
@@ -206,9 +206,9 @@ func (s *Stack) Close() error {
 // stack.
 //
 // For an empty stack (no entries in `tables.list`), HashAlgo returns
-// [objfmt.Algo](0): the zero value, which is invalid per
-// [objfmt.Algo.Size]. Callers handling the empty case should use
-// [Stack.Len] rather than comparing the result against a known algo.
+// nil: the [objfmt.Algo] interface's zero value. Callers handling the
+// empty case should use [Stack.Len] rather than comparing the result
+// against a known algo.
 func (s *Stack) HashAlgo() objfmt.Algo {
 	return s.algo
 }
@@ -220,7 +220,7 @@ func (s *Stack) HashAlgo() objfmt.Algo {
 // shadowed by a tombstone: ls-remote consumers care only whether any
 // refs are observable, and Len answers that without forcing a walk.
 // Callers that specifically need to detect the empty-stack case can
-// check `s.HashAlgo() == objfmt.Algo(0)` alongside Len.
+// check `s.HashAlgo() == nil` alongside Len.
 func (s *Stack) Len() int {
 	return len(s.merged)
 }

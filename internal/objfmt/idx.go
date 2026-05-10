@@ -58,8 +58,8 @@ var idxV2Magic = [4]byte{0xff, 't', 'O', 'c'}
 // paired `.pack`. Idx v1 only stored SHA-1 ids: opening a v1 file with
 // [SHA256] succeeds but every lookup will miss.
 func OpenIdx(path string, algo Algo) (*Idx, error) {
-	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
+	if algo == nil {
+		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

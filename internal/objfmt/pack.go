@@ -44,8 +44,8 @@ type Pack struct {
 // minimum: header plus trailer, zero objects) OpenPack returns an
 // error rather than constructing an obviously-invalid Pack.
 func OpenPack(path string, algo Algo) (*Pack, error) {
-	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
+	if algo == nil {
+		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
 	r, err := openPackReader(path)
 	if err != nil {

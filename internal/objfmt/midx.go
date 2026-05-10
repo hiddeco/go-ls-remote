@@ -112,8 +112,8 @@ var (
 // chunks (`BTMP`, `RIDX`) are tolerated when present but never
 // consulted.
 func OpenMidx(path string, algo Algo) (*Midx, error) {
-	if algo.Size() == 0 {
-		return nil, fmt.Errorf("objfmt: unknown algo %v: %w", algo, ErrUnsupportedAlgo)
+	if algo == nil {
+		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

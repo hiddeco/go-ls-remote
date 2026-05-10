@@ -123,8 +123,8 @@ func TestPack_OpenPack(t *testing.T) {
 		assert.Contains(t, err.Error(), "version")
 	})
 
-	t.Run("rejects an unknown algo", func(t *testing.T) {
-		_, err := OpenPack(packFixture(t, "empty.pack"), Algo(0))
+	t.Run("rejects a nil algo", func(t *testing.T) {
+		_, err := OpenPack(packFixture(t, "empty.pack"), nil)
 		require.Error(t, err)
 	})
 

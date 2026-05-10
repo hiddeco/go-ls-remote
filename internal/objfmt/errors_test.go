@@ -45,8 +45,8 @@ func TestSentinelErrors(t *testing.T) {
 		assert.ErrorIs(t, err, ErrUnsupportedVersion)
 	})
 
-	t.Run("OpenPack with a zero-size algo wraps ErrUnsupportedAlgo", func(t *testing.T) {
-		_, err := OpenPack(packFixture(t, "empty.pack"), Algo(0))
+	t.Run("OpenPack with a nil algo wraps ErrUnsupportedAlgo", func(t *testing.T) {
+		_, err := OpenPack(packFixture(t, "empty.pack"), nil)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedAlgo)
 	})

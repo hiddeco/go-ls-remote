@@ -13,12 +13,6 @@ func TestAlgo_Size(t *testing.T) {
 	t.Run("SHA256 is 32 bytes", func(t *testing.T) {
 		assert.Equal(t, 32, SHA256.Size())
 	})
-	t.Run("zero value is unknown", func(t *testing.T) {
-		assert.Equal(t, 0, Algo(0).Size())
-	})
-	t.Run("out-of-range is unknown", func(t *testing.T) {
-		assert.Equal(t, 0, Algo(99).Size())
-	})
 }
 
 func TestAlgo_String(t *testing.T) {
@@ -28,10 +22,19 @@ func TestAlgo_String(t *testing.T) {
 	t.Run("SHA256 prints sha256", func(t *testing.T) {
 		assert.Equal(t, "sha256", SHA256.String())
 	})
-	t.Run("zero value prints unknown", func(t *testing.T) {
-		assert.Equal(t, "unknown", Algo(0).String())
+}
+
+func TestAlgo_comparable(t *testing.T) {
+	t.Run("SHA1 equals itself", func(t *testing.T) {
+		assert.Equal(t, SHA1, SHA1)
+		assert.True(t, SHA1 == SHA1)
 	})
-	t.Run("out-of-range prints unknown", func(t *testing.T) {
-		assert.Equal(t, "unknown", Algo(99).String())
+	t.Run("SHA256 equals itself", func(t *testing.T) {
+		assert.Equal(t, SHA256, SHA256)
+		assert.True(t, SHA256 == SHA256)
+	})
+	t.Run("SHA1 differs from SHA256", func(t *testing.T) {
+		assert.NotEqual(t, SHA1, SHA256)
+		assert.False(t, SHA1 == SHA256)
 	})
 }

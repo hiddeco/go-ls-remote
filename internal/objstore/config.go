@@ -122,7 +122,7 @@ func parseObjectFormat(value string) (objfmt.Algo, error) {
 	case "sha256":
 		return objfmt.SHA256, nil
 	default:
-		return 0, fmt.Errorf("extensions.objectFormat=%q: %w",
+		return nil, fmt.Errorf("extensions.objectFormat=%q: %w",
 			value, ErrUnsupportedFormat)
 	}
 }

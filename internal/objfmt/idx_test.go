@@ -145,8 +145,8 @@ func TestIdx_OpenIdx(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("rejects an unknown algo", func(t *testing.T) {
-		_, err := OpenIdx(idxFixture(t, "three-objects.idx"), Algo(0))
+	t.Run("rejects a nil algo", func(t *testing.T) {
+		_, err := OpenIdx(idxFixture(t, "three-objects.idx"), nil)
 		require.Error(t, err)
 	})
 
