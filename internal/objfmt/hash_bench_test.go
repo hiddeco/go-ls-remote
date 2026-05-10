@@ -35,3 +35,30 @@ func BenchmarkParseHex_SHA256(b *testing.B) {
 		benchHashSink = h
 	}
 }
+
+// BenchmarkAppendHex characterises the steady-state cost of the
+// append-style sibling. The bench reuses one growable scratch slice
+// across iterations so the per-call shape isolates the encoding cost
+// from the buffer growth.
+func BenchmarkAppendHex(b *testing.B) {
+	var h Hash
+	for i := range 32 {
+		h[i] = byte(i*13 + 5)
+	}
+	for _, tc := range []struct {
+		name string
+		a    Algo
+	}{
+		{"SHA1", SHA1},
+		{"SHA256", SHA256},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			dst := make([]byte, 0, 64)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				dst = h.AppendHex(dst[:0], tc.a)
+			}
+		})
+	}
+}
