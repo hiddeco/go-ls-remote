@@ -18,6 +18,12 @@ import "strings"
 //     vanishingly rare)
 //   - non-RFC inputs → unchanged
 //
+// The userinfo terminator is the *last* `@` before the path, per
+// RFC 3986 §3.2: an unencoded `@` inside a password is technically
+// a violation but turns up in real inputs, and splitting on the
+// first `@` would leak the password remainder into the host portion
+// of the output.
+//
 // Use this on tracer event URLs, log lines, and error messages
 // derived from user-supplied URLs.
 func RedactURL(s string) string {
@@ -26,13 +32,12 @@ func RedactURL(s string) string {
 		return s
 	}
 	rest := s[scheme+3:]
-	at := strings.IndexByte(rest, '@')
-	slash := strings.IndexByte(rest, '/')
-	if at < 0 || (slash >= 0 && at > slash) {
-		// `@` belongs to the path or is absent; no userinfo.
+	authority, _, _ := strings.Cut(rest, "/")
+	at := strings.LastIndexByte(authority, '@')
+	if at < 0 {
 		return s
 	}
-	userinfo := rest[:at]
+	userinfo := authority[:at]
 	colon := strings.IndexByte(userinfo, ':')
 	if colon < 0 {
 		// User-only userinfo, no password to redact.

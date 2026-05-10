@@ -52,6 +52,23 @@ func TestRedactURL(t *testing.T) {
 			in:   "https://user:p%40ss@example.com:443/repo",
 			want: "https://user:***@example.com:443/repo",
 		},
+		{
+			// RFC 3986 says the userinfo terminator is the *last* `@`
+			// before the path. An unencoded `@` in a password is
+			// technically a violation but turns up in real inputs;
+			// splitting on the first `@` would leak the password
+			// remainder into the host portion of the redacted output.
+			name: "unencoded @ in password splits on last @",
+			in:   "https://alice:p@ssword@example.com/repo",
+			want: "https://alice:***@example.com/repo",
+		},
+		{
+			// Same shape with a port, to catch a regression that miscounts
+			// the authority span.
+			name: "unencoded @ in password with port",
+			in:   "https://alice:s@cret@example.com:8443/path",
+			want: "https://alice:***@example.com:8443/path",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
