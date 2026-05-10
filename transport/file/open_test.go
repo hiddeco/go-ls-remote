@@ -5,10 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,12 +103,10 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 		"v1 pin must surface ErrUnsupportedProtocol; got %v", err)
 }
 
-func TestTransport_Open_CloseStopsServerGoroutine(t *testing.T) {
+func TestTransport_Open_CloseMidStreamIsIdempotent(t *testing.T) {
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
-
-	baseline := runtime.NumGoroutine()
 
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
@@ -128,15 +124,7 @@ func TestTransport_Open_CloseStopsServerGoroutine(t *testing.T) {
 	// blocking on the already-closed `done` channel.
 	require.NoError(t, conn.Close())
 
-	// The server goroutine should exit promptly after Close. Allow a
-	// short window for the runtime to reclaim it before comparing
-	// against the baseline.
-	deadline := time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() > baseline {
-		if time.Now().After(deadline) {
-			t.Fatalf("server goroutine did not exit: have %d > baseline %d",
-				runtime.NumGoroutine(), baseline)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// The server-goroutine teardown is asserted package-wide by
+	// `goleak.VerifyTestMain` in `main_test.go`; this test now only
+	// pins the Close-idempotency contract.
 }

@@ -6,10 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,12 +232,10 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 	}
 }
 
-func TestConn_Lifecycle_NoGoroutineLeak(t *testing.T) {
+func TestConn_Lifecycle_OpenDrainCommandsClose(t *testing.T) {
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
-
-	baseline := runtime.NumGoroutine()
 
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
@@ -263,14 +259,7 @@ func TestConn_Lifecycle_NoGoroutineLeak(t *testing.T) {
 	require.NoError(t, conn.Close())
 	require.NoError(t, conn.Close(), "Close must be idempotent")
 
-	// Allow the runtime a brief window to reclaim the server goroutine.
-	deadline := time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() > baseline {
-		if time.Now().After(deadline) {
-			t.Fatalf("server goroutine did not exit after Close: have %d > baseline %d",
-				runtime.NumGoroutine(), baseline)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// The server-goroutine teardown after this full open/drain/two-
+	// command/close cycle is asserted package-wide by
+	// `goleak.VerifyTestMain` in `main_test.go`.
 }
-
