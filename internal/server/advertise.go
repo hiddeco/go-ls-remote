@@ -135,23 +135,35 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 		return nil
 	}
 
+	// Reused across every ref pkt-line and its optional peel line so
+	// the loop allocates only when the buffer grows past its current
+	// capacity, not once per `+=`.
+	var line strings.Builder
+
 	capsEmitted := false
 	if headValid {
-		payload := head.OID.Hex(algo) + " HEAD\x00" + caps + "\n"
-		if err := w.WritePacket([]byte(payload)); err != nil {
+		line.WriteString(head.OID.Hex(algo))
+		line.WriteString(" HEAD\x00")
+		line.WriteString(caps)
+		line.WriteByte('\n')
+		if err := w.WritePacket([]byte(line.String())); err != nil {
 			return fmt.Errorf("server: write v0 HEAD ref: %w", err)
 		}
 		capsEmitted = true
 	}
 
 	for _, ref := range refs {
-		line := ref.OID.Hex(algo) + " " + ref.Name
+		line.Reset()
+		line.WriteString(ref.OID.Hex(algo))
+		line.WriteByte(' ')
+		line.WriteString(ref.Name)
 		if !capsEmitted {
-			line += "\x00" + caps
+			line.WriteByte('\x00')
+			line.WriteString(caps)
 			capsEmitted = true
 		}
-		line += "\n"
-		if err := w.WritePacket([]byte(line)); err != nil {
+		line.WriteByte('\n')
+		if err := w.WritePacket([]byte(line.String())); err != nil {
 			return fmt.Errorf("server: write v0 ref %q: %w", ref.Name, err)
 		}
 
@@ -160,8 +172,12 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 			return fmt.Errorf("server: peel ref %q: %w", ref.Name, err)
 		}
 		if ok && !peeled.IsZero() {
-			peelLine := peeled.Hex(algo) + " " + ref.Name + "^{}\n"
-			if err := w.WritePacket([]byte(peelLine)); err != nil {
+			line.Reset()
+			line.WriteString(peeled.Hex(algo))
+			line.WriteByte(' ')
+			line.WriteString(ref.Name)
+			line.WriteString("^{}\n")
+			if err := w.WritePacket([]byte(line.String())); err != nil {
 				return fmt.Errorf("server: write v0 peel for %q: %w", ref.Name, err)
 			}
 		}
