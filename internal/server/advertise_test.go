@@ -107,20 +107,21 @@ func TestServe_V2AdvertisementSHA256(t *testing.T) {
 }
 
 // TestWriteV0Advertisement_AllocsPerRef pins the per-ref allocation
-// budget for `writeV0Advertisement`'s ref-emission loop. The pre-fix
-// shape — a reused `strings.Builder` plus a per-iteration
-// `[]byte(line.String())` conversion — still costs ~5 allocs/ref
-// because the conversion is mandatory copy. The post-fix shape
-// reuses a single `[]byte` scratch and hands it directly to
-// `WritePacket`, leaving only the unavoidable `OID.Hex` allocs per
-// ref (one extra per peeled tag).
+// budget for `writeV0Advertisement`'s ref-emission loop. After the
+// scratch-buffer reuse and `objfmt.Hash.AppendHex` migration the loop
+// body has no per-ref hex-string allocation and writes OID hex
+// directly into the reused `[]byte` scratch. The budget is set loose
+// enough not to flake on an off-by-one ref-count rounding (a small
+// per-call constant amortised across 1000 refs) but tight enough to
+// fail against either the pre-scratch shape or the post-scratch /
+// pre-AppendHex two-alloc shape.
 //
 // The fixture carries 1000 packed refs (with a peel mix on one arm)
 // to amortise the HEAD line and the cap-list assembly so the per-ref
 // average isolates the loop body's allocation cost.
 func TestWriteV0Advertisement_AllocsPerRef(t *testing.T) {
 	const refCount = 1000
-	const maxAllocsPerRef = 3.0
+	const maxAllocsPerRef = 1.0
 
 	for _, tc := range []struct {
 		name     string

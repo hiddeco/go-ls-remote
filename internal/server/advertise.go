@@ -147,7 +147,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 
 	capsEmitted := false
 	if headValid {
-		line = append(line, head.OID.Hex(algo)...)
+		line = head.OID.AppendHex(line, algo)
 		line = append(line, " HEAD\x00"...)
 		line = append(line, caps...)
 		line = append(line, '\n')
@@ -159,7 +159,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 
 	for _, ref := range refs {
 		line = line[:0]
-		line = append(line, ref.OID.Hex(algo)...)
+		line = ref.OID.AppendHex(line, algo)
 		line = append(line, ' ')
 		line = append(line, ref.Name...)
 		if !capsEmitted {
@@ -178,7 +178,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 		}
 		if ok && !peeled.IsZero() {
 			line = line[:0]
-			line = append(line, peeled.Hex(algo)...)
+			line = peeled.AppendHex(line, algo)
 			line = append(line, ' ')
 			line = append(line, ref.Name...)
 			line = append(line, "^{}\n"...)
