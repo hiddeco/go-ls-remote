@@ -131,7 +131,7 @@ func BenchmarkEncodeHexLength(b *testing.B) {
 	var acc byte
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		// `i & 0xffff` defeats constant-folding without straying
 		// outside the 4-hex-digit range the encoder targets.
 		encodeHexLength(buf[:], i&0xffff)
@@ -144,7 +144,7 @@ func BenchmarkEncodeHexLength_Sprintf(b *testing.B) {
 	var acc string
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		acc = fmt.Sprintf("%04x", i&0xffff)
 	}
 	benchStrSink = acc
