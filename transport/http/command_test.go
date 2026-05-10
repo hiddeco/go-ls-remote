@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -661,4 +662,249 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 			assert.Equal(t, tc.want, got.String())
 		})
 	}
+}
+
+// TestCommandPostURL_RawPathRewrite pins the [url.URL.RawPath] handling
+// in [commandPostURL]: when the probe URL carries a percent-encoded
+// path (e.g. `/repo%2Egit/info/refs`), [url.URL.String] prefers
+// `RawPath` over `Path`. The rewrite must clear `RawPath` so the
+// derived POST URL re-encodes from the rewritten `Path` rather than
+// silently emitting the unrewritten encoded form.
+func TestCommandPostURL_RawPathRewrite(t *testing.T) {
+	base := &url.URL{
+		Scheme:  "https",
+		Host:    "example.com",
+		Path:    "/repo.git/info/refs",
+		RawPath: "/repo%2Egit/info/refs",
+	}
+	got, err := commandPostURL(base)
+	require.NoError(t, err)
+	assert.Equal(t,
+		"https://example.com/repo.git/git-upload-pack",
+		got.String(),
+		"the rewrite must clear RawPath so String re-encodes from the rewritten Path")
+	assert.Empty(t, got.RawPath,
+		"RawPath must be cleared so it does not shadow the rewritten Path")
+}
+
+// TestConn_Command_UnexpectedStatus_418 mirrors
+// `TestOpen_UnexpectedStatus_418` for the command path: a status that
+// is neither 2xx nor a known sentinel-mapping code surfaces as a
+// [*ProtocolError] with `Op == "command"` and the originating status
+// code, with an "unexpected status" Err.
+func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
+	store := openFixtureStore(t, "loose-only")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		pw := pktline.NewWriter(w)
+		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		require.NoError(t, pw.WriteFlush())
+		require.NoError(t, server.Serve(r.Context(),
+			pktline.NewReader(bytes.NewReader([]byte("0000"))),
+			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
+	})
+	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := openSmartTestConn(t, srv, "/repo.git")
+	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	assert.Nil(t, rdr)
+	require.Error(t, err)
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"unexpected status on the command path maps to *ProtocolError; got %T: %v", err, err)
+	assert.Equal(t, "command", pe.Op)
+	assert.Equal(t, http.StatusTeapot, pe.Status)
+	require.NotNil(t, pe.Err)
+	assert.Contains(t, pe.Err.Error(), "unexpected status")
+}
+
+// TestConn_Command_ResolverError_Wrapped pins the error wrap on the
+// resolver-error branch: a [CredentialResolver] that returns an error
+// must surface from [Conn.Command] wrapped so callers can match the
+// inner sentinel via [errors.Is], with the wrap message naming the
+// redacted POST URL for log-line triage.
+func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
+	store := openFixtureStore(t, "loose-only")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		pw := pktline.NewWriter(w)
+		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		require.NoError(t, pw.WriteFlush())
+		require.NoError(t, server.Serve(r.Context(),
+			pktline.NewReader(bytes.NewReader([]byte("0000"))),
+			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	sentinel := errors.New("vault: unavailable")
+	// Open the connection without a resolver so the probe succeeds, then
+	// install a failing resolver on the [Conn] for the command call. This
+	// isolates the resolver-error branch from the probe path's auth
+	// retry.
+	c := openSmartTestConn(t, srv, "/repo.git")
+	c.creds = credentialResolverFunc(func(_ context.Context, _ *url.URL) (Credentials, error) {
+		return nil, sentinel
+	})
+
+	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	assert.Nil(t, rdr)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, sentinel),
+		"resolver errors must wrap so callers can match the inner cause via errors.Is; got %v", err)
+	assert.Contains(t, err.Error(), srv.URL,
+		"the wrap message must include the (redacted) POST URL for log triage")
+	assert.Contains(t, err.Error(), "/repo.git/git-upload-pack",
+		"the wrap message must name the rewritten POST endpoint")
+}
+
+// TestConn_Command_RedirectRejected_ClosesBody pins that
+// [Conn.Command] closes the [http.Response.Body] when `client.Do`
+// returns both a non-nil response and an error — Go's `net/http` does
+// this when [http.Client.CheckRedirect] rejects a 3xx hop. Without an
+// explicit close the underlying connection is pinned in the transport
+// pool until the body is GC'd. The probe path's analogous behaviour is
+// covered by the existing redirect tests; this test isolates the
+// command-path drain.
+func TestConn_Command_RedirectRejected_ClosesBody(t *testing.T) {
+	// Build a probe body that drives the smart advertisement to a
+	// flush so [drainAdvertisement] terminates: `# service=` preamble,
+	// flush, then a v2 capability line, then the closing flush.
+	var probeBuf bytes.Buffer
+	pw := pktline.NewWriter(&probeBuf)
+	require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+	require.NoError(t, pw.WriteFlush())
+	require.NoError(t, pw.WritePacket([]byte("version 2\n")))
+	require.NoError(t, pw.WriteFlush())
+	probeBody := probeBuf.Bytes()
+	postBodyBytes := []byte("redirected — body bytes for the leak check")
+
+	rt := &countingRoundTripper{respond: func(req *http.Request, _ int) *http.Response {
+		switch {
+		case req.Method == http.MethodGet && req.URL.Path == "/repo.git/info/refs":
+			h := http.Header{}
+			h.Set("Content-Type", smartAdvHeader)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     h,
+				Body:       io.NopCloser(bytes.NewReader(probeBody)),
+			}
+		case req.Method == http.MethodPost && req.URL.Path == "/repo.git/git-upload-pack":
+			h := http.Header{}
+			h.Set("Location", "https://elsewhere.example/repo.git/git-upload-pack")
+			return &http.Response{
+				StatusCode: http.StatusFound,
+				Header:     h,
+				// A non-empty body is the entire point of this fixture:
+				// the wrapped [closeCounter] is what we assert on.
+				Body: &closeCounter{Reader: bytes.NewReader(postBodyBytes)},
+			}
+		default:
+			h := http.Header{}
+			h.Set("Content-Type", smartAdvHeader)
+			return &http.Response{StatusCode: http.StatusOK, Header: h, Body: http.NoBody}
+		}
+	}}
+
+	tr := New(
+		WithClient(&http.Client{Transport: rt}),
+		// `Initial` follows redirects on the probe GET but rejects them
+		// on the command POST — exactly the case where `client.Do`
+		// returns a non-nil response alongside the error.
+		WithFollowRedirects(FollowRedirectsInitial),
+	)
+
+	u, err := transport.ParseURL("https://example.com/repo.git")
+	require.NoError(t, err)
+	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	c := conn.(*Conn)
+	drainAdvertisement(t, c)
+
+	rdr, cmdErr := c.Command(context.Background(), "ls-refs", nil, nil)
+	assert.Nil(t, rdr)
+	require.Error(t, cmdErr)
+	var pe *ProtocolError
+	require.True(t, errors.As(cmdErr, &pe))
+	assert.Equal(t, "command", pe.Op)
+
+	// The fixture's POST hop returned a 302 response with a wrapped
+	// [closeCounter] body. Find it among the round-tripper's recorded
+	// responses and assert exactly one Close.
+	var post *closeCounter
+	for _, rec := range rt.responses {
+		if cc, ok := rec.(*closeCounter); ok {
+			post = cc
+			break
+		}
+	}
+	require.NotNil(t, post, "the POST response body must have been the wrapped closeCounter")
+	// `net/http` 1.25 closes the body itself when [http.Client.Do]
+	// returns a CheckRedirect error, but earlier Go releases (and the
+	// stdlib doc) leave the body for the caller. Our defensive
+	// drain-and-close adds one more close on top. Either way the
+	// invariant is "body is closed at least once": pin that, not the
+	// exact count.
+	assert.GreaterOrEqual(t, post.closes, 1,
+		"a redirect-rejected POST must release its response body")
+}
+
+// countingRoundTripper is a thin variant of `stubRoundTripper` that
+// also records each response's body so leak tests can assert on it
+// after the fact. The vanilla `stubRoundTripper` only records requests.
+type countingRoundTripper struct {
+	respond   func(req *http.Request, hop int) *http.Response
+	requests  []*http.Request
+	responses []io.ReadCloser
+}
+
+func (s *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	hop := len(s.requests)
+	s.requests = append(s.requests, req.Clone(req.Context()))
+	resp := s.respond(req, hop)
+	if resp == nil {
+		return nil, fmt.Errorf("countingRoundTripper: respond returned nil for hop %d (%s %s)",
+			hop, req.Method, req.URL)
+	}
+	resp.Request = req
+	if resp.Body == nil {
+		resp.Body = http.NoBody
+	}
+	s.responses = append(s.responses, resp.Body)
+	return resp, nil
+}
+
+// TestConn_Close_ReleasesUndrainedCommandBody pins the leak fix on
+// [Conn.Close]: a caller that abandons the [pktline.Reader] returned
+// by [Conn.Command] without draining must still see the underlying
+// body closed when the parent [Conn] is closed. The
+// [pktline.Reader] does not own a Close method, so this responsibility
+// falls on [Conn].
+func TestConn_Close_ReleasesUndrainedCommandBody(t *testing.T) {
+	probe := &closeCounter{Reader: bytes.NewReader(nil)}
+	cmd := &closeCounter{Reader: strings.NewReader("undrained command body")}
+	c := &Conn{
+		body:      probe,
+		reader:    pktline.NewReader(probe),
+		url:       mustParseURL(t, "https://example.com/repo.git/info/refs"),
+		cmdBodies: []io.ReadCloser{cmd},
+	}
+
+	require.NoError(t, c.Close(), "Close must not error")
+	assert.Equal(t, 1, probe.closes, "probe body must be closed exactly once")
+	assert.Equal(t, 1, cmd.closes, "tracked command body must be closed exactly once")
+
+	// Idempotency: a second close must not double-close either body.
+	require.NoError(t, c.Close())
+	assert.Equal(t, 1, probe.closes)
+	assert.Equal(t, 1, cmd.closes)
 }

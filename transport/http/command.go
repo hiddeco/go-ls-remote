@@ -28,11 +28,11 @@ const commandAcceptType = "application/x-git-upload-pack-result"
 // Command issues a v2 command POST against the connection's
 // upload-pack endpoint and returns a [pktline.Reader] over the
 // response body. The returned reader streams the response pkt-lines
-// verbatim; the caller is responsible for draining or closing it
-// (whichever happens first releases the underlying connection back to
-// the [http.Client]'s pool). Abandoning the reader without closing
-// the parent [Conn] may leak the connection, matching the contract on
-// [transport.Conn].
+// verbatim. Callers should drain the reader to release the underlying
+// connection back to the [http.Client]'s pool; the [pktline.Reader]
+// does not expose a Close method. [Conn.Close] releases any in-flight
+// command body that has not been drained, so a caller that abandons
+// the reader and closes the parent [Conn] will not leak.
 //
 // The on-wire request body is the canonical v2 command-request frame
 // (`gitprotocol-v2.adoc` §"Command Request"):
@@ -81,6 +81,16 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	}
 	resp, err := doCommandPOST(ctx, c.client, postURL, body, c.userAgent, c.gitProtocolHeader, creds)
 	if err != nil {
+		// `client.Do` may return both a non-nil response and a non-nil
+		// error — most notably when `CheckRedirect` rejects a 3xx hop.
+		// Recent `net/http` (Go 1.21+) closes the body itself in that
+		// path, but the documented contract leaves the body for the
+		// caller, and a future change could revert. Drain-and-close
+		// defensively so the underlying connection is released back
+		// to the pool regardless of the stdlib's choice.
+		if resp != nil && resp.Body != nil {
+			drainAndClose(resp.Body)
+		}
 		if pe, ok := classifyRedirectError(err, resp, redacted, c.redir); ok {
 			pe.Op = "command"
 			return nil, pe
@@ -88,7 +98,16 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 		return nil, &ProtocolError{URL: redacted, Op: "command", Err: err}
 	}
 
-	return handleCommandResponse(resp, redacted, creds != nil)
+	rdr, err := handleCommandResponse(resp, redacted, creds != nil)
+	if err != nil {
+		return nil, err
+	}
+	// Track the response body on the [Conn] so [Conn.Close] can release
+	// it if the caller abandons `rdr` without draining. Append BEFORE
+	// returning so a caller that drops the result on the floor still
+	// has the body covered by the next [Conn.Close].
+	c.cmdBodies = append(c.cmdBodies, resp.Body)
+	return rdr, nil
 }
 
 // commandPostURL derives the v2 command POST URL from the probe's
@@ -97,12 +116,18 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 // performs the equivalent rewrite at `remote-curl.c::post_rpc` —
 // the discovery URL is the same `<base>/info/refs?service=...` shape
 // and the per-RPC URL drops the query and replaces the suffix.
+//
+// `RawPath` is cleared deliberately: when set, [url.URL.String]
+// prefers it over `Path`, which would silently drop the rewrite if
+// the probe URL came in with a percent-encoded path. Clearing
+// `RawPath` makes `String` re-encode from `Path`.
 func commandPostURL(base *url.URL) (*url.URL, error) {
 	if base == nil {
 		return nil, fmt.Errorf("transport/http: command: base URL is nil")
 	}
 	out := *base
 	out.Path = strings.TrimSuffix(base.Path, "/info/refs") + "/git-upload-pack"
+	out.RawPath = ""
 	out.RawQuery = ""
 	return &out, nil
 }
@@ -116,8 +141,8 @@ func encodeCommandBody(name string, args, caps []string) []byte {
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	_ = w.WritePacket([]byte("command=" + name + "\n"))
-	for _, c := range caps {
-		_ = w.WritePacket([]byte(c + "\n"))
+	for _, cap := range caps {
+		_ = w.WritePacket([]byte(cap + "\n"))
 	}
 	_ = w.WriteDelim()
 	for _, a := range args {

@@ -85,6 +85,17 @@ type Conn struct {
 	// [ErrUnsupportedProtocol]: the server has no v2 command endpoint
 	// to POST to.
 	dumb bool
+
+	// cmdBodies tracks the [http.Response.Body] of every successful
+	// command POST so [Conn.Close] can release them. The
+	// [pktline.Reader] returned by [Conn.Command] does not own a Close
+	// method; if the caller abandons it without draining, the
+	// underlying body would otherwise pin a connection in
+	// [http.Transport]'s idle pool. The slice is appended in-order on
+	// each successful POST and walked once under [Conn.Close]'s
+	// [sync.Once] guard, so no mutex is needed: [Conn] is single-flight
+	// per the [transport.Conn] contract.
+	cmdBodies []io.ReadCloser
 }
 
 // Advertisement returns the cached pkt-line reader. On the smart
@@ -96,23 +107,35 @@ func (c *Conn) Advertisement() *pktline.Reader {
 	return c.reader
 }
 
-// Close drains and closes the underlying response body exactly once.
+// Close drains and closes the probe response body and any in-flight
+// command response body that has not been drained, exactly once.
 // Subsequent calls are no-ops and return nil, matching the
 // [transport.Conn] contract.
+//
+// The probe body's close error is the one returned; errors from the
+// command-body cleanup are intentionally swallowed so a misbehaving
+// late-arriving command body does not mask the canonical close error.
 func (c *Conn) Close() error {
 	first := false
 	c.closeOnce.Do(func() {
 		first = true
-		if c.body == nil {
-			return
+		if c.body != nil {
+			// Drain whatever bytes remain so the underlying connection
+			// can be reused by the [http.Client]'s connection pool. Cap
+			// the drain to avoid pinning memory on a misbehaving server
+			// that streams indefinitely; the cap matches what
+			// `net/http` itself uses for its discard heuristic.
+			_, _ = io.Copy(io.Discard, io.LimitReader(c.body, 1<<16))
+			c.closeErr = c.body.Close()
 		}
-		// Drain whatever bytes remain so the underlying connection
-		// can be reused by the [http.Client]'s connection pool. Cap
-		// the drain to avoid pinning memory on a misbehaving server
-		// that streams indefinitely; the cap matches what
-		// `net/http` itself uses for its discard heuristic.
-		_, _ = io.Copy(io.Discard, io.LimitReader(c.body, 1<<16))
-		c.closeErr = c.body.Close()
+		for _, b := range c.cmdBodies {
+			if b == nil {
+				continue
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(b, 1<<16))
+			_ = b.Close()
+		}
+		c.cmdBodies = nil
 	})
 	if !first {
 		return nil

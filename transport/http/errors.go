@@ -61,9 +61,8 @@ type ProtocolError struct {
 	// strings are diagnostic without leaking userinfo.
 	URL string
 
-	// Op is the operation that failed. The probe path uses `"probe"`;
-	// the command path lands in a follow-up change and will use
-	// `"command"`.
+	// Op identifies the operation: `"probe"` for the discovery-time
+	// GET, `"command"` for a v2 command POST.
 	Op string
 
 	// Server is a truncated server-sent response body (≤ 1 KiB) that

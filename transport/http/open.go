@@ -1,6 +1,7 @@
 package httpt
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -63,6 +64,15 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	resp, err := doProbe(ctx, client, probeURL, ua, gitProto, nil)
 	if err != nil {
+		// `client.Do` may return both a non-nil response and a non-nil
+		// error (e.g. a `CheckRedirect` rejection). Modern `net/http`
+		// closes the body itself, but the documented contract leaves
+		// the body for the caller; close defensively for symmetry with
+		// the command path and to insulate against a future stdlib
+		// change.
+		if resp != nil && resp.Body != nil {
+			drainAndClose(resp.Body)
+		}
 		if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
 			return nil, pe
 		}
@@ -107,6 +117,9 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 		resp, err = doProbe(ctx, client, retryURL, ua, gitProto, creds)
 		if err != nil {
+			if resp != nil && resp.Body != nil {
+				drainAndClose(resp.Body)
+			}
 			if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
 				return nil, pe
 			}
@@ -320,13 +333,7 @@ func joinHostPort(u *transport.URL) string {
 // `OpenOptions.UserAgent` (non-empty) wins; otherwise the
 // per-Transport value; otherwise the package default.
 func resolveUserAgent(transportUA, openUA string) string {
-	if openUA != "" {
-		return openUA
-	}
-	if transportUA != "" {
-		return transportUA
-	}
-	return defaultUserAgent
+	return cmp.Or(openUA, transportUA, defaultUserAgent)
 }
 
 // drainAndClose reads up to a small bounded amount from body so the
