@@ -15,6 +15,13 @@ import (
 // it as `git/...`.
 const defaultUserAgent = "lsremote/0"
 
+// defaultMaxRedirects bounds the number of HTTP redirects the probe
+// follows when [WithMaxRedirects] is not configured. Ten matches both
+// `net/http`'s built-in cap and canonical Git's default behaviour;
+// keeping the same number means a server that drives clients to the
+// limit gets the same outcome on either implementation.
+const defaultMaxRedirects = 10
+
 // Transport is the HTTP/HTTPS Git [transport.Transport]. It is
 // constructed via [New] and configured with `With*` [Option] helpers.
 //

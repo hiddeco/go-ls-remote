@@ -31,17 +31,21 @@ import (
 // is the smart path; any other content type on a `200 OK` is the
 // dumb path.
 //
-// The redirect policy is deliberately the [http.Client]'s default
-// (10 hops, follow on GET). Canonical Git's
-// `http.followRedirects=initial` policy lands in a follow-up
-// change; until then the default is a workable approximation for
-// the discovery GET, which is the only request this entry point
-// issues.
+// Redirects honour [Transport.followRedirects]
+// (`Documentation/config/http.adoc:359-365`); the per-call
+// [probeRedirector] enforces both the policy and the cross-origin
+// auth-strip rule modelled on `http.c::update_url_from_redirect`.
+// Both `FollowRedirectsInitial` and `FollowRedirectsAlways` follow
+// redirects on this GET probe; the two diverge only at command-POST
+// time, which is wired in a follow-up change.
 func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
-	client := t.client
-	if client == nil {
-		client = http.DefaultClient
+	redir := &probeRedirector{
+		policy: t.followRedirects,
+		max:    resolveMaxRedirects(t.maxRedirects),
+		creds:  t.creds,
+		ctx:    ctx,
 	}
+	client := httpClientForProbe(t.client, redir)
 
 	probeURL := buildInfoRefsURL(u)
 	redacted := transport.RedactURL(probeURL)
@@ -50,6 +54,9 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	resp, err := doProbe(ctx, client, probeURL, ua, gitProto, nil)
 	if err != nil {
+		if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
+			return nil, pe
+		}
 		return nil, &ProtocolError{URL: redacted, Op: "probe", Err: err}
 	}
 
@@ -60,12 +67,28 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		// challenge argument; widening it lands in a follow-up
 		// change. Until then the retry matches
 		// `remote-curl.c::http_request_reauth` at a coarser grain.
+		//
+		// The retry uses the URL the 401 came from — i.e. the
+		// post-redirect URL when the chain redirected before the
+		// challenge — rather than the original probe URL. That
+		// matches what the resolver expects (the resolver was
+		// consulted with the URL the 401 was received from) and is
+		// what canonical Git's `http_request_reauth` does as a
+		// matter of course.
+		retryURL := probeURL
+		if resp.Request != nil && resp.Request.URL != nil {
+			retryURL = resp.Request.URL.String()
+		}
 		drainAndClose(resp.Body)
 
 		if t.creds == nil {
 			return nil, ErrAuthRequired
 		}
-		creds, rerr := t.creds.Resolve(ctx, infoRefsForResolver(u))
+		retryParsed, perr := url.Parse(retryURL)
+		if perr != nil {
+			return nil, fmt.Errorf("transport/http: parse retry url %s: %w", redacted, perr)
+		}
+		creds, rerr := t.creds.Resolve(ctx, retryParsed)
 		if rerr != nil {
 			return nil, fmt.Errorf("transport/http: resolve credentials for %s: %w", redacted, rerr)
 		}
@@ -73,8 +96,11 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 			return nil, ErrAuthRequired
 		}
 
-		resp, err = doProbe(ctx, client, probeURL, ua, gitProto, creds)
+		resp, err = doProbe(ctx, client, retryURL, ua, gitProto, creds)
 		if err != nil {
+			if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
+				return nil, pe
+			}
 			return nil, &ProtocolError{URL: redacted, Op: "probe", Err: err}
 		}
 		if resp.StatusCode == http.StatusUnauthorized {
@@ -121,6 +147,12 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 // per `gitprotocol-http.adoc:274-286` and hands the post-preamble
 // reader to a [Conn]. The dumb branch is left as a placeholder until
 // the dumb-HTTP adapter lands.
+//
+// The [Conn] records the URL the response actually came from, which
+// is the post-redirect URL when the probe followed a chain. The
+// command path (a follow-up change) reuses that URL as its base, so
+// preserving it here is what makes
+// `http.c::update_url_from_redirect`-style chasing work end-to-end.
 func handleOK(resp *http.Response, redacted string, client *http.Client) (transport.Conn, error) {
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
@@ -143,11 +175,15 @@ func handleOK(resp *http.Response, redacted string, client *http.Client) (transp
 			Err:    err,
 		}
 	}
+	finalURL := redacted
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = transport.RedactURL(resp.Request.URL.String())
+	}
 	return &Conn{
 		body:   resp.Body,
 		reader: rdr,
 		client: client,
-		url:    redacted,
+		url:    finalURL,
 	}, nil
 }
 
@@ -209,18 +245,6 @@ func buildInfoRefsURL(u *transport.URL) string {
 		RawQuery: "service=git-upload-pack",
 	}
 	return out.String()
-}
-
-// infoRefsForResolver returns a [url.URL] pointing at the discovery
-// endpoint, intended as the argument to a [CredentialResolver]. The
-// resolver typically keys on `Host`, but Path/Scheme are populated
-// for resolvers that want a finer key.
-func infoRefsForResolver(u *transport.URL) *url.URL {
-	return &url.URL{
-		Scheme: u.Scheme,
-		Host:   joinHostPort(u),
-		Path:   strings.TrimSuffix(u.Path, "/") + "/info/refs",
-	}
 }
 
 // joinHostPort renders u.Host (bracketing IPv6 literals) and appends
