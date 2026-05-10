@@ -1,7 +1,6 @@
 package httpt
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -12,8 +11,8 @@ import (
 )
 
 // Compile-time guarantee that *Transport satisfies the transport
-// contract even while Open is a stub. The runtime check below covers
-// Schemes; this line covers method-set conformance.
+// contract. The runtime check below covers Schemes; this line covers
+// method-set conformance.
 var _ transport.Transport = (*Transport)(nil)
 
 func TestTransport_Schemes(t *testing.T) {
@@ -43,17 +42,4 @@ func TestNew_nilOptionSkipped(t *testing.T) {
 
 	assert.Same(t, want, tr.client,
 		"non-nil options still apply when interleaved with nil entries")
-}
-
-func TestTransport_Open_stub(t *testing.T) {
-	tr := New()
-
-	u, err := transport.ParseURL("https://example.com/repo.git")
-	require.NoError(t, err)
-
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
-	assert.Nil(t, conn, "stub Open returns no connection")
-	require.Error(t, err, "stub Open returns a placeholder error")
-	assert.Contains(t, err.Error(), "not implemented",
-		"placeholder error must say 'not implemented' so callers see why")
 }

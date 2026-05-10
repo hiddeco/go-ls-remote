@@ -3,11 +3,17 @@ package httpt
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"net/http"
 
 	"github.com/hiddeco/go-ls-remote/transport"
 )
+
+// defaultUserAgent is the User-Agent string the HTTP transport sends
+// when no per-Transport or per-call override applies. It carries the
+// project name and a major-version digit so server-side analytics can
+// distinguish this client from canonical Git without misrepresenting
+// it as `git/...`.
+const defaultUserAgent = "lsremote/0"
 
 // Transport is the HTTP/HTTPS Git [transport.Transport]. It is
 // constructed via [New] and configured with `With*` [Option] helpers.
@@ -70,10 +76,18 @@ func (t *Transport) Schemes() []string {
 	return []string{"https", "http"}
 }
 
-// Open implements [transport.Transport]. The full smart-probe with
-// dumb-HTTP fallback lands in a follow-up change; the current body
-// returns a placeholder error so a misuse surfaces a clear message
-// rather than a nil dereference.
+// Open implements [transport.Transport]. It performs the smart-HTTP
+// discovery probe against u — `GET <u>/info/refs?service=git-upload-pack`
+// — and, on success, returns a [Conn] whose advertisement reader is
+// positioned past the `# service=git-upload-pack` preamble. Failure
+// modes surface either a sentinel from this package
+// ([ErrAuthRequired], [ErrAuthFailed], [ErrNotFound]) or a
+// [*ProtocolError]; see the helpers in `open.go` for the dispatch
+// table.
+//
+// The dumb-HTTP fallback path is detected here but its adapter wires
+// up in a follow-up change; today the dumb-detection branch surfaces
+// a clearly-labelled placeholder error.
 func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
-	return nil, errors.New("transport/http: Open not implemented")
+	return t.open(ctx, u, opts)
 }
