@@ -83,9 +83,13 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	derivedCtx, cancel := context.WithCancel(ctx)
 
+	// Wire the tracer at both endpoints of the in-process pipe pair:
+	// the client-side reader/writer here AND the server-side
+	// reader/writer in the goroutine below. See `tracer.go` for the
+	// event-doubling rationale.
 	conn := &Conn{
-		reader:       pktline.NewReader(clientReader),
-		writer:       pktline.NewWriter(clientWriter),
+		reader:       pktline.NewReader(clientReader, inboundReaderOpts(opts.Tracer, redacted)...),
+		writer:       pktline.NewWriter(clientWriter, outboundWriterOpts(opts.Tracer, redacted)...),
 		store:        store,
 		cancel:       cancel,
 		done:         make(chan struct{}),
@@ -110,8 +114,8 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		// returns it directly, matching how a real transport would
 		// propagate a server-side fault.
 		srvErr := server.Serve(derivedCtx,
-			pktline.NewReader(serverReader),
-			pktline.NewWriter(serverWriter),
+			pktline.NewReader(serverReader, inboundReaderOpts(opts.Tracer, redacted)...),
+			pktline.NewWriter(serverWriter, outboundWriterOpts(opts.Tracer, redacted)...),
 			store,
 			srvOpts,
 		)
