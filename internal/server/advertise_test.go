@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -19,11 +20,11 @@ import (
 
 // materializeRepoFixture copies the named fixture from
 // `testdata/repos/<name>/` into a fresh `t.TempDir()`, renaming the
-// committed `dotgit` component to `.git`. It generalises
-// [materializeEmptyRepo]: canonical Git refuses to track a path
-// containing a literal `.git` component (see `path.c::is_dotgit_path`),
-// so the on-disk fixtures store the gitdir under a `dotgit/` directory
-// and tests rename it on materialization.
+// committed `dotgit` component to `.git`. Canonical Git refuses to
+// track a path containing a literal `.git` component (see
+// `path.c::is_dotgit_path`), so the on-disk fixtures store the
+// gitdir under a `dotgit/` directory and tests rename it on
+// materialization.
 func materializeRepoFixture(t *testing.T, name string) string {
 	t.Helper()
 
@@ -43,7 +44,10 @@ func materializeRepoFixture(t *testing.T, name string) string {
 		if err != nil {
 			return err
 		}
-		parts := splitPath(rel)
+		var parts []string
+		if rel != "." {
+			parts = strings.Split(filepath.ToSlash(rel), "/")
+		}
 		for i, part := range parts {
 			if part == "dotgit" {
 				parts[i] = ".git"
@@ -60,31 +64,6 @@ func materializeRepoFixture(t *testing.T, name string) string {
 		return os.WriteFile(target, data, 0o644)
 	}))
 	return filepath.Join(dst, ".git")
-}
-
-// splitPath splits a slash- or separator-delimited path into its
-// non-empty components in order. The empty/`.` input yields nil. It
-// underpins the per-segment `dotgit`→`.git` rename in
-// [materializeRepoFixture].
-func splitPath(p string) []string {
-	if p == "." {
-		return nil
-	}
-	var parts []string
-	for {
-		dir, file := filepath.Split(p)
-		if file != "" {
-			parts = append([]string{file}, parts...)
-		}
-		if dir == "" {
-			break
-		}
-		p = filepath.Clean(dir)
-		if p == "." || p == string(filepath.Separator) {
-			break
-		}
-	}
-	return parts
 }
 
 // pktLine encodes payload as a single pkt-line, prefixing it with a

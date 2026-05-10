@@ -13,18 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// materializeEmptyRepo copies the `empty` fixture from
-// `testdata/repos/empty/` into a fresh `t.TempDir()`. It is a thin
-// wrapper around [materializeRepoFixture], retained because the
-// majority of tests in this package only need the empty repository.
-func materializeEmptyRepo(t *testing.T) string {
-	t.Helper()
-	return materializeRepoFixture(t, "empty")
-}
-
+// openEmptyStore materialises the `empty` fixture from
+// `testdata/repos/empty/` into a fresh `t.TempDir()` and opens a
+// store rooted at it. The majority of tests in this package only
+// need the empty repository, so the helper hides the
+// fixture-name plumbing and the cleanup wiring at every call site.
 func openEmptyStore(t *testing.T) *objstore.Store {
 	t.Helper()
-	gitdir := materializeEmptyRepo(t)
+	gitdir := materializeRepoFixture(t, "empty")
 	s, err := objstore.Open(gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
