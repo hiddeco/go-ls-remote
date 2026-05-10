@@ -372,7 +372,16 @@ func resolveUserAgent(transportUA, openUA string) string {
 	return cmp.Or(openUA, transportUA, defaultUserAgent)
 }
 
-// drainAndClose reads up to a small bounded amount from body so the
+// drainCap bounds how much body data the package will consume before
+// closing the response in error or cleanup paths. Idle-pool reuse in
+// `net/http` requires the body to reach EOF (or be closed) so leaving
+// a small drain in place lets the underlying connection be reused for
+// subsequent requests; capping the drain at 16 KiB stops a
+// misbehaving server from pinning memory on a body that streams
+// indefinitely.
+const drainCap = 1 << 14
+
+// drainAndClose reads up to [drainCap] bytes from body so the
 // underlying connection can be returned to the [http.Client] pool,
 // then closes the body. Errors are intentionally swallowed: the
 // caller has already decided what error to surface.
@@ -380,7 +389,7 @@ func drainAndClose(body io.ReadCloser) {
 	if body == nil {
 		return
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(body, 1<<14))
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, drainCap))
 	_ = body.Close()
 }
 

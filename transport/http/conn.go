@@ -127,16 +127,15 @@ func (c *Conn) Close() error {
 		first = true
 		if c.body != nil {
 			// Drain whatever bytes remain so the underlying connection
-			// can be reused by the [http.Client]'s connection pool. Cap
-			// the drain to avoid pinning memory on a misbehaving server
-			// that streams indefinitely; the cap matches what
-			// `net/http` itself uses for its discard heuristic.
-			_, _ = io.Copy(io.Discard, io.LimitReader(c.body, 1<<16))
+			// can be reused by the [http.Client]'s connection pool. The
+			// drain shape matches [drainAndClose] but the close error
+			// is captured here rather than swallowed: it is what
+			// [Conn.Close] surfaces to the caller.
+			_, _ = io.Copy(io.Discard, io.LimitReader(c.body, drainCap))
 			c.closeErr = c.body.Close()
 		}
 		if c.cmdBody != nil {
-			_, _ = io.Copy(io.Discard, io.LimitReader(c.cmdBody, 1<<16))
-			_ = c.cmdBody.Close()
+			drainAndClose(c.cmdBody)
 			c.cmdBody = nil
 		}
 	})
