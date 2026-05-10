@@ -78,6 +78,9 @@ func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 	require.True(t, errors.As(err, &pe),
 		"exceeding maxRedirects must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "probe", pe.Op)
+	assert.True(t, errors.Is(pe.Err, errRedirectTooMany),
+		"a hop-cap exhaustion must wrap errRedirectTooMany so a sentinel "+
+			"swap would fail the test; got %v", pe.Err)
 }
 
 func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
@@ -256,6 +259,14 @@ func (s *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	hop := len(s.requests)
 	s.requests = append(s.requests, req.Clone(req.Context()))
 	resp := s.respond(req, hop)
+	if resp == nil {
+		// A misconfigured stub should fail loudly: a nil response
+		// would otherwise panic on the field assignments below, and
+		// the panic surfaces as a generic test failure with no hint
+		// that the stub itself is at fault.
+		return nil, fmt.Errorf("stubRoundTripper: respond returned nil for hop %d (%s %s)",
+			hop, req.Method, req.URL)
+	}
 	resp.Request = req
 	if resp.Body == nil {
 		resp.Body = http.NoBody
@@ -422,6 +433,13 @@ func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
 	var pe *ProtocolError
 	require.True(t, errors.As(err, &pe),
 		"a negative max-redirects must surface as *ProtocolError; got %T: %v", err, err)
+	// A `0` cap is treated as "redirects disabled", not "exceeded 0
+	// hops": the surfaced sentinel is [errRedirectRejected], the same
+	// one [FollowRedirectsNever] uses, so the message reads naturally
+	// regardless of which knob disabled redirects.
+	assert.True(t, errors.Is(pe.Err, errRedirectRejected),
+		"a 0-cap rejection must wrap errRedirectRejected, not "+
+			"errRedirectTooMany; got %v", pe.Err)
 }
 
 func TestRedirect_Auth401Retry_UsesRedirectedURL(t *testing.T) {

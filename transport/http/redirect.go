@@ -1,7 +1,6 @@
 package httpt
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,14 +11,16 @@ import (
 // errRedirectRejected is the sentinel returned from
 // [probeRedirector.check] when the redirect policy refuses to follow a
 // 3xx. It travels through `client.Do` wrapped in `*url.Error`; the
-// probe call site unwraps to a [ProtocolError] that carries the
-// declined status. Lowercase on purpose: external callers should not
-// pin behaviour on it.
+// probe call site unwraps to a [ProtocolError] whose `Err` wraps this
+// sentinel via `fmt.Errorf("...: %w", ...)` so an `errors.Is` test
+// matches regardless of the human-readable phrasing
+// ([classifyRedirectError]). Lowercase on purpose: external callers
+// should not pin behaviour on it.
 var errRedirectRejected = errors.New("transport/http: redirect rejected by policy")
 
-// errRedirectTooMany is the sentinel returned when a redirect chain
-// exceeds the configured cap. Same wrapping rules as
-// [errRedirectRejected].
+// errRedirectTooMany is the sentinel wrapped by the [ProtocolError]
+// when a redirect chain exceeds the configured cap. Same wrapping
+// rules as [errRedirectRejected].
 var errRedirectTooMany = errors.New("transport/http: too many redirects")
 
 // probeRedirector carries the per-call state the [http.Client]'s
@@ -29,14 +30,23 @@ var errRedirectTooMany = errors.New("transport/http: too many redirects")
 // (around `http.c:2268`).
 //
 // One instance is constructed per [Transport.open] invocation. It
-// retains references to the resolver and request context for the
-// lifetime of the redirect chain, then is discarded; nothing outlives
-// the call so there are no GC concerns.
+// retains a reference to the resolver for the lifetime of the
+// redirect chain, then is discarded; nothing outlives the call so
+// there are no GC concerns.
+//
+// The redirector deliberately does NOT carry a [context.Context]
+// field: storing a context on a struct violates the Go convention
+// (`pkg.go.dev/context` documents context as a function argument,
+// not a struct field) and would forward-trap a reused
+// `*http.Client` to the probe's context. `check` reads
+// `req.Context()` instead, which `net/http` propagates unchanged
+// through redirect follow-up requests, so the resolver is consulted
+// with the per-request context regardless of which call drove the
+// chain.
 type probeRedirector struct {
 	policy FollowRedirects
 	max    int
 	creds  CredentialResolver
-	ctx    context.Context
 
 	// resolveErr captures the first credential-resolver error so the
 	// probe call site can surface it. `CheckRedirect` cannot itself
@@ -67,6 +77,14 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 	if r.policy == FollowRedirectsNever {
 		return errRedirectRejected
 	}
+	// A `0` cap is treated as "no redirects allowed"; the rejection
+	// uses [errRedirectRejected] so the surfaced message reads as
+	// "redirects disabled" rather than "exceeded 0 hops". This covers
+	// both `WithMaxRedirects(0)` and `WithMaxRedirects(-1)`, which
+	// [resolveMaxRedirects] clamps to zero.
+	if r.max == 0 {
+		return errRedirectRejected
+	}
 	if len(via) > r.max {
 		return errRedirectTooMany
 	}
@@ -82,7 +100,11 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 	if r.creds == nil {
 		return nil
 	}
-	creds, err := r.creds.Resolve(r.ctx, req.URL)
+	// `req.Context()` is the per-request context `net/http`
+	// propagates through redirect follow-ups; reading it here keeps
+	// the resolver consult tied to the call that actually drove the
+	// chain.
+	creds, err := r.creds.Resolve(req.Context(), req.URL)
 	if err != nil {
 		r.resolveErr = err
 		return errRedirectRejected
@@ -124,6 +146,18 @@ func isCrossOrigin(prev, next *url.URL) bool {
 // `Transport`, `Jar`, and `Timeout`, but installs our own
 // `CheckRedirect` so the policy applies even when a caller has
 // configured their own.
+//
+// The returned client carries no per-request context: the redirector
+// reads `req.Context()` inside `CheckRedirect`, so the same client
+// can be reused safely across requests driven by different contexts
+// (the command path reuses the probe's client to inherit cookies,
+// transport-level config, and any test hooks).
+//
+// The caller's `Jar` is preserved through the shallow copy. That is
+// the desired cookie-continuity semantic across a redirect chain:
+// any `Set-Cookie` returned by an intermediate hop is stored on the
+// shared jar and replayed on the next hop, matching what a user
+// running `git` against the same URL would see.
 //
 // Mutating the caller's client in place was rejected because callers
 // commonly share an [http.Client] across packages; setting fields like
@@ -168,7 +202,16 @@ func classifyRedirectError(err error, resp *http.Response, redacted string, redi
 		// is the real cause and callers may want to match it.
 		cause := redir.resolveErr
 		if cause == nil {
-			cause = fmt.Errorf("redirect rejected by %s policy", redir.policy)
+			// Wrap the sentinel so callers can match it with
+			// `errors.Is`. A zero hop cap is "redirects disabled"
+			// rather than a policy rejection: phrase it that way so
+			// `WithMaxRedirects(0)` produces a message matching the
+			// configuration that triggered the rejection.
+			if redir.max == 0 && redir.policy != FollowRedirectsNever {
+				cause = fmt.Errorf("redirects disabled (max-redirects=0): %w", errRedirectRejected)
+			} else {
+				cause = fmt.Errorf("redirect rejected by %s policy: %w", redir.policy, errRedirectRejected)
+			}
 		}
 		pe := &ProtocolError{URL: redacted, Op: "probe", Err: cause}
 		if resp != nil {
@@ -179,7 +222,7 @@ func classifyRedirectError(err error, resp *http.Response, redacted string, redi
 		return &ProtocolError{
 			URL: redacted,
 			Op:  "probe",
-			Err: fmt.Errorf("redirect chain exceeded %d hops", redir.max),
+			Err: fmt.Errorf("redirect chain exceeded %d hops: %w", redir.max, errRedirectTooMany),
 		}, true
 	}
 	return nil, false

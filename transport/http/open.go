@@ -43,7 +43,6 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		policy: t.followRedirects,
 		max:    resolveMaxRedirects(t.maxRedirects),
 		creds:  t.creds,
-		ctx:    ctx,
 	}
 	client := httpClientForProbe(t.client, redir)
 
