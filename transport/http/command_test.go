@@ -664,6 +664,29 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 	}
 }
 
+// TestCommandPostURL_RejectsMissingSuffix pins the safety check on the
+// path-rewrite step: a probe URL whose path does not end in
+// `/info/refs` cannot be safely rewritten by suffix trim, since the
+// trim is a no-op and the synthesised POST URL would point at a
+// non-existent endpoint. The function refuses such a URL with an
+// explicit error rather than producing the wrong path silently.
+//
+// In practice the only way the [Conn] sees such a URL is through a
+// misbehaving HTTP redirect that drops the suffix on its way to the
+// smart advertisement. The check makes that failure mode loud.
+func TestCommandPostURL_RejectsMissingSuffix(t *testing.T) {
+	base := &url.URL{
+		Scheme: "https",
+		Host:   "example.com",
+		Path:   "/repo.git/discovery",
+	}
+	got, err := commandPostURL(base)
+	assert.Nil(t, got)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "/info/refs",
+		"the error must name the missing suffix so callers can diagnose the redirect")
+}
+
 // TestCommandPostURL_RawPathRewrite pins the [url.URL.RawPath] handling
 // in [commandPostURL]: when the probe URL carries a percent-encoded
 // path (e.g. `/repo%2Egit/info/refs`), [url.URL.String] prefers

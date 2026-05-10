@@ -124,6 +124,14 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 // the discovery URL is the same `<base>/info/refs?service=...` shape
 // and the per-RPC URL drops the query and replaces the suffix.
 //
+// The `/info/refs` suffix is treated as an invariant: every URL the
+// [Conn] reaches a `200 OK` smart advertisement on is required by
+// `gitprotocol-http.adoc:230-281` to terminate in that suffix. A URL
+// that does not is the result of a misbehaving redirect chain, and
+// suffix-trimming silently would point the POST at a non-existent
+// endpoint. Refuse such a URL up front so the caller sees a clear
+// protocol error.
+//
 // `RawPath` is cleared deliberately: when set, [url.URL.String]
 // prefers it over `Path`, which would silently drop the rewrite if
 // the probe URL came in with a percent-encoded path. Clearing
@@ -131,6 +139,10 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 func commandPostURL(base *url.URL) (*url.URL, error) {
 	if base == nil {
 		return nil, fmt.Errorf("transport/http: command: base URL is nil")
+	}
+	if !strings.HasSuffix(base.Path, "/info/refs") {
+		return nil, fmt.Errorf("transport/http: command: probe URL %s lacks /info/refs suffix",
+			transport.RedactURL(base.String()))
 	}
 	out := *base
 	out.Path = strings.TrimSuffix(base.Path, "/info/refs") + "/git-upload-pack"
