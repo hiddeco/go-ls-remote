@@ -300,10 +300,10 @@ func TestPack_ReadHeader(t *testing.T) {
 		const iterations = 256
 		var wg sync.WaitGroup
 		wg.Add(goroutines)
-		for g := 0; g < goroutines; g++ {
+		for range goroutines {
 			go func() {
 				defer wg.Done()
-				for i := 0; i < iterations; i++ {
+				for range iterations {
 					hdr, err := p.ReadHeader(179)
 					require.NoError(t, err)
 					require.Equal(t, TypeBlob, hdr.Type)
