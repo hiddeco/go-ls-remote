@@ -49,7 +49,9 @@ type Transport struct {
 }
 
 // New returns a [Transport] configured with opts. The zero
-// configuration is usable; options refine it.
+// configuration is usable; options refine it. Nil entries in opts are
+// skipped, so callers may pass conditionally constructed options
+// without guarding each one.
 func New(opts ...Option) *Transport {
 	t := &Transport{}
 	for _, opt := range opts {

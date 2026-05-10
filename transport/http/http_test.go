@@ -2,6 +2,7 @@ package httpt
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,19 @@ func TestTransport_implementsTransportInterface(t *testing.T) {
 	// drifts.
 	var iface transport.Transport = New()
 	_ = iface.Schemes()
+}
+
+func TestNew_nilOptionSkipped(t *testing.T) {
+	// Pinning the documented contract: nil entries in opts are
+	// silently skipped so callers can pass conditionally built options
+	// without guarding each one. The non-nil option still applies.
+	want := &http.Client{}
+
+	tr := New(nil, WithClient(want), nil)
+	require.NotNil(t, tr, "New must not panic on nil options")
+
+	assert.Same(t, want, tr.client,
+		"non-nil options still apply when interleaved with nil entries")
 }
 
 func TestTransport_Open_stub(t *testing.T) {

@@ -42,12 +42,11 @@ func WithCredentials(r CredentialResolver) Option {
 	})
 }
 
-// WithUserAgent sets the User-Agent string the [Transport] sends. The
-// effective value follows this precedence at dial time:
-//
-//  1. `OpenOptions.UserAgent` (caller's per-call override),
-//  2. the value supplied here,
-//  3. the package default `lsremote/0`.
+// WithUserAgent records the per-Transport User-Agent string. It is
+// consulted only when [transport.OpenOptions.UserAgent] passed to
+// [Transport.Open] is the empty string; a non-empty
+// `OpenOptions.UserAgent` always wins. When neither is set the
+// package default applies.
 //
 // The default is wired in a follow-up change; this option's job is
 // only to record the per-Transport value.
