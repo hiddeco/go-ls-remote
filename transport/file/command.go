@@ -68,20 +68,15 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 // goroutine has shut its end of the pipe — the wrapped cause is
 // upgraded to the goroutine's own `Serve` error if one is available.
 //
-// The `Serve` error is captured by the open-time goroutine before it
-// closes `c.done`, so a non-blocking peek through the channel is
-// synchronisation-safe: a closed `done` happens-before the `serverErr`
-// read here, and an open `done` means the goroutine is still running
-// and the closed-pipe signal must be coming from elsewhere (e.g. a
-// concurrent Close).
+// The `Serve` error is read through [Conn.serverError], which performs
+// the non-blocking select on `c.done` that makes the access
+// synchronisation-safe. If the goroutine is still running the closed
+// pipe is coming from elsewhere (e.g. a concurrent Close) and the
+// original write error is surfaced unchanged.
 func (c *Conn) wrapWriteError(err error) error {
 	if errors.Is(err, io.ErrClosedPipe) {
-		select {
-		case <-c.done:
-			if c.serverErr != nil {
-				return &ProtocolError{Op: "command", Err: c.serverErr}
-			}
-		default:
+		if srvErr := c.serverError(); srvErr != nil {
+			return &ProtocolError{Op: "command", Err: srvErr}
 		}
 	}
 	return &ProtocolError{Op: "command", Err: err}

@@ -64,10 +64,11 @@ type Conn struct {
 
 	// serverErr captures the error `server.Serve` returned. It is
 	// written by the spawned goroutine before the deferred
-	// `close(c.done)` fires, so any read that synchronises on
-	// `<-c.done` (today: [Conn.Close]) sees the final value without
-	// further locking. Reads off the synchronisation path will need
-	// to introduce one in a follow-up commit.
+	// `close(c.done)` fires, so any read that observes the closed
+	// channel sees the final value without further locking. Reads
+	// MUST go through [Conn.serverError] (or, in the [Conn.Close]
+	// teardown sequence, after `<-c.done` returns) to honour that
+	// invariant.
 	serverErr error
 
 	// clientReader and clientWriter are the client-side pipe ends.
@@ -162,4 +163,25 @@ func (c *Conn) Close() error {
 		return nil
 	}
 	return c.closeErr
+}
+
+// serverError returns the error captured from the in-process
+// `server.Serve` goroutine, if any, in a synchronisation-safe way.
+// The captured error is written by the goroutine before its deferred
+// `close(c.done)` fires; under Go's memory model that write
+// happens-before any subsequent `<-c.done` receive, so reading the
+// field after observing the closed channel is safe.
+//
+// The select on `c.done` is non-blocking: if the goroutine is still
+// running, the method returns nil without waiting. Callers that need
+// to distinguish "goroutine finished cleanly" from "goroutine still
+// running" must select on `c.done` themselves; [Conn.Close] is the
+// canonical waiter.
+func (c *Conn) serverError() error {
+	select {
+	case <-c.done:
+		return c.serverErr
+	default:
+		return nil
+	}
 }
