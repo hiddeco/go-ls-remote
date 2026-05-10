@@ -5,7 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
+
+// zlibReaderPool reuses [*zlib.Reader] instances across calls to
+// [Pack.ReadDeltaHeader]. [zlib.NewReader] allocates roughly 44 KB of
+// inflate state per call (a 32 KB sliding window plus dictionary and
+// scratch buffers per `inflate.c::inflateReset2`); pooling drops the
+// per-call cost to amortised zero after warmup.
+//
+// New is left as the zero-value (nil-returning) on purpose: a fresh
+// [*zlib.Reader] requires a non-empty source for [zlib.NewReader] to
+// validate the stream header, and the pool has no source to hand it.
+// The cold path in [Pack.ReadDeltaHeader] therefore initialises a
+// reader via [zlib.NewReader] on a Get-miss and Put feeds the pool on
+// the way out, so the steady state is Get -> [zlib.Resetter.Reset].
+var zlibReaderPool sync.Pool
 
 // ReadDeltaHeader decompresses the leading bytes of the delta payload
 // at bodyAt and returns the encoded source (base) and target
@@ -30,11 +45,25 @@ func (p *Pack) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err 
 	// can fall short of 64 bytes — so a short read is not an error.
 	const peek = 64
 	section := io.NewSectionReader(p.r, bodyAt, p.r.Len()-bodyAt)
-	zr, err := zlib.NewReader(section)
-	if err != nil {
-		return 0, 0, fmt.Errorf("objfmt: delta zlib init: %w", err)
+
+	var zr io.ReadCloser
+	if pooled := zlibReaderPool.Get(); pooled != nil {
+		rc := pooled.(io.ReadCloser)
+		if err := rc.(zlib.Resetter).Reset(section, nil); err != nil {
+			return 0, 0, fmt.Errorf("objfmt: delta zlib reset: %w", err)
+		}
+		zr = rc
+	} else {
+		zr, err = zlib.NewReader(section)
+		if err != nil {
+			return 0, 0, fmt.Errorf("objfmt: delta zlib init: %w", err)
+		}
 	}
-	defer zr.Close()
+	// Put without Close: Close tears down the inflate state we want
+	// to keep pooled. Reset on the next Get re-initialises the
+	// reader against a fresh source; entries unreached at GC time
+	// are released by the pool itself.
+	defer zlibReaderPool.Put(zr)
 
 	buf := make([]byte, peek)
 	n, err := io.ReadFull(zr, buf)

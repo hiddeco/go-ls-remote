@@ -52,6 +52,46 @@ func TestPack_ReadDeltaHeader(t *testing.T) {
 	})
 }
 
+// TestPack_ReadDeltaHeader_AllocsAfterWarmup pins the post-warmup
+// allocation budget for repeated calls. The first call instantiates
+// the zlib reader (cold path); the warmup phase puts that reader into
+// the pool and the steady state reuses it via [zlib.Resetter.Reset],
+// so per-call allocations should be a small constant (the
+// function-local 64-byte peek buffer plus the [io.SectionReader]
+// value).
+func TestPack_ReadDeltaHeader_AllocsAfterWarmup(t *testing.T) {
+	p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = p.Close() })
+	const bodyAt = int64(210)
+
+	// Warm the pool: a single call moves a `*zlib.Reader` through
+	// New -> Put. Subsequent calls take the pooled entry via
+	// Get -> Reset.
+	if _, _, err := p.ReadDeltaHeader(bodyAt); err != nil {
+		t.Fatal(err)
+	}
+
+	avg := testing.AllocsPerRun(100, func() {
+		if _, _, err := p.ReadDeltaHeader(bodyAt); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Budget covers the function-local 64-byte peek buffer, the
+	// [io.SectionReader], and the small handful of slices the
+	// `compress/flate` reset path still allocates internally
+	// (Huffman scratch, history window mux). The pre-pool baseline
+	// was 10 allocs/op; the budget here is set to fail loudly on a
+	// regression to the unpooled cold path while leaving headroom
+	// for stdlib churn in the reset-internal allocations.
+	const maxAllocs = 5
+	if avg > maxAllocs {
+		t.Fatalf("post-warmup allocs/op = %.1f, want <= %d (regression)",
+			avg, maxAllocs)
+	}
+}
+
 func TestPack_readDeltaVarint(t *testing.T) {
 	t.Run("decodes a single-byte varint", func(t *testing.T) {
 		v, n, err := readDeltaVarint([]byte{0x09})
