@@ -664,6 +664,45 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 	}
 }
 
+// TestConn_Command_RejectsOversizePayload pins the upfront validation
+// of the command-line, capability, and argument payloads against the
+// pkt-line size cap. Each input is framed as a single pkt-line whose
+// payload is the value plus a trailing LF (and `command=` for the
+// command name); a value above the cap cannot be framed at all and
+// would otherwise produce a malformed request body. The check
+// rejects such inputs with an error wrapping
+// [pktline.ErrPayloadTooLarge].
+func TestConn_Command_RejectsOversizePayload(t *testing.T) {
+	overlong := strings.Repeat("a", pktline.MaxPayload)
+	tests := []struct {
+		name string
+		cmd  string
+		args []string
+		caps []string
+	}{
+		{name: "oversize command name", cmd: overlong, args: nil, caps: nil},
+		{name: "oversize capability", cmd: "ls-refs", caps: []string{overlong}},
+		{name: "oversize argument", cmd: "ls-refs", args: []string{overlong}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Conn{
+				body:              &closeCounter{Reader: bytes.NewReader(nil)},
+				reader:            pktline.NewReader(bytes.NewReader(nil)),
+				url:               mustParseURL(t, "https://example.com/repo.git/info/refs"),
+				userAgent:         defaultUserAgent,
+				gitProtocolHeader: "version=2",
+			}
+
+			rdr, err := c.Command(context.Background(), tc.cmd, tc.args, tc.caps)
+			assert.Nil(t, rdr)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
+				"oversize input must wrap pktline.ErrPayloadTooLarge; got %v", err)
+		})
+	}
+}
+
 // TestCommandPostURL_RejectsMissingSuffix pins the safety check on the
 // path-rewrite step: a probe URL whose path does not end in
 // `/info/refs` cannot be safely rewritten by suffix trim, since the

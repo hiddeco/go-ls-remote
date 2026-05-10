@@ -68,6 +68,9 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	if c.dumb {
 		return nil, ErrUnsupportedProtocol
 	}
+	if err := validateCommandPayloads(name, args, caps); err != nil {
+		return nil, err
+	}
 
 	postURL, err := commandPostURL(c.url)
 	if err != nil {
@@ -114,6 +117,34 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	}
 	c.cmdBody = resp.Body
 	return rdr, nil
+}
+
+// validateCommandPayloads rejects command-name, capability, and arg
+// inputs whose pkt-line framing would exceed [pktline.MaxPayload].
+// Each pkt-line carries the input value plus a trailing LF (and the
+// `command=` prefix for the command name); a value above the cap
+// cannot be framed as a single packet, so refuse before constructing
+// the body. Returns an error wrapping [pktline.ErrPayloadTooLarge]
+// so callers can match with [errors.Is].
+func validateCommandPayloads(name string, args, caps []string) error {
+	const commandPrefix = "command="
+	if n := len(commandPrefix) + len(name) + 1; n > pktline.MaxPayload {
+		return fmt.Errorf("transport/http: command %q payload %d bytes: %w",
+			name, n, pktline.ErrPayloadTooLarge)
+	}
+	for _, c := range caps {
+		if n := len(c) + 1; n > pktline.MaxPayload {
+			return fmt.Errorf("transport/http: capability payload %d bytes: %w",
+				n, pktline.ErrPayloadTooLarge)
+		}
+	}
+	for _, a := range args {
+		if n := len(a) + 1; n > pktline.MaxPayload {
+			return fmt.Errorf("transport/http: argument payload %d bytes: %w",
+				n, pktline.ErrPayloadTooLarge)
+		}
+	}
+	return nil
 }
 
 // commandPostURL derives the v2 command POST URL from the probe's
