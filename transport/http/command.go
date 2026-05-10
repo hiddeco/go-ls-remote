@@ -93,8 +93,7 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 		if resp != nil && resp.Body != nil {
 			drainAndClose(resp.Body)
 		}
-		if pe, ok := classifyRedirectError(err, resp, redacted, c.redir); ok {
-			pe.Op = "command"
+		if pe, ok := classifyRedirectError(err, resp, redacted, "command", c.redir); ok {
 			return nil, pe
 		}
 		return nil, &ProtocolError{URL: redacted, Op: "command", Err: err}

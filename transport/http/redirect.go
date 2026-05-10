@@ -209,7 +209,12 @@ func resolveMaxRedirects(n int) int {
 // hops". When the cause is something else (a network error, say) the
 // returned [ProtocolError] still carries the wrapped err so the call
 // site can round-trip it via [errors.Is].
-func classifyRedirectError(err error, resp *http.Response, redacted string, redir *probeRedirector) (*ProtocolError, bool) {
+//
+// op identifies the operation the call site was performing —
+// `"probe"` for the discovery GET, `"command"` for a v2 command POST
+// — and is stamped on the returned [ProtocolError]. Threading it as a
+// parameter keeps each call site responsible for its own labelling.
+func classifyRedirectError(err error, resp *http.Response, redacted, op string, redir *probeRedirector) (*ProtocolError, bool) {
 	switch {
 	case errors.Is(err, errRedirectRejected):
 		// A resolver error wins over the synthetic policy sentinel: it
@@ -227,7 +232,7 @@ func classifyRedirectError(err error, resp *http.Response, redacted string, redi
 				cause = fmt.Errorf("redirect rejected by %s policy: %w", redir.policy, errRedirectRejected)
 			}
 		}
-		pe := &ProtocolError{URL: redacted, Op: "probe", Err: cause}
+		pe := &ProtocolError{URL: redacted, Op: op, Err: cause}
 		if resp != nil {
 			pe.Status = resp.StatusCode
 		}
@@ -235,7 +240,7 @@ func classifyRedirectError(err error, resp *http.Response, redacted string, redi
 	case errors.Is(err, errRedirectTooMany):
 		return &ProtocolError{
 			URL: redacted,
-			Op:  "probe",
+			Op:  op,
 			Err: fmt.Errorf("redirect chain exceeded %d hops: %w", redir.max, errRedirectTooMany),
 		}, true
 	}

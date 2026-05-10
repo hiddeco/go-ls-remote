@@ -76,7 +76,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		if resp != nil && resp.Body != nil {
 			drainAndClose(resp.Body)
 		}
-		if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
+		if pe, ok := classifyRedirectError(err, resp, redacted, "probe", redir); ok {
 			return nil, pe
 		}
 		return nil, &ProtocolError{URL: redacted, Op: "probe", Err: err}
@@ -123,7 +123,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 			if resp != nil && resp.Body != nil {
 				drainAndClose(resp.Body)
 			}
-			if pe, ok := classifyRedirectError(err, resp, redacted, redir); ok {
+			if pe, ok := classifyRedirectError(err, resp, redacted, "probe", redir); ok {
 				return nil, pe
 			}
 			return nil, &ProtocolError{URL: redacted, Op: "probe", Err: err}
