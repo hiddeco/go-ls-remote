@@ -94,16 +94,14 @@ type Conn struct {
 	// to POST to.
 	dumb bool
 
-	// cmdBodies tracks the [http.Response.Body] of every successful
-	// command POST so [Conn.Close] can release them. The
-	// [pktline.Reader] returned by [Conn.Command] does not own a Close
-	// method; if the caller abandons it without draining, the
-	// underlying body would otherwise pin a connection in
-	// [http.Transport]'s idle pool. The slice is appended in-order on
-	// each successful POST and walked once under [Conn.Close]'s
-	// [sync.Once] guard, so no mutex is needed: [Conn] is single-flight
-	// per the [transport.Conn] contract.
-	cmdBodies []io.ReadCloser
+	// cmdBody tracks the [http.Response.Body] of the most recent
+	// successful command POST so [Conn.Close] can release it if the
+	// caller abandoned its [pktline.Reader] without draining. The field
+	// is overwritten on each successful POST after draining and closing
+	// the previous value, so a long-lived [Conn] does not accumulate
+	// superseded bodies; the single-flight contract guarantees at most
+	// one body is outstanding at a time.
+	cmdBody io.ReadCloser
 }
 
 // Advertisement returns the cached pkt-line reader. On the smart
@@ -136,14 +134,11 @@ func (c *Conn) Close() error {
 			_, _ = io.Copy(io.Discard, io.LimitReader(c.body, 1<<16))
 			c.closeErr = c.body.Close()
 		}
-		for _, b := range c.cmdBodies {
-			if b == nil {
-				continue
-			}
-			_, _ = io.Copy(io.Discard, io.LimitReader(b, 1<<16))
-			_ = b.Close()
+		if c.cmdBody != nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(c.cmdBody, 1<<16))
+			_ = c.cmdBody.Close()
+			c.cmdBody = nil
 		}
-		c.cmdBodies = nil
 	})
 	if !first {
 		return nil

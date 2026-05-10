@@ -104,11 +104,16 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	if err != nil {
 		return nil, err
 	}
-	// Track the response body on the [Conn] so [Conn.Close] can release
-	// it if the caller abandons `rdr` without draining. Append BEFORE
-	// returning so a caller that drops the result on the floor still
-	// has the body covered by the next [Conn.Close].
-	c.cmdBodies = append(c.cmdBodies, resp.Body)
+	// Close-and-replace: a successful POST supersedes the previous one,
+	// so its body is released here rather than accumulated. Single-flight
+	// per the [transport.Conn] contract guarantees nothing else is
+	// reading the previous body. The new body is captured BEFORE
+	// returning so a caller that drops `rdr` on the floor still has it
+	// covered by the next [Conn.Close].
+	if prev := c.cmdBody; prev != nil {
+		drainAndClose(prev)
+	}
+	c.cmdBody = resp.Body
 	return rdr, nil
 }
 

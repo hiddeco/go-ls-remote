@@ -893,10 +893,10 @@ func TestConn_Close_ReleasesUndrainedCommandBody(t *testing.T) {
 	probe := &closeCounter{Reader: bytes.NewReader(nil)}
 	cmd := &closeCounter{Reader: strings.NewReader("undrained command body")}
 	c := &Conn{
-		body:      probe,
-		reader:    pktline.NewReader(probe),
-		url:       mustParseURL(t, "https://example.com/repo.git/info/refs"),
-		cmdBodies: []io.ReadCloser{cmd},
+		body:    probe,
+		reader:  pktline.NewReader(probe),
+		url:     mustParseURL(t, "https://example.com/repo.git/info/refs"),
+		cmdBody: cmd,
 	}
 
 	require.NoError(t, c.Close(), "Close must not error")
@@ -907,4 +907,61 @@ func TestConn_Close_ReleasesUndrainedCommandBody(t *testing.T) {
 	require.NoError(t, c.Close())
 	assert.Equal(t, 1, probe.closes)
 	assert.Equal(t, 1, cmd.closes)
+}
+
+// TestConn_Command_ClosesPreviousBody pins the bound on the
+// command-body bookkeeping: each successful command POST releases the
+// body of the previous successful POST so the [Conn] does not
+// accumulate already-superseded bodies for its lifetime. The
+// single-flight contract on [Conn] means at most one body is ever
+// outstanding, so close-and-replace is the natural shape and bounds
+// memory regardless of how many commands the caller issues.
+func TestConn_Command_ClosesPreviousBody(t *testing.T) {
+	bodies := [3]*closeCounter{
+		{Reader: bytes.NewReader([]byte("first response"))},
+		{Reader: bytes.NewReader([]byte("second response"))},
+		{Reader: bytes.NewReader([]byte("third response"))},
+	}
+	rt := &countingRoundTripper{respond: func(_ *http.Request, hop int) *http.Response {
+		h := http.Header{}
+		h.Set("Content-Type", commandAcceptType)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     h,
+			Body:       bodies[hop],
+		}
+	}}
+
+	c := &Conn{
+		body:              &closeCounter{Reader: bytes.NewReader(nil)},
+		reader:            pktline.NewReader(bytes.NewReader(nil)),
+		client:            &http.Client{Transport: rt},
+		url:               mustParseURL(t, "https://example.com/repo.git/info/refs"),
+		userAgent:         defaultUserAgent,
+		gitProtocolHeader: "version=2",
+	}
+
+	_, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, bodies[0].closes,
+		"first body remains in-flight until superseded")
+
+	_, err = c.Command(context.Background(), "ls-refs", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, bodies[0].closes,
+		"first body closed when second Command takes over")
+	assert.Equal(t, 0, bodies[1].closes,
+		"second body in-flight after second Command")
+
+	_, err = c.Command(context.Background(), "ls-refs", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, bodies[0].closes)
+	assert.Equal(t, 1, bodies[1].closes,
+		"second body closed when third Command takes over")
+	assert.Equal(t, 0, bodies[2].closes,
+		"third body in-flight after third Command")
+
+	require.NoError(t, c.Close())
+	assert.Equal(t, 1, bodies[2].closes,
+		"third body closed when Conn.Close runs")
 }
