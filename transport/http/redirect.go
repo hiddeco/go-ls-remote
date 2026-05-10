@@ -85,6 +85,20 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 	if r.max == 0 {
 		return errRedirectRejected
 	}
+	// Method-aware policy gate. Canonical Git's
+	// `Documentation/config/http.adoc:359-365` distinguishes the
+	// initial discovery GET from later POSTs: `initial` (the default)
+	// follows redirects on the GET but rejects them on the POST,
+	// `always` follows both, `never` rejects both. The above
+	// `FollowRedirectsNever` check covers the never case for both
+	// methods; the gate here covers `initial` rejecting POST while
+	// letting `always` fall through to the normal redirect flow. The
+	// originating method is read from `via[0]` because `req.Method`
+	// can have been rewritten by stdlib for 301/302/303 hops on a POST
+	// (RFC 7231 §6.4.2-6.4.4).
+	if r.policy == FollowRedirectsInitial && len(via) > 0 && via[0].Method == http.MethodPost {
+		return errRedirectRejected
+	}
 	if len(via) > r.max {
 		return errRedirectTooMany
 	}

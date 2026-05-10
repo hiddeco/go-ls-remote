@@ -218,10 +218,17 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 	assert.Equal(t, 200, pe.Status)
 }
 
-func TestOpen_Dumb200_NotYetWired(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestOpen_Dumb200_AdapterWired(t *testing.T) {
+	// A minimal but realistic dumb-HTTP `info/refs` body: one ref
+	// per line, fields HTAB-separated, terminated by LF. The adapter
+	// synthesises a v0-shaped pkt-line stream over this body; the
+	// post-Open Conn must be flagged dumb and Advertisement must
+	// yield a parseable pkt-line stream.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("nothing smart here\n"))
+		_, _ = w.Write([]byte(
+			"3333333333333333333333333333333333333333\trefs/heads/main\n",
+		))
 	}))
 	defer srv.Close()
 
@@ -229,10 +236,22 @@ func TestOpen_Dumb200_NotYetWired(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
-	assert.Nil(t, conn)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, errDumbNotImplemented),
-		"dumb-path branch must surface errDumbNotImplemented; got %v", err)
+	require.NoError(t, err, "the dumb-HTTP adapter must wrap a 200 + non-smart body")
+	require.NotNil(t, conn)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	c, ok := conn.(*Conn)
+	require.True(t, ok, "concrete type must be *Conn")
+	assert.True(t, c.dumb, "Conn.dumb must be true on the dumb branch")
+
+	rdr := conn.Advertisement()
+	require.NotNil(t, rdr)
+	pkt, err := rdr.ReadPacket()
+	require.NoError(t, err)
+	assert.Equal(t, pktline.Data, pkt.Kind,
+		"the synthesised adapter must yield a data packet for the first ref")
+	assert.Contains(t, string(pkt.Data), "refs/heads/main",
+		"the first synthesised pkt-line must carry the dumb body's ref")
 }
 
 func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {

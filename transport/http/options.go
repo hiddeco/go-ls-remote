@@ -46,10 +46,9 @@ func WithCredentials(r CredentialResolver) Option {
 // consulted only when [transport.OpenOptions.UserAgent] passed to
 // [Transport.Open] is the empty string; a non-empty
 // `OpenOptions.UserAgent` always wins. When neither is set the
-// package default applies.
-//
-// The default is wired in a follow-up change; this option's job is
-// only to record the per-Transport value.
+// package default ([defaultUserAgent]) applies. The resolved value
+// is reused on every command POST issued through the resulting
+// [Conn].
 func WithUserAgent(ua string) Option {
 	return optionFunc(func(t *Transport) {
 		t.userAgent = ua

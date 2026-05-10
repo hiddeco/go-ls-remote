@@ -52,7 +52,7 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 
 	c, ok := conn.(*Conn)
 	require.True(t, ok)
-	assert.Contains(t, c.url, "/repo.git/info/refs",
+	assert.Contains(t, c.url.String(), "/repo.git/info/refs",
 		"after a redirect, Conn.url must reflect the final hop, not the original")
 }
 
@@ -390,9 +390,9 @@ func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 
 	c, ok := conn.(*Conn)
 	require.True(t, ok)
-	assert.Contains(t, c.url, "/b.git/info/refs",
+	assert.Contains(t, c.url.String(), "/b.git/info/refs",
 		"the recorded URL must be the final hop's path, not /a.git/info/refs")
-	assert.NotContains(t, c.url, "/a.git/info/refs",
+	assert.NotContains(t, c.url.String(), "/a.git/info/refs",
 		"the original path must not survive on the Conn after a redirect")
 }
 

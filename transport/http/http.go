@@ -83,18 +83,18 @@ func (t *Transport) Schemes() []string {
 	return []string{"https", "http"}
 }
 
-// Open implements [transport.Transport]. It performs the smart-HTTP
+// Open implements [transport.Transport]. It performs the HTTP
 // discovery probe against u — `GET <u>/info/refs?service=git-upload-pack`
-// — and, on success, returns a [Conn] whose advertisement reader is
-// positioned past the `# service=git-upload-pack` preamble. Failure
-// modes surface either a sentinel from this package
-// ([ErrAuthRequired], [ErrAuthFailed], [ErrNotFound]) or a
-// [*ProtocolError]; see the helpers in `open.go` for the dispatch
-// table.
-//
-// The dumb-HTTP fallback path is detected here but its adapter wires
-// up in a follow-up change; today the dumb-detection branch surfaces
-// a clearly-labelled placeholder error.
+// — and, on success, returns a [Conn]. On the smart branch the
+// advertisement reader is positioned past the
+// `# service=git-upload-pack` preamble. On the dumb branch the
+// reader is the synthetic v0-shaped pkt-line stream produced by
+// `internal/dumbhttp`, and [Conn.Command] short-circuits to
+// [ErrUnsupportedProtocol] since dumb HTTP has no v2 endpoint.
+// Failure modes surface either a sentinel from this package
+// ([ErrAuthRequired], [ErrAuthFailed], [ErrNotFound],
+// [ErrUnsupportedProtocol]) or a [*ProtocolError]; see the helpers
+// in `open.go` for the dispatch table.
 func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
 	return t.open(ctx, u, opts)
 }

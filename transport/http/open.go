@@ -9,17 +9,20 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/hiddeco/go-ls-remote/internal/dumbhttp"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
-// open performs the smart-HTTP discovery probe against u and, on
-// success, returns a [Conn] whose [pktline.Reader] is positioned
-// past the `# service=git-upload-pack` preamble and its trailing
-// flush packet. Failure modes — bad status, malformed preamble,
-// auth challenges — surface either a sentinel from this package or
-// a [ProtocolError] depending on the layer that detected them.
+// open performs the HTTP discovery probe against u and, on success,
+// returns a [Conn]. On the smart branch the Conn's [pktline.Reader]
+// is positioned past the `# service=git-upload-pack` preamble and its
+// trailing flush packet; on the dumb branch the Conn wraps a
+// [dumbhttp.NewAdapter] over the body. Failure modes — bad status,
+// malformed preamble, auth challenges — surface either a sentinel
+// from this package or a [ProtocolError] depending on the layer that
+// detected them.
 //
 // The probe shape mirrors canonical Git's
 // `remote-curl.c::discover_refs` (`remote-curl.c:465-577`): GET
@@ -35,9 +38,9 @@ import (
 // (`Documentation/config/http.adoc:359-365`); the per-call
 // [probeRedirector] enforces both the policy and the cross-origin
 // auth-strip rule modelled on `http.c::update_url_from_redirect`.
-// Both `FollowRedirectsInitial` and `FollowRedirectsAlways` follow
-// redirects on this GET probe; the two diverge only at command-POST
-// time, which is wired in a follow-up change.
+// `FollowRedirectsInitial` and `FollowRedirectsAlways` both follow
+// redirects on this GET probe; they diverge on the command POST,
+// where `Initial` rejects 3xx and `Always` follows.
 func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
 	redir := &probeRedirector{
 		policy: t.followRedirects,
@@ -50,6 +53,13 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 	redacted := transport.RedactURL(probeURL)
 	ua := resolveUserAgent(t.userAgent, opts.UserAgent)
 	gitProto := wire.HTTPProtocolHeader(opts.PreferredProtocol)
+	connCfg := connConfig{
+		client:            client,
+		creds:             t.creds,
+		redir:             redir,
+		userAgent:         ua,
+		gitProtocolHeader: gitProto,
+	}
 
 	resp, err := doProbe(ctx, client, probeURL, ua, gitProto, nil)
 	if err != nil {
@@ -110,7 +120,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return handleOK(resp, redacted, client)
+		return handleOK(resp, redacted, connCfg)
 	case http.StatusForbidden:
 		drainAndClose(resp.Body)
 		return nil, ErrAuthFailed
@@ -141,29 +151,50 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 	}
 }
 
+// connConfig bundles the per-call data [Transport.open] needs to hand
+// to a freshly minted [Conn] so the command path can reuse the same
+// client, credential resolver, redirect-policy redirector, User-Agent,
+// and `Git-Protocol` header without walking back to a `*Transport`
+// reference.
+type connConfig struct {
+	client            *http.Client
+	creds             CredentialResolver
+	redir             *probeRedirector
+	userAgent         string
+	gitProtocolHeader string
+}
+
 // handleOK splits the smart and dumb branches off a `200 OK` response.
 // The smart branch validates the `# service=git-upload-pack` preamble
 // per `gitprotocol-http.adoc:274-286` and hands the post-preamble
-// reader to a [Conn]. The dumb branch is left as a placeholder until
-// the dumb-HTTP adapter lands.
+// reader to a [Conn]. The dumb branch wraps the body in
+// [dumbhttp.NewAdapter], producing a synthetic v0-shaped pkt-line
+// stream the wire layer can consume uniformly with the smart shape.
 //
 // The [Conn] records the URL the response actually came from, which
 // is the post-redirect URL when the probe followed a chain. The
-// command path (a follow-up change) reuses that URL as its base, so
-// preserving it here is what makes
-// `http.c::update_url_from_redirect`-style chasing work end-to-end.
-func handleOK(resp *http.Response, redacted string, client *http.Client) (transport.Conn, error) {
+// command path reuses that URL as its base, so preserving it here is
+// what makes `http.c::update_url_from_redirect`-style chasing work
+// end-to-end.
+func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
 		mediaType = strings.TrimSpace(resp.Header.Get("Content-Type"))
 	}
 	if !strings.EqualFold(mediaType, smartAdvContentType) {
-		// Dumb-HTTP branch — replaced wholesale by the dumb adapter
-		// in a follow-up change.
-		drainAndClose(resp.Body)
-		return nil, errDumbNotImplemented
+		return handleDumb(resp, cfg), nil
 	}
+	return handleSmart(resp, redacted, cfg)
+}
 
+// handleSmart finalises a smart-HTTP probe response: it validates the
+// `# service=git-upload-pack` preamble per
+// `gitprotocol-http.adoc:274-286`, then constructs a [Conn] whose
+// reader is positioned past the preamble. The dumb-HTTP path does NOT
+// invoke the preamble strip — `internal/dumbhttp` synthesises a v0
+// advertisement directly without a service preamble — so the strip
+// runs only on this branch.
+func handleSmart(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
 	rdr := pktline.NewReader(resp.Body)
 	if err := stripSmartPreamble(rdr); err != nil {
 		drainAndClose(resp.Body)
@@ -174,16 +205,40 @@ func handleOK(resp *http.Response, redacted string, client *http.Client) (transp
 			Err:    err,
 		}
 	}
-	finalURL := redacted
+	return newConn(resp, rdr, cfg, false), nil
+}
+
+// handleDumb finalises a dumb-HTTP probe response by handing the body
+// to [dumbhttp.NewAdapter]. The Conn is flagged dumb so [Conn.Command]
+// short-circuits to [ErrUnsupportedProtocol] without dialing.
+func handleDumb(resp *http.Response, cfg connConfig) transport.Conn {
+	rdr := dumbhttp.NewAdapter(resp.Body)
+	return newConn(resp, rdr, cfg, true)
+}
+
+// newConn assembles a [Conn] from a probe response. It captures the
+// post-redirect URL in `*url.URL` form so [Conn.Command] can rewrite
+// the path to derive the per-command POST URL.
+func newConn(resp *http.Response, rdr *pktline.Reader, cfg connConfig, dumb bool) *Conn {
+	var finalURL *url.URL
 	if resp.Request != nil && resp.Request.URL != nil {
-		finalURL = transport.RedactURL(resp.Request.URL.String())
+		// Defensive copy: the [http.Request]'s URL pointer may be
+		// referenced by stdlib internals, and command POSTs mutate a
+		// copy of this value when rewriting the path.
+		u := *resp.Request.URL
+		finalURL = &u
 	}
 	return &Conn{
-		body:   resp.Body,
-		reader: rdr,
-		client: client,
-		url:    finalURL,
-	}, nil
+		body:              resp.Body,
+		reader:            rdr,
+		client:            cfg.client,
+		url:               finalURL,
+		creds:             cfg.creds,
+		userAgent:         cfg.userAgent,
+		gitProtocolHeader: cfg.gitProtocolHeader,
+		redir:             cfg.redir,
+		dumb:              dumb,
+	}
 }
 
 // stripSmartPreamble consumes the `# service=git-upload-pack\n`

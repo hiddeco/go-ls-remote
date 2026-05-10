@@ -32,16 +32,16 @@ var (
 	// as `repository '%s' not found` (see `remote-curl.c::discover_refs`,
 	// `HTTP_MISSING_TARGET`).
 	ErrNotFound = errors.New("transport/http: repository not found")
-)
 
-// errDumbNotImplemented is returned when the probe sees a `200 OK`
-// whose Content-Type is not the smart advertisement, signalling a
-// dumb-HTTP server. The dumb-HTTP adapter lands in a follow-up
-// change and replaces this branch entirely; until then this
-// package-internal sentinel lets callers (tests included) match
-// the placeholder via [errors.Is]. Lower-case on purpose: external
-// callers should not pin behaviour on it.
-var errDumbNotImplemented = errors.New("transport/http: dumb HTTP adapter not yet wired")
+	// ErrUnsupportedProtocol is returned by [Conn.Command] when the
+	// connection was opened against a dumb-HTTP server. The dumb body
+	// carries no v2 capability advertisement, so command POSTs are not
+	// available; canonical Git refuses the same configuration in
+	// `remote-curl.c::discover_refs` when the server's response is not
+	// the smart advertisement and the user later asks for a v2-only
+	// operation.
+	ErrUnsupportedProtocol = errors.New("transport/http: server does not support v2 commands")
+)
 
 // ProtocolError reports an HTTP-layer protocol failure that does not
 // fit one of the [errors.Is]-matched sentinels above — for example a

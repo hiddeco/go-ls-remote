@@ -1,26 +1,21 @@
 package httpt
 
 import (
-	"context"
-	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
 )
 
 // Conn is the HTTP-transport [transport.Conn]. It is constructed by
-// [Transport.Open] once the smart-probe has succeeded and the
-// `# service=git-upload-pack` preamble plus its trailing flush have
-// been consumed; the wrapped [pktline.Reader] is positioned at the
-// first byte of the actual advertisement.
-//
-// The command path lands in a follow-up change. The fields needed for
-// it (cached capabilities, hash-algo, the originating [http.Client],
-// and a raw-capabilities accessor) will join this struct then; for
-// now [Conn.Command] returns a placeholder error so a misuse surfaces
-// a clear message rather than a nil dereference.
+// [Transport.Open] once the discovery probe has succeeded: on the
+// smart path the `# service=git-upload-pack` preamble plus its
+// trailing flush have already been consumed, leaving the wrapped
+// [pktline.Reader] positioned at the first byte of the actual
+// advertisement; on the dumb path the [pktline.Reader] is the
+// synthetic v0-shaped stream produced by `internal/dumbhttp`.
 //
 // Conn is single-flight per the [transport.Conn] contract: while the
 // reader returned from [Conn.Advertisement] is open, callers must not
@@ -32,20 +27,39 @@ type Conn struct {
 	// connection drains and closes it; see [Conn.Close].
 	body io.ReadCloser
 
-	// reader decodes pkt-lines from body and is positioned past the
-	// smart preamble.
+	// reader decodes pkt-lines from body. On the smart branch it is
+	// positioned past the preamble; on the dumb branch it is the
+	// synthesised v0-shaped stream from `internal/dumbhttp`.
 	reader *pktline.Reader
 
 	// client is the [http.Client] the probe used. It is retained so
-	// the command path (follow-up change) can reuse the same client
-	// — and any cookies, transport-level redirect policy, or test
-	// hooks attached to it.
+	// command POSTs reuse the same client — and any cookies,
+	// transport-level redirect policy, or test hooks attached to it.
 	client *http.Client
 
 	// url is the final request URL the probe resolved to (after any
-	// redirects). It is retained for tracing and for diagnostic
-	// output in errors raised by the command path.
-	url string
+	// redirects). It is retained both for tracing and as the base
+	// from which [Conn.Command] derives the per-command POST URL by
+	// rewriting the trailing `/info/refs` to `/git-upload-pack`.
+	url *url.URL
+
+	// creds resolves credentials for command-time POSTs. nil means
+	// anonymous: the command path will not consult a resolver. Captured
+	// at [Transport.open] so [Conn.Command] does not have to walk back
+	// to a `*Transport` reference.
+	creds CredentialResolver
+
+	// userAgent is the User-Agent string command POSTs send, resolved
+	// at [Transport.open] from the per-call, per-Transport, and package
+	// defaults so [Conn.Command] does not re-resolve.
+	userAgent string
+
+	// gitProtocolHeader is the `Git-Protocol` header value command
+	// POSTs send, captured at [Transport.open] from the negotiated
+	// protocol. Today this is always `version=2`: the v0 dumb path
+	// short-circuits before any POST, and the smart path advertises
+	// the version pinned at probe time.
+	gitProtocolHeader string
 
 	// closeOnce guards the [Conn.Close] body so a second or later
 	// invocation is a no-op, matching the [transport.Conn]
@@ -57,21 +71,29 @@ type Conn struct {
 	// return nil unconditionally to honour the [transport.Conn]
 	// no-op-after-first contract.
 	closeErr error
+
+	// redir is the [probeRedirector] the connection's [http.Client]
+	// installed as `CheckRedirect`. The command path retains a pointer
+	// to it so [classifyRedirectError] can read `resolveErr` on the
+	// command POST's redirect chain — exactly the same mechanism the
+	// probe uses, so the cross-origin auth-strip and resolver-error
+	// surfacing apply uniformly across GET and POST.
+	redir *probeRedirector
+
+	// dumb is true when the connection came up via the dumb-HTTP
+	// adapter. A dumb [Conn] short-circuits [Conn.Command] to
+	// [ErrUnsupportedProtocol]: the server has no v2 command endpoint
+	// to POST to.
+	dumb bool
 }
 
-// Advertisement returns the cached pkt-line reader. The reader is
-// positioned at the first byte of the advertisement proper, with
-// the `# service=git-upload-pack` preamble and its trailing flush
-// already consumed.
+// Advertisement returns the cached pkt-line reader. On the smart
+// branch the reader is positioned at the first byte of the
+// advertisement proper, with the `# service=git-upload-pack` preamble
+// and its trailing flush already consumed. On the dumb branch the
+// reader is the synthetic v0-shaped stream from `internal/dumbhttp`.
 func (c *Conn) Advertisement() *pktline.Reader {
 	return c.reader
-}
-
-// Command is a placeholder. The command path lands in a follow-up
-// change; calling Command today returns a descriptive error so a
-// misuse surfaces a clear message.
-func (c *Conn) Command(_ context.Context, _ string, _, _ []string) (*pktline.Reader, error) {
-	return nil, errors.New("transport/http: Command not yet implemented")
 }
 
 // Close drains and closes the underlying response body exactly once.
