@@ -27,8 +27,20 @@ type writerTracer struct {
 
 // OnEvent dispatches on the dynamic type of e and renders a single line
 // per event to the underlying writer.
+//
+// Both `*PacketEvent` (the form `pktline.Reader` and `pktline.Writer`
+// emit) and `PacketEvent` (the form a third-party emitter or test
+// harness may construct as a value) are accepted; they share rendering
+// logic. See the lifetime contract on [PacketEvent] for the
+// `*PacketEvent` form.
 func (t *writerTracer) OnEvent(e Event) {
 	switch ev := e.(type) {
+	case *PacketEvent:
+		fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
+			ev.Time.Format(time.RFC3339Nano),
+			directionGlyph(ev.Direction),
+			kindLabel(ev.Kind),
+			len(ev.Bytes))
 	case PacketEvent:
 		fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
 			ev.Time.Format(time.RFC3339Nano),

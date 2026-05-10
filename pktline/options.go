@@ -28,16 +28,16 @@ func (f writerOptionFunc) applyWriter(w *Writer) { f(w) }
 
 // WithReaderTracer wires t into the [Reader]. Each pkt-line read emits
 // a [trace.PacketEvent] with the given [trace.Direction]. The
-// [trace.PacketEvent.Bytes] field aliases the Reader's internal buffer
-// and is valid only for the duration of the [trace.Tracer.OnEvent]
-// call; consumers that retain it must copy.
+// `*trace.PacketEvent` passed to `Tracer.OnEvent` is reused across
+// emits, and so are its fields — see the lifetime contract on
+// [trace.PacketEvent] for what callers may and may not retain.
 //
 // Passing a nil Tracer is equivalent to not configuring one: the
 // option becomes a no-op.
 func WithReaderTracer(t trace.Tracer, dir trace.Direction) ReaderOption {
 	return readerOptionFunc(func(r *Reader) {
 		r.tracer = t
-		r.traceDir = dir
+		r.event = &trace.PacketEvent{Direction: dir}
 	})
 }
 
@@ -47,8 +47,7 @@ func WithReaderTracer(t trace.Tracer, dir trace.Direction) ReaderOption {
 func WithReaderTracerURL(t trace.Tracer, dir trace.Direction, url string) ReaderOption {
 	return readerOptionFunc(func(r *Reader) {
 		r.tracer = t
-		r.traceDir = dir
-		r.traceURL = url
+		r.event = &trace.PacketEvent{Direction: dir, URL: url}
 	})
 }
 
@@ -56,7 +55,7 @@ func WithReaderTracerURL(t trace.Tracer, dir trace.Direction, url string) Reader
 func WithWriterTracer(t trace.Tracer, dir trace.Direction) WriterOption {
 	return writerOptionFunc(func(w *Writer) {
 		w.tracer = t
-		w.traceDir = dir
+		w.event = &trace.PacketEvent{Direction: dir}
 	})
 }
 
@@ -64,8 +63,7 @@ func WithWriterTracer(t trace.Tracer, dir trace.Direction) WriterOption {
 func WithWriterTracerURL(t trace.Tracer, dir trace.Direction, url string) WriterOption {
 	return writerOptionFunc(func(w *Writer) {
 		w.tracer = t
-		w.traceDir = dir
-		w.traceURL = url
+		w.event = &trace.PacketEvent{Direction: dir, URL: url}
 	})
 }
 

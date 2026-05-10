@@ -18,8 +18,10 @@ import (
 // # Tracing
 //
 // A Writer wired up via [WithWriterTracer] emits a [trace.PacketEvent]
-// after every successful write. Without a tracer, the Write methods
-// perform no instrumentation work.
+// after every successful write. The same `*trace.PacketEvent` is
+// reused across emits — see the lifetime contract on [trace.PacketEvent]
+// for what callers may and may not retain. Without a tracer, the Write
+// methods perform no instrumentation work.
 type Writer struct {
 	dst io.Writer
 
@@ -28,11 +30,15 @@ type Writer struct {
 	// calls and grown as needed up to [MaxPayload] + 4.
 	out []byte
 
-	// Tracer fields are nil/zero unless a [WithWriterTracer] or
-	// [WithWriterTracerURL] option is applied.
-	tracer   trace.Tracer
-	traceDir trace.Direction
-	traceURL string
+	// Tracer is nil unless a [WithWriterTracer] or [WithWriterTracerURL]
+	// option is applied. event is heap-allocated alongside the tracer
+	// option and reused across emits: emit mutates Time, Bytes and Kind
+	// per call, then passes the pointer to OnEvent. Pre-allocating
+	// avoids an escape that would otherwise box a fresh PacketEvent
+	// value into the Tracer.OnEvent(Event) interface argument once per
+	// pkt-line.
+	tracer trace.Tracer
+	event  *trace.PacketEvent
 }
 
 // NewWriter returns a [Writer] that encodes pkt-lines to dst, applying
@@ -92,17 +98,20 @@ func (w *Writer) writeControl(s string, k Kind) error {
 
 // emit reports the just-written packet to the configured tracer (if
 // any). Called only on successful writes.
+//
+// emit mutates the pre-allocated `w.event` rather than constructing a
+// fresh `trace.PacketEvent`: the long-lived pointer lets the
+// `Tracer.OnEvent(Event)` interface argument be boxed without a heap
+// allocation per pkt-line. The `Direction` and `URL` fields are set
+// once when the tracer option was applied and never change.
 func (w *Writer) emit(k Kind, payload []byte) {
 	if !trace.IsEnabled(w.tracer) {
 		return
 	}
-	w.tracer.OnEvent(trace.PacketEvent{
-		Time:      time.Now(),
-		Direction: w.traceDir,
-		URL:       w.traceURL,
-		Bytes:     payload,
-		Kind:      kindToTracerKind(k),
-	})
+	w.event.Time = time.Now()
+	w.event.Bytes = payload
+	w.event.Kind = kindToTracerKind(k)
+	w.tracer.OnEvent(w.event)
 }
 
 // encodeHexLength writes 4 lowercase ASCII hex digits representing v

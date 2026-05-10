@@ -36,8 +36,10 @@ import (
 // # Tracing
 //
 // A Reader wired up via [WithReaderTracer] emits a [trace.PacketEvent]
-// for every packet read. Without a tracer, ReadPacket performs no
-// instrumentation work.
+// for every packet read. The same `*trace.PacketEvent` is reused across
+// emits — see the lifetime contract on [trace.PacketEvent] for what
+// callers may and may not retain. Without a tracer, ReadPacket performs
+// no instrumentation work.
 type Reader struct {
 	src io.Reader
 
@@ -48,11 +50,15 @@ type Reader struct {
 	// hdr is a fixed scratch buffer for the 4-byte length prefix.
 	hdr [4]byte
 
-	// Tracer fields are nil/zero unless a [WithReaderTracer] or
-	// [WithReaderTracerURL] option is applied.
-	tracer   trace.Tracer
-	traceDir trace.Direction
-	traceURL string
+	// Tracer is nil unless a [WithReaderTracer] or [WithReaderTracerURL]
+	// option is applied. event is heap-allocated alongside the tracer
+	// option and reused across emits: emit mutates Time, Bytes and Kind
+	// per call, then passes the pointer to OnEvent. Pre-allocating
+	// avoids an escape that would otherwise box a fresh PacketEvent
+	// value into the Tracer.OnEvent(Event) interface argument once per
+	// pkt-line.
+	tracer trace.Tracer
+	event  *trace.PacketEvent
 }
 
 // NewReader returns a [Reader] that decodes pkt-lines from src,
@@ -134,17 +140,20 @@ func (r *Reader) readPacket() (Packet, error) {
 }
 
 // emit reports p to the configured tracer, if one is wired in.
+//
+// emit mutates the pre-allocated `r.event` rather than constructing a
+// fresh `trace.PacketEvent`: the long-lived pointer lets the
+// `Tracer.OnEvent(Event)` interface argument be boxed without a heap
+// allocation per pkt-line. The `Direction` and `URL` fields are set
+// once when the tracer option was applied and never change.
 func (r *Reader) emit(p Packet) {
 	if !trace.IsEnabled(r.tracer) {
 		return
 	}
-	r.tracer.OnEvent(trace.PacketEvent{
-		Time:      time.Now(),
-		Direction: r.traceDir,
-		URL:       r.traceURL,
-		Bytes:     p.Data,
-		Kind:      kindToTracerKind(p.Kind),
-	})
+	r.event.Time = time.Now()
+	r.event.Bytes = p.Data
+	r.event.Kind = kindToTracerKind(p.Kind)
+	r.tracer.OnEvent(r.event)
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. The

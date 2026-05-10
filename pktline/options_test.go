@@ -14,11 +14,21 @@ import (
 
 // capturingTracer is a minimal [trace.Tracer] that records every event
 // it receives. It exists only as a test fixture in this file.
+//
+// `pktline.Reader` and `pktline.Writer` emit `*trace.PacketEvent`
+// pointing at storage they reuse across calls; the tracer dereferences
+// to a value copy on capture so each recorded event is durable. See
+// the lifetime contract on [trace.PacketEvent].
 type capturingTracer struct {
 	events []trace.Event
 }
 
 func (c *capturingTracer) OnEvent(e trace.Event) {
+	if pe, ok := e.(*trace.PacketEvent); ok {
+		cloned := *pe
+		c.events = append(c.events, cloned)
+		return
+	}
 	c.events = append(c.events, e)
 }
 

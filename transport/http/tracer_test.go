@@ -33,14 +33,18 @@ type capturingTracer struct {
 func (c *capturingTracer) OnEvent(e trace.Event) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Clone byte slices on `PacketEvent` since the doc on
-	// `trace.PacketEvent.Bytes` warns the slice aliases the reader's
-	// internal buffer and is valid only for the duration of OnEvent.
-	if pe, ok := e.(trace.PacketEvent); ok {
-		if pe.Bytes != nil {
-			pe.Bytes = bytes.Clone(pe.Bytes)
+	// `pktline` emits `*trace.PacketEvent` referencing storage it
+	// reuses across emits, so a captured pointer would be overwritten
+	// by the next call. Copy the struct value, then clone the Bytes
+	// slice (which aliases the reader's or writer's internal buffer)
+	// before appending. See the lifetime contract on
+	// [trace.PacketEvent].
+	if pe, ok := e.(*trace.PacketEvent); ok {
+		cloned := *pe
+		if cloned.Bytes != nil {
+			cloned.Bytes = bytes.Clone(cloned.Bytes)
 		}
-		c.events = append(c.events, pe)
+		c.events = append(c.events, cloned)
 		return
 	}
 	c.events = append(c.events, e)
