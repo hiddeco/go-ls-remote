@@ -1,9 +1,19 @@
 package reftable
 
-import "testing"
+import (
+	"testing"
 
-// benchRefRecordSink defeats DCE on decodeRefRecord micro-benchmarks.
-var benchRefRecordSink refRecord
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
+)
+
+// benchRefRecordSHA1Sink and benchRefRecordSHA256Sink defeat DCE on
+// decodeRefRecord micro-benchmarks. Two sinks because the typed
+// decoder yields concrete `refRecord[H]` per instantiation; a single
+// `any` would re-introduce the boxing the typed shape eliminates.
+var (
+	benchRefRecordSHA1Sink   refRecord[objfmt.SHA1Hash]
+	benchRefRecordSHA256Sink refRecord[objfmt.SHA256Hash]
+)
 
 func BenchmarkDecodeRefRecord_Single_SHA1(b *testing.B) {
 	// value_type=1: a single 20-byte OID. The most common record
@@ -16,11 +26,11 @@ func BenchmarkDecodeRefRecord_Single_SHA1(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord(raw, nil, 100, 20)
+		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 100)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchRefRecordSink = rec
+		benchRefRecordSHA1Sink = rec
 	}
 }
 
@@ -38,11 +48,11 @@ func BenchmarkDecodeRefRecord_Peeled_SHA1(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord(raw, nil, 50, 20)
+		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 50)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchRefRecordSink = rec
+		benchRefRecordSHA1Sink = rec
 	}
 }
 
@@ -54,11 +64,11 @@ func BenchmarkDecodeRefRecord_Symref(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord(raw, nil, 10, 20)
+		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 10)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchRefRecordSink = rec
+		benchRefRecordSHA1Sink = rec
 	}
 }
 
@@ -75,10 +85,10 @@ func BenchmarkDecodeRefRecord_Single_SHA256(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord(raw, nil, 5, 32)
+		rec, _, _, err := decodeRefRecord[objfmt.SHA256Hash](raw, nil, 5)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchRefRecordSink = rec
+		benchRefRecordSHA256Sink = rec
 	}
 }

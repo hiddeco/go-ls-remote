@@ -17,13 +17,10 @@ import (
 // type only owns the gitDir/commonDir resolution and the lift from
 // [reftable.RefRecord] to [RefEntry] and [Head].
 //
-// The reftable package still surfaces the legacy [objfmt.Hash] array
-// in its [reftable.RefRecord] fields; this backend bridges those
-// values into typed `H` at the [refEntryFromReftable] lift so the
-// public surface (typed [Head] / [RefEntry]) stays uniform with the
-// loose-refs backend. The bridge is mechanical (a `copy` over the
-// low bytes) and disappears once the reftable package itself goes
-// generic in a follow-up migration.
+// The wrapped [reftable.Stack] is itself parameterised on `H`, so
+// [reftable.RefRecord]'s `Value` and `Peeled` fields land already
+// typed. The lift is now a direct field copy; no per-record bridge
+// converts a legacy 32-byte array down to `H`.
 //
 // HEAD is resolved eagerly at construction so [reftableBackend.Head]
 // is I/O-free, mirroring the discipline [looseRefs] established. The
@@ -32,7 +29,7 @@ import (
 // [reftableBackend.Close].
 type reftableBackend[H objfmt.HashType] struct {
 	gitDir, commonDir, location string
-	stack                       *reftable.Stack
+	stack                       *reftable.Stack[H]
 	head                        Head[H]
 }
 
@@ -49,16 +46,14 @@ type reftableBackend[H objfmt.HashType] struct {
 //     `Documentation/config/extensions.adoc` § `extensions.refStorage`:
 //     "if relative, it is interpreted relative to `$GIT_DIR`".
 //
-// The stack's hash algorithm is intentionally not validated against
-// the repository's `extensions.objectFormat` here — the constructor
-// does not receive the algo (the existing skeleton fixed that shape),
-// and a mismatch only manifests when objects are looked up against
-// pack/loose storage. Surfacing it later, with the offending OID in
-// hand, gives a more useful diagnostic than rejecting the open.
+// The stack's hash algorithm is checked against `H` inside
+// [reftable.OpenReader]; opening a SHA-256 reftable as a SHA-1 backend
+// (or vice versa) surfaces as [reftable.ErrMixedHashAlgo] before any
+// record reaches the lift.
 func openReftableBackend[H objfmt.HashType](gitDir, commonDir, location string) (*reftableBackend[H], error) {
 	reftableDir := resolveReftableDir(gitDir, commonDir, location)
 
-	stack, err := reftable.OpenStack(reftableDir)
+	stack, err := reftable.OpenStack[H](reftableDir)
 	if err != nil {
 		return nil, fmt.Errorf("objstore: open reftable %s: %w", reftableDir, err)
 	}
@@ -110,7 +105,7 @@ func resolveReftableDir(gitDir, commonDir, location string) string {
 //     OID populated.
 //   - both empty — corruption (an on-disk record that is neither a
 //     symref nor a value record cannot be interpreted).
-func resolveReftableHead[H objfmt.HashType](stack *reftable.Stack) (Head[H], error) {
+func resolveReftableHead[H objfmt.HashType](stack *reftable.Stack[H]) (Head[H], error) {
 	rec, found, err := stack.FindRef("HEAD")
 	if err != nil {
 		return Head[H]{}, fmt.Errorf("objstore: read HEAD: %w", err)
@@ -129,44 +124,15 @@ func resolveReftableHead[H objfmt.HashType](stack *reftable.Stack) (Head[H], err
 		if !ok {
 			return Head[H]{Symref: rec.TargetRef, Unborn: true}, nil
 		}
-		return Head[H]{Symref: rec.TargetRef, OID: hashFromLegacy[H](target.Value)}, nil
+		return Head[H]{Symref: rec.TargetRef, OID: target.Value}, nil
 	}
 
 	if !rec.Value.IsZero() {
-		return Head[H]{OID: hashFromLegacy[H](rec.Value)}, nil
+		return Head[H]{OID: rec.Value}, nil
 	}
 
 	return Head[H]{}, fmt.Errorf(
 		"objstore: HEAD record present but empty: %w", ErrCorruptObject)
-}
-
-// hashFromLegacy copies the low bytes of a legacy [objfmt.Hash]
-// (32-byte unified) into a typed `H` value. The legacy reftable
-// reader still uses the unified array even though its records
-// semantically carry SHA-1 or SHA-256 ids; this bridge collapses the
-// type mismatch at the boundary so the rest of `objstore` operates
-// on typed values. Disappears when `internal/reftable` itself goes
-// generic.
-//
-// The dispatch is bounded by the [objfmt.HashType] type set: `H` is
-// statically one of [objfmt.SHA1Hash] or [objfmt.SHA256Hash]. The
-// type switch is the only practical shape — `h[:]` does not compile
-// on a generic union of array types because the union has no single
-// core type — and the compiler folds it to a direct copy per
-// instantiation.
-func hashFromLegacy[H objfmt.HashType](legacy objfmt.Hash) H {
-	var h H
-	switch any(&h).(type) {
-	case *objfmt.SHA1Hash:
-		var sha objfmt.SHA1Hash
-		copy(sha[:], legacy[:20])
-		return any(sha).(H)
-	case *objfmt.SHA256Hash:
-		var sha objfmt.SHA256Hash
-		copy(sha[:], legacy[:32])
-		return any(sha).(H)
-	}
-	return h
 }
 
 // Head returns the cached [Head] resolved at construction. No I/O.
@@ -203,7 +169,7 @@ func (b *reftableBackend[H]) IterRefs() iter.Seq2[RefEntry[H], error] {
 			if rec.TargetRef != "" {
 				continue
 			}
-			if !yield(refEntryFromReftable[H](rec), nil) {
+			if !yield(refEntryFromReftable(rec), nil) {
 				return
 			}
 		}
@@ -229,7 +195,7 @@ func (b *reftableBackend[H]) Lookup(name string) (RefEntry[H], bool, error) {
 	if rec.TargetRef != "" {
 		return RefEntry[H]{}, false, nil
 	}
-	return refEntryFromReftable[H](rec), true, nil
+	return refEntryFromReftable(rec), true, nil
 }
 
 // refEntryFromReftable lifts a reftable value record into a [RefEntry].
@@ -238,11 +204,11 @@ func (b *reftableBackend[H]) Lookup(name string) (RefEntry[H], bool, error) {
 // and a set slot means "peels to this OID"), so callers never need to
 // fall through to an object-body read for refs the reftable backend
 // resolves.
-func refEntryFromReftable[H objfmt.HashType](rec reftable.RefRecord) RefEntry[H] {
+func refEntryFromReftable[H objfmt.HashType](rec reftable.RefRecord[H]) RefEntry[H] {
 	return RefEntry[H]{
 		Name:      rec.Name,
-		OID:       hashFromLegacy[H](rec.Value),
-		Peeled:    hashFromLegacy[H](rec.Peeled),
+		OID:       rec.Value,
+		Peeled:    rec.Peeled,
 		PeelKnown: true,
 	}
 }

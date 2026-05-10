@@ -3,12 +3,14 @@ package reftable
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // benchReaderRefSink and benchReaderOKSink defeat DCE on Reader-level
 // benchmarks where the result would otherwise go unused.
 var (
-	benchReaderRefSink RefRecord
+	benchReaderRefSink RefRecord[objfmt.SHA1Hash]
 	benchReaderOKSink  bool
 )
 
@@ -28,7 +30,7 @@ func benchFixturePath(rel string) string {
 // larger baseline is a follow-up that needs either a larger committed
 // fixture or a synthetic in-memory writer.
 func BenchmarkReader_FindRef_Hit_WithIndex(b *testing.B) {
-	r, err := OpenReader(benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -63,7 +65,7 @@ func BenchmarkReader_FindRef_Hit_WithoutIndex(b *testing.B) {
 	// ref index; FindRef falls back to a linear ref-block walk. This
 	// is the cost of the no-index fast path the spec carves out for
 	// tiny single-block files.
-	r, err := OpenReader(benchFixturePath("without-index-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath("without-index-sha1/0001-0001-aaaaaaaa.ref"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -84,7 +86,7 @@ func BenchmarkReader_FindRef_Hit_WithoutIndex(b *testing.B) {
 func BenchmarkReader_FindRef_Miss_WithIndex(b *testing.B) {
 	// Definitely-absent name: the descent still runs in full, then
 	// the leaf scan exhausts. A negative-lookup floor.
-	r, err := OpenReader(benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -104,7 +106,7 @@ func BenchmarkReader_FindRef_Miss_WithIndex(b *testing.B) {
 func BenchmarkReader_FindRef_Symref(b *testing.B) {
 	// HEAD is a symref; this lookup decodes the value_type=3 path on
 	// every iteration (target_len varint + target string copy).
-	r, err := OpenReader(benchFixturePath("single-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath("single-sha1/0001-0001-aaaaaaaa.ref"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -124,7 +126,7 @@ func BenchmarkReader_FindRef_Symref(b *testing.B) {
 
 func BenchmarkReader_IterRefs_WithIndex(b *testing.B) {
 	// Full forward walk: representative of the ls-remote bulk path.
-	r, err := OpenReader(benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath("with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -156,7 +158,7 @@ func BenchmarkOpenReader(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		r, err := OpenReader(path)
+		r, err := OpenReader[objfmt.SHA1Hash](path)
 		if err != nil {
 			b.Fatal(err)
 		}

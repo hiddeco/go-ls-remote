@@ -50,13 +50,19 @@ func encodeRefRecord(prevKey []byte, name string, valueType uint8, updateIndexDe
 	return out
 }
 
-// hashFromBytes left-pads (for SHA-1, hashSize=20) or fills (for
-// SHA-256, hashSize=32) the running hash with the given bytes.
-// Mirrors the convention in [objfmt.Hash]: the SHA-1 id sits in the
-// low 20 bytes, leaving the high 12 bytes zero.
-func hashFromBytes(b []byte, hashSize int) objfmt.Hash {
-	var h objfmt.Hash
-	copy(h[:hashSize], b)
+// sha1FromBytes left-pads (or fills) a [objfmt.SHA1Hash] with the given
+// bytes. Mirrors the convention used at ref-record decode time: the
+// 20-byte hash sits directly in the typed array.
+func sha1FromBytes(b []byte) objfmt.SHA1Hash {
+	var h objfmt.SHA1Hash
+	copy(h[:], b)
+	return h
+}
+
+// sha256FromBytes fills a [objfmt.SHA256Hash] with the given bytes.
+func sha256FromBytes(b []byte) objfmt.SHA256Hash {
+	var h objfmt.SHA256Hash
+	copy(h[:], b)
 	return h
 }
 
@@ -69,15 +75,15 @@ func Test_decodeRefRecord(t *testing.T) {
 		}
 		raw := encodeRefRecord(nil, "refs/heads/main", 1, 7, oid, nil, "", 20)
 
-		rec, key, n, err := decodeRefRecord(raw, nil, 100, 20)
+		rec, key, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 100)
 		require.NoError(t, err)
 		assert.Equal(t, len(raw), n)
 		assert.Equal(t, []byte("refs/heads/main"), key)
 		assert.Equal(t, "refs/heads/main", rec.Name)
 		assert.Equal(t, uint8(1), rec.ValueType)
 		assert.Equal(t, uint64(107), rec.UpdateIndex)
-		assert.Equal(t, hashFromBytes(oid, 20), rec.Value)
-		assert.Equal(t, objfmt.Hash{}, rec.Peeled)
+		assert.Equal(t, sha1FromBytes(oid), rec.Value)
+		assert.Equal(t, objfmt.SHA1Hash{}, rec.Peeled)
 		assert.Empty(t, rec.Target)
 	})
 
@@ -90,14 +96,14 @@ func Test_decodeRefRecord(t *testing.T) {
 		}
 		raw := encodeRefRecord(nil, "refs/tags/v1", 2, 0, val, peel, "", 20)
 
-		rec, _, n, err := decodeRefRecord(raw, nil, 50, 20)
+		rec, _, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 50)
 		require.NoError(t, err)
 		assert.Equal(t, len(raw), n)
 		assert.Equal(t, "refs/tags/v1", rec.Name)
 		assert.Equal(t, uint8(2), rec.ValueType)
 		assert.Equal(t, uint64(50), rec.UpdateIndex)
-		assert.Equal(t, hashFromBytes(val, 20), rec.Value)
-		assert.Equal(t, hashFromBytes(peel, 20), rec.Peeled)
+		assert.Equal(t, sha1FromBytes(val), rec.Value)
+		assert.Equal(t, sha1FromBytes(peel), rec.Peeled)
 		assert.NotEqual(t, rec.Value, rec.Peeled)
 		assert.Empty(t, rec.Target)
 	})
@@ -105,28 +111,28 @@ func Test_decodeRefRecord(t *testing.T) {
 	t.Run("symref", func(t *testing.T) {
 		raw := encodeRefRecord(nil, "HEAD", 3, 1, nil, nil, "refs/heads/main", 20)
 
-		rec, _, n, err := decodeRefRecord(raw, nil, 10, 20)
+		rec, _, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 10)
 		require.NoError(t, err)
 		assert.Equal(t, len(raw), n)
 		assert.Equal(t, "HEAD", rec.Name)
 		assert.Equal(t, uint8(3), rec.ValueType)
 		assert.Equal(t, uint64(11), rec.UpdateIndex)
 		assert.Equal(t, "refs/heads/main", rec.Target)
-		assert.Equal(t, objfmt.Hash{}, rec.Value)
-		assert.Equal(t, objfmt.Hash{}, rec.Peeled)
+		assert.Equal(t, objfmt.SHA1Hash{}, rec.Value)
+		assert.Equal(t, objfmt.SHA1Hash{}, rec.Peeled)
 	})
 
 	t.Run("deletion_tombstone", func(t *testing.T) {
 		raw := encodeRefRecord(nil, "refs/heads/gone", 0, 3, nil, nil, "", 20)
 
-		rec, _, n, err := decodeRefRecord(raw, nil, 0, 20)
+		rec, _, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 0)
 		require.NoError(t, err)
 		assert.Equal(t, len(raw), n)
 		assert.Equal(t, "refs/heads/gone", rec.Name)
 		assert.Equal(t, uint8(0), rec.ValueType)
 		assert.Equal(t, uint64(3), rec.UpdateIndex)
-		assert.Equal(t, objfmt.Hash{}, rec.Value)
-		assert.Equal(t, objfmt.Hash{}, rec.Peeled)
+		assert.Equal(t, objfmt.SHA1Hash{}, rec.Value)
+		assert.Equal(t, objfmt.SHA1Hash{}, rec.Peeled)
 		assert.Empty(t, rec.Target)
 	})
 
@@ -156,7 +162,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 		var key []byte
 		for i, name := range names {
-			rec, k, _, err := decodeRefRecord(buf[offsets[i]:], key, 0, 20)
+			rec, k, _, err := decodeRefRecord[objfmt.SHA1Hash](buf[offsets[i]:], key, 0)
 			require.NoError(t, err)
 			assert.Equal(t, name, rec.Name)
 			assert.Equal(t, []byte(name), k)
@@ -171,11 +177,11 @@ func Test_decodeRefRecord(t *testing.T) {
 		}
 		raw := encodeRefRecord(nil, "refs/heads/main", 1, 0, oid, nil, "", 32)
 
-		rec, _, n, err := decodeRefRecord(raw, nil, 5, 32)
+		rec, _, n, err := decodeRefRecord[objfmt.SHA256Hash](raw, nil, 5)
 		require.NoError(t, err)
 		assert.Equal(t, len(raw), n)
 		assert.Equal(t, uint64(5), rec.UpdateIndex)
-		assert.Equal(t, hashFromBytes(oid, 32), rec.Value)
+		assert.Equal(t, sha256FromBytes(oid), rec.Value)
 		// Every byte of the 32-byte buffer is populated for SHA-256.
 		for i := range 32 {
 			assert.Equal(t, byte(i+1), rec.Value[i])
@@ -188,7 +194,7 @@ func Test_decodeRefRecord(t *testing.T) {
 		raw := encodeKey(nil, []byte("HEAD"), 4)
 		raw = append(raw, encodeVarint(0)...)
 
-		_, _, _, err := decodeRefRecord(raw, nil, 0, 20)
+		_, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 0)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrUnsupportedValueType), "want ErrUnsupportedValueType, got %v", err)
 	})
@@ -199,7 +205,7 @@ func Test_decodeRefRecord(t *testing.T) {
 		raw = append(raw, encodeVarint(0)...)
 		raw = append(raw, make([]byte, 10)...)
 
-		_, _, _, err := decodeRefRecord(raw, nil, 0, 20)
+		_, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 0)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrTruncatedRecord), "want ErrTruncatedRecord, got %v", err)
 	})
@@ -211,7 +217,7 @@ func Test_decodeRefRecord(t *testing.T) {
 		raw = append(raw, encodeVarint(16)...) // target_len
 		raw = append(raw, []byte("refs")...)   // truncated target
 
-		_, _, _, err := decodeRefRecord(raw, nil, 0, 20)
+		_, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 0)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrTruncatedRecord), "want ErrTruncatedRecord, got %v", err)
 	})
@@ -221,7 +227,7 @@ func Test_decodeRefRecord(t *testing.T) {
 		// wrap; the decoder must reject rather than silently overflow.
 		raw := encodeRefRecord(nil, "HEAD", 0, 5, nil, nil, "", 20)
 
-		_, _, _, err := decodeRefRecord(raw, nil, ^uint64(0)-2, 20)
+		_, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, ^uint64(0)-2)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrUpdateIndexOverflow), "want ErrUpdateIndexOverflow, got %v", err)
 	})

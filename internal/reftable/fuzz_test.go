@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // FuzzOpenReader feeds arbitrary bytes through [OpenReader] and the hot
@@ -57,23 +59,31 @@ func FuzzOpenReader(f *testing.F) {
 		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		r, err := OpenReader(path)
-		if err != nil {
-			return
+		// Exercise both algorithm dispatches: a fuzz input may have any
+		// hash_id tag, and the typed reader rejects mismatches early.
+		// Trying both keeps coverage on the decode path regardless of
+		// which algo the mutated header declares.
+		if r, err := OpenReader[objfmt.SHA1Hash](path); err == nil {
+			fuzzExerciseReader(r)
+			r.Close()
 		}
-		defer r.Close()
-
-		// Exercise the iteration and lookup paths on successful opens
-		// so block-level decoding panics (out-of-bounds slices, varint
-		// overflows) surface even when the header and trailer are
-		// well-formed.
-		for rec, iterErr := range r.IterRefs() {
-			if iterErr != nil {
-				return
-			}
-			_, _, _ = r.FindRef(rec.Name)
+		if r, err := OpenReader[objfmt.SHA256Hash](path); err == nil {
+			fuzzExerciseReader(r)
+			r.Close()
 		}
 	})
+}
+
+// fuzzExerciseReader walks IterRefs and FindRef on an opened reader so
+// block-level decoding panics (out-of-bounds slices, varint overflows)
+// surface even when the header and trailer are well-formed.
+func fuzzExerciseReader[H objfmt.HashType](r *Reader[H]) {
+	for rec, iterErr := range r.IterRefs() {
+		if iterErr != nil {
+			return
+		}
+		_, _, _ = r.FindRef(rec.Name)
+	}
 }
 
 // FuzzOpenStack feeds arbitrary bytes as a `tables.list` manifest into
@@ -100,10 +110,13 @@ func FuzzOpenStack(f *testing.F) {
 		if err := os.WriteFile(filepath.Join(dir, "tables.list"), manifest, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		s, err := OpenStack(dir)
-		if err != nil {
-			return
+		// Try both algorithms, same rationale as [FuzzOpenReader]: a
+		// mutated manifest could point at a reftable of either algo.
+		if s, err := OpenStack[objfmt.SHA1Hash](dir); err == nil {
+			s.Close()
 		}
-		s.Close()
+		if s, err := OpenStack[objfmt.SHA256Hash](dir); err == nil {
+			s.Close()
+		}
 	})
 }

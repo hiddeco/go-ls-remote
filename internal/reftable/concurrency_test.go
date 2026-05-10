@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +43,7 @@ var concurrentNames = []string{
 }
 
 func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
-	r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 
@@ -100,7 +101,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 }
 
 func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
-	r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 
 	// Spawn a handful of readers, let each finish a fixed amount of
@@ -136,7 +137,7 @@ func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 }
 
 func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
-	s, err := OpenStack(stackDir(t, "with-index-sha1"))
+	s, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "with-index-sha1"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 

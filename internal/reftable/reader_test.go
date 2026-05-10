@@ -18,7 +18,7 @@ func fixturePath(t *testing.T, rel string) string {
 
 func TestOpenReader(t *testing.T) {
 	t.Run("sha1_fixture_opens", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 		assert.Equal(t, objfmt.SHA1, r.HashAlgo())
@@ -26,7 +26,7 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("sha256_fixture_opens", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 		assert.Equal(t, objfmt.SHA256, r.HashAlgo())
@@ -34,20 +34,32 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("with_index_opens", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 		assert.Equal(t, objfmt.SHA1, r.HashAlgo())
 	})
 
+	t.Run("hash_algo_mismatch_rejected", func(t *testing.T) {
+		// Opening a SHA-256 file as a SHA-1 reader (and vice versa)
+		// surfaces as [ErrMixedHashAlgo] before any record is touched.
+		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrMixedHashAlgo), "want ErrMixedHashAlgo, got %v", err)
+
+		_, err = OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrMixedHashAlgo), "want ErrMixedHashAlgo, got %v", err)
+	})
+
 	t.Run("corrupt_trailer_rejected", func(t *testing.T) {
-		_, err := OpenReader(fixturePath(t, "corrupt-trailer-sha1.ref"))
+		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "corrupt-trailer-sha1.ref"))
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrTrailerChecksum), "want ErrTrailerChecksum, got %v", err)
 	})
 
 	t.Run("truncated_rejected", func(t *testing.T) {
-		_, err := OpenReader(fixturePath(t, "truncated-sha1.ref"))
+		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "truncated-sha1.ref"))
 		require.Error(t, err)
 		// Either the header guard or the trailer guard fires; both
 		// surface as ErrShortFile under the chosen 50-byte truncation.
@@ -55,32 +67,29 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("missing_path", func(t *testing.T) {
-		_, err := OpenReader(fixturePath(t, "does-not-exist.ref"))
+		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "does-not-exist.ref"))
 		require.Error(t, err)
 	})
 }
 
 func TestReader_HashAlgo(t *testing.T) {
-	cases := []struct {
-		name   string
-		path   string
-		expect objfmt.Algo
-	}{
-		{"sha1", "single-sha1/0001-0001-aaaaaaaa.ref", objfmt.SHA1},
-		{"sha256", "single-sha256/0001-0001-aaaaaaaa.ref", objfmt.SHA256},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r, err := OpenReader(fixturePath(t, tc.path))
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = r.Close() })
-			assert.Equal(t, tc.expect, r.HashAlgo())
-		})
-	}
+	t.Run("sha1", func(t *testing.T) {
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		assert.Equal(t, objfmt.SHA1, r.HashAlgo())
+	})
+
+	t.Run("sha256", func(t *testing.T) {
+		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		assert.Equal(t, objfmt.SHA256, r.HashAlgo())
+	})
 }
 
 func TestReader_Close_Idempotent(t *testing.T) {
-	r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 	require.NoError(t, r.Close())
 	// A second Close must not panic and must not return an error.
@@ -89,16 +98,16 @@ func TestReader_Close_Idempotent(t *testing.T) {
 
 func TestReader_IterRefs(t *testing.T) {
 	t.Run("single_sha1_yields_records", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
 		var (
-			recs       []RefRecord
+			recs       []RefRecord[objfmt.SHA1Hash]
 			iterErr    error
 			seenHEAD   bool
 			seenMain   bool
-			mainRecord RefRecord
+			mainRecord RefRecord[objfmt.SHA1Hash]
 		)
 		for rec, err := range r.IterRefs() {
 			if err != nil {
@@ -127,7 +136,7 @@ func TestReader_IterRefs(t *testing.T) {
 	})
 
 	t.Run("sha256_yields_records", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -141,7 +150,7 @@ func TestReader_IterRefs(t *testing.T) {
 	})
 
 	t.Run("with_index_yields_all_records", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -174,7 +183,7 @@ func TestReader_IterRefs(t *testing.T) {
 	})
 
 	t.Run("iter_stops_on_break", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -202,7 +211,7 @@ func TestReader_IterRefs(t *testing.T) {
 
 func TestReader_FindRef(t *testing.T) {
 	t.Run("single_sha1_hit", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -214,7 +223,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("single_sha1_head_symref", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -227,7 +236,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("single_sha1_miss", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -238,7 +247,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("with_index_hit", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -252,7 +261,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("with_index_miss", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 
@@ -262,7 +271,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("sha256_hit", func(t *testing.T) {
-		r, err := OpenReader(fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
+		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
 

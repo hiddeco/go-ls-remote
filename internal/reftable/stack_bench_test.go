@@ -3,12 +3,14 @@ package reftable
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // benchStackRefSink and benchStackOKSink defeat DCE on Stack-level
 // benchmarks where the result would otherwise go unused.
 var (
-	benchStackRefSink RefRecord
+	benchStackRefSink RefRecord[objfmt.SHA1Hash]
 	benchStackOKSink  bool
 )
 
@@ -20,7 +22,7 @@ func BenchmarkStack_FindRef_Hit(b *testing.B) {
 	// `Stack.FindRef` is a pure map lookup against the merged view
 	// built at OpenStack time — the merge cost is paid up front, so
 	// this should be cheap and allocation-free.
-	s, err := OpenStack(benchStackDir("with-index-sha1"))
+	s, err := OpenStack[objfmt.SHA1Hash](benchStackDir("with-index-sha1"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -47,7 +49,7 @@ func BenchmarkStack_FindRef_Hit(b *testing.B) {
 }
 
 func BenchmarkStack_FindRef_Miss(b *testing.B) {
-	s, err := OpenStack(benchStackDir("with-index-sha1"))
+	s, err := OpenStack[objfmt.SHA1Hash](benchStackDir("with-index-sha1"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -66,7 +68,7 @@ func BenchmarkStack_IterRefs(b *testing.B) {
 	// post-OpenStack merge already done this should be O(N) per call
 	// with a single per-name map lookup. A baseline against future
 	// changes that revisit the iteration path.
-	s, err := OpenStack(benchStackDir("with-index-sha1"))
+	s, err := OpenStack[objfmt.SHA1Hash](benchStackDir("with-index-sha1"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -97,7 +99,7 @@ func BenchmarkOpenStack_SingleTable(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		s, err := OpenStack(dir)
+		s, err := OpenStack[objfmt.SHA1Hash](dir)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -115,7 +117,7 @@ func BenchmarkOpenStack_ShadowedStack(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		s, err := OpenStack(dir)
+		s, err := OpenStack[objfmt.SHA1Hash](dir)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -17,13 +17,14 @@ import (
 // these with [errors.Is]; the wrapping `fmt.Errorf("...: %w", ..., sentinel)`
 // adds context (offending line, mismatching algos) for diagnostics.
 var (
-	// ErrMixedHashAlgo is returned by [OpenStack] when the readers it
-	// composes do not all declare the same [objfmt.Algo]. A reftable
-	// stack is, by construction, single-algorithm: a SHA-1 repository's
-	// reftables are all SHA-1, a SHA-256 repository's all SHA-256.
-	// Mixed bytes on disk indicate either repository corruption or a
-	// developer mistake; either way, refusing to open is safer than
-	// letting hash-size mismatches propagate into record decoding.
+	// ErrMixedHashAlgo is returned when the on-disk hash algorithm of a
+	// reftable file does not match the [objfmt.HashType] the reader was
+	// instantiated for. A reftable stack is, by construction, single-
+	// algorithm: a SHA-1 repository's reftables are all SHA-1, a SHA-256
+	// repository's all SHA-256. Mixed bytes on disk indicate either
+	// repository corruption or a developer mistake; either way, refusing
+	// to open is safer than letting hash-size mismatches propagate into
+	// record decoding.
 	ErrMixedHashAlgo = errors.New("reftable: stack has mixed hash algorithms")
 
 	// ErrInvalidTablesList is returned when `tables.list` cannot be
@@ -60,11 +61,11 @@ var (
 // with itself; callers must drain in-flight reads before closing and
 // serialize Close calls. Once drained, Close is idempotent — a second
 // call returns nil without touching the OS.
-type Stack struct {
-	readers []*Reader            // [0] = oldest table, [n-1] = newest
-	merged  map[string]RefRecord // pre-computed merged view
-	sorted  []string             // ref names sorted lexicographically; cached for IterRefs
-	algo    objfmt.Algo          // taken from the first reader; nil when empty
+type Stack[H objfmt.HashType] struct {
+	readers []*Reader[H]            // [0] = oldest table, [n-1] = newest
+	merged  map[string]RefRecord[H] // pre-computed merged view
+	sorted  []string                // ref names sorted lexicographically; cached for IterRefs
+	algo    objfmt.Algo             // taken from the first reader; nil when empty
 }
 
 // OpenStack reads `<reftableDir>/tables.list`, opens each listed
@@ -76,15 +77,17 @@ type Stack struct {
 // [ErrInvalidTablesList]. See canonical Git's
 // `reftable/stack.c::read_lines` for the wire-compatible parser.
 //
-// All readers must share the same [objfmt.Algo]; mismatches surface as
-// [ErrMixedHashAlgo] after every reader has been closed. Errors from
-// individual [OpenReader] calls propagate unwrapped (e.g. fs.ErrNotExist
-// when a basename in the manifest does not exist on disk); already
-// opened readers are closed before the error returns.
+// Every reader is opened under the stack's static hash type `H`; a file
+// whose on-disk hash algorithm does not match surfaces as
+// [ErrMixedHashAlgo] from [OpenReader] before its bytes feed the merge.
+// Errors from individual [OpenReader] calls propagate unwrapped
+// otherwise (e.g. fs.ErrNotExist when a basename in the manifest does
+// not exist on disk); already opened readers are closed before the
+// error returns.
 //
 // On successful return the caller owns the [Stack] and must release it
 // with [Stack.Close].
-func OpenStack(reftableDir string) (*Stack, error) {
+func OpenStack[H objfmt.HashType](reftableDir string) (*Stack[H], error) {
 	manifest := filepath.Join(reftableDir, "tables.list")
 	raw, err := os.ReadFile(manifest)
 	if err != nil {
@@ -96,12 +99,16 @@ func OpenStack(reftableDir string) (*Stack, error) {
 		return nil, err
 	}
 
-	// Empty stack: no readers, no merged entries, nil algo.
+	// Empty stack: no readers, no merged entries, nil algo. The type
+	// parameter `H` is statically fixed by the call site, but with no
+	// reader to read it from there is no identity-only [objfmt.Algo]
+	// value to return either; callers compare `HashAlgo() == nil` (or
+	// use [Stack.Len]) for the empty case.
 	if len(names) == 0 {
-		return &Stack{merged: map[string]RefRecord{}, sorted: []string{}}, nil
+		return &Stack[H]{merged: map[string]RefRecord[H]{}, sorted: []string{}}, nil
 	}
 
-	readers := make([]*Reader, 0, len(names))
+	readers := make([]*Reader[H], 0, len(names))
 	closeAll := func() {
 		for _, r := range readers {
 			_ = r.Close()
@@ -109,7 +116,7 @@ func OpenStack(reftableDir string) (*Stack, error) {
 	}
 
 	for _, basename := range names {
-		r, err := OpenReader(filepath.Join(reftableDir, basename))
+		r, err := OpenReader[H](filepath.Join(reftableDir, basename))
 		if err != nil {
 			closeAll()
 			return nil, err
@@ -118,14 +125,8 @@ func OpenStack(reftableDir string) (*Stack, error) {
 	}
 
 	algo := readers[0].HashAlgo()
-	for _, r := range readers[1:] {
-		if r.HashAlgo() != algo {
-			closeAll()
-			return nil, fmt.Errorf("reftable: %s vs %s: %w", algo, r.HashAlgo(), ErrMixedHashAlgo)
-		}
-	}
 
-	merged := make(map[string]RefRecord)
+	merged := make(map[string]RefRecord[H])
 	for _, r := range readers {
 		for rec, err := range r.iterAllRefs() {
 			if err != nil {
@@ -145,7 +146,7 @@ func OpenStack(reftableDir string) (*Stack, error) {
 	// so callers never observe a stale order.
 	sorted := slices.Sorted(maps.Keys(merged))
 
-	return &Stack{readers: readers, merged: merged, sorted: sorted, algo: algo}, nil
+	return &Stack[H]{readers: readers, merged: merged, sorted: sorted, algo: algo}, nil
 }
 
 // parseTablesList splits a `tables.list` payload into basenames.
@@ -185,7 +186,7 @@ func parseTablesList(raw []byte) ([]string, error) {
 // is returned; subsequent reader closes still run so no mapping is
 // leaked. Close is NOT safe to call concurrently with read methods or
 // with itself; see the [Stack] concurrency contract.
-func (s *Stack) Close() error {
+func (s *Stack[H]) Close() error {
 	if s.readers == nil {
 		return nil
 	}
@@ -209,7 +210,7 @@ func (s *Stack) Close() error {
 // nil: the [objfmt.Algo] interface's zero value. Callers handling the
 // empty case should use [Stack.Len] rather than comparing the result
 // against a known algo.
-func (s *Stack) HashAlgo() objfmt.Algo {
+func (s *Stack[H]) HashAlgo() objfmt.Algo {
 	return s.algo
 }
 
@@ -221,7 +222,7 @@ func (s *Stack) HashAlgo() objfmt.Algo {
 // refs are observable, and Len answers that without forcing a walk.
 // Callers that specifically need to detect the empty-stack case can
 // check `s.HashAlgo() == nil` alongside Len.
-func (s *Stack) Len() int {
+func (s *Stack[H]) Len() int {
 	return len(s.merged)
 }
 
@@ -238,8 +239,8 @@ func (s *Stack) Len() int {
 // the iterator yields one (RefRecord{}, err) pair and stops.
 //
 // Breaking out of the range loop is supported.
-func (s *Stack) IterRefs() iter.Seq2[RefRecord, error] {
-	return func(yield func(RefRecord, error) bool) {
+func (s *Stack[H]) IterRefs() iter.Seq2[RefRecord[H], error] {
+	return func(yield func(RefRecord[H], error) bool) {
 		for _, name := range s.sorted {
 			if !yield(s.merged[name], nil) {
 				return
@@ -255,7 +256,7 @@ func (s *Stack) IterRefs() iter.Seq2[RefRecord, error] {
 // shadowed by a tombstone in a later table is reported as no-match:
 // the merge step removed it from the view at OpenStack time. The error
 // return is reserved for future use; today this method does not fail.
-func (s *Stack) FindRef(name string) (RefRecord, bool, error) {
+func (s *Stack[H]) FindRef(name string) (RefRecord[H], bool, error) {
 	rec, ok := s.merged[name]
 	return rec, ok, nil
 }
