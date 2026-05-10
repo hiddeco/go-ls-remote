@@ -84,10 +84,12 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	derivedCtx, cancel := context.WithCancel(ctx)
 
-	// Wire the tracer at both endpoints of the in-process pipe pair:
-	// the client-side reader/writer here AND the server-side
-	// reader/writer in the goroutine below. See `tracer.go` for the
-	// event-doubling rationale.
+	// Wire the tracer at the client-side reader/writer
+	// unconditionally. The server-side endpoints in the goroutine
+	// below are wired only when [WithEndpointTrace] was supplied —
+	// see `tracer.go` for the event-doubling rationale and why the
+	// default matches the HTTP transport's one-event-per-pkt-line
+	// shape.
 	conn := &Conn{
 		reader:       pktline.NewReader(clientReader, inboundReaderOpts(opts.Tracer, redacted)...),
 		writer:       pktline.NewWriter(clientWriter, outboundWriterOpts(opts.Tracer, redacted)...),
@@ -100,11 +102,18 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		serverWriter: serverWriter,
 	}
 
+	// `server.Options.Tracer` carries the [trace.CommandEvent] surface
+	// the in-process emulator emits around each request. It is
+	// independent of the per-pkt-line `PacketEvent` wiring above: the
+	// command-level surface stays wired by default so callers see
+	// command tracing through every transport without opt-in.
 	srvOpts := server.Options{
 		Agent:             opts.UserAgent,
 		PreferredProtocol: preferred,
 		Tracer:            opts.Tracer,
 	}
+
+	serverTracer := serverEndpointTracer(t, opts.Tracer)
 	go func() {
 		defer close(conn.done)
 
@@ -115,8 +124,8 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		// returns it directly, matching how a real transport would
 		// propagate a server-side fault.
 		srvErr := server.Serve(derivedCtx,
-			pktline.NewReader(serverReader, inboundReaderOpts(opts.Tracer, redacted)...),
-			pktline.NewWriter(serverWriter, outboundWriterOpts(opts.Tracer, redacted)...),
+			pktline.NewReader(serverReader, inboundReaderOpts(serverTracer, redacted)...),
+			pktline.NewWriter(serverWriter, outboundWriterOpts(serverTracer, redacted)...),
 			store,
 			srvOpts,
 		)

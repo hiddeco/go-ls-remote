@@ -42,13 +42,14 @@ import (
 // A zero-value [Transport] is usable: the dial opens the repository
 // referenced by the `file://` URL and serves it through an in-process
 // upload-pack loop with no extra configuration.
-//
-// The struct deliberately has no exported knobs — the local-file
-// transport accepts a `file://` URL and nothing else, so there is no
-// path-injection surface to expose. Future per-Transport tuning (for
-// example a hook that swaps in a test object-store backend) will be
-// added here.
-type Transport struct{}
+type Transport struct {
+	// endpointTrace, when true, additionally wires
+	// [transport.OpenOptions.Tracer] at the in-process server's
+	// pkt-line reader and writer — not just the client-side endpoints
+	// the default shape covers. Set via [WithEndpointTrace]. See the
+	// option's doc for the event-doubling rationale.
+	endpointTrace bool
+}
 
 // New returns a [Transport] configured with opts. The zero
 // configuration is usable; options refine it. Nil entries in opts are

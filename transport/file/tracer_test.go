@@ -66,21 +66,22 @@ func (c *capturingTracer) commandEvents() []trace.CommandEvent {
 	return out
 }
 
-// TestTracer_PacketEvents_BothEndpoints verifies that wiring a single
-// tracer through `OpenOptions.Tracer` causes the file transport to emit
-// `PacketEvent`s from both endpoints of the in-process pipe pair: the
-// client-side reader and writer AND the server-side reader and writer.
-// One pkt-line crossing the pipe therefore produces two events on the
-// shared tracer — one per endpoint's view — and the test asserts both
-// directions are populated.
-func TestTracer_PacketEvents_BothEndpoints(t *testing.T) {
+// runTracedRoundTrip opens a [Conn] against the `loose-only` fixture
+// with tracer wired through `OpenOptions.Tracer`, runs an
+// advertisement drain plus a single `ls-refs` command, and returns
+// the captured `PacketEvent`s. Both shape assertions and event-count
+// comparisons are layered on top of this helper so the workload is
+// identical across default-vs-opt-in cases.
+func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, string) {
+	t.Helper()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tracer := &capturingTracer{}
 
-	tr := New()
+	tr := New(opts...)
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
 		UserAgent: "test/0.0",
 		Tracer:    tracer,
@@ -104,12 +105,24 @@ func TestTracer_PacketEvents_BothEndpoints(t *testing.T) {
 	// emit path.
 	require.NoError(t, conn.Close())
 
-	pkts := tracer.packetEvents()
+	return tracer.packetEvents(), transport.RedactURL(u.Raw)
+}
+
+// TestTracer_PacketEvents_DefaultClientSideOnly pins the default-off
+// shape: without `WithEndpointTrace`, the file transport wires
+// `OpenOptions.Tracer` only at the client-side reader and writer. Each
+// pkt-line crossing the pipe pair therefore produces exactly one
+// event on the shared tracer — matching the HTTP transport's
+// one-event-per-pkt-line shape. The client observes its own writes as
+// Outbound and the server's writes as Inbound when reading them off
+// the pipe, so both directions are populated, but no event originates
+// from the in-process server's reader/writer.
+func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
+	pkts, wantURL := runTracedRoundTrip(t)
 	require.NotEmpty(t, pkts,
-		"the wired tracer must observe pkt-line events from at least one endpoint")
+		"the client-side tracer must observe pkt-line events for the round-trip")
 
 	var inbound, outbound int
-	wantURL := transport.RedactURL(u.Raw)
 	for _, p := range pkts {
 		switch p.Direction {
 		case trace.DirectionInbound:
@@ -121,17 +134,52 @@ func TestTracer_PacketEvents_BothEndpoints(t *testing.T) {
 			"every PacketEvent must carry the redacted file:// URL")
 	}
 	assert.Greater(t, inbound, 0,
-		"the tracer must observe inbound PacketEvents (client reading server, server reading client)")
+		"the client-side reader must observe inbound PacketEvents (server's writes)")
 	assert.Greater(t, outbound, 0,
-		"the tracer must observe outbound PacketEvents (client writing to server, server writing to client)")
+		"the client-side writer must observe outbound PacketEvents (client's writes)")
+}
+
+// TestTracer_PacketEvents_WithEndpointTraceDoubles verifies the opt-in
+// path: passing `WithEndpointTrace()` to [New] additionally wires the
+// tracer at the in-process server's reader and writer, so each
+// pkt-line on the pipe pair produces TWO events (one Outbound from
+// the writing side, one Inbound from the reading side). Compared to
+// the default shape, the same workload yields exactly twice as many
+// events in total, with matching inbound and outbound counts after a
+// fully drained round-trip.
+func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
+	defaultPkts, _ := runTracedRoundTrip(t)
+	endpointPkts, wantURL := runTracedRoundTrip(t, WithEndpointTrace())
+
+	require.NotEmpty(t, defaultPkts,
+		"the default round-trip must produce at least one PacketEvent")
+	require.NotEmpty(t, endpointPkts,
+		"the endpoint-traced round-trip must produce at least one PacketEvent")
+
+	assert.Equal(t, 2*len(defaultPkts), len(endpointPkts),
+		"endpoint-traced round-trip should emit exactly twice as many events as the default")
+
+	var inbound, outbound int
+	for _, p := range endpointPkts {
+		switch p.Direction {
+		case trace.DirectionInbound:
+			inbound++
+		case trace.DirectionOutbound:
+			outbound++
+		}
+		assert.Equal(t, wantURL, p.URL,
+			"every PacketEvent must carry the redacted file:// URL")
+	}
+	assert.Greater(t, inbound, 0,
+		"the tracer must observe inbound PacketEvents from both endpoints")
+	assert.Greater(t, outbound, 0,
+		"the tracer must observe outbound PacketEvents from both endpoints")
 
 	// With both endpoints wired, every byte that crosses the pipe is
-	// observed twice — once by the writing side as Outbound and once by
-	// the reading side as Inbound. The two counts must therefore match
-	// to within the small set of in-flight packets that would be
-	// captured by only one side at a given moment. After a fully
-	// drained advertisement and command response, no packets are in
-	// flight: every emitted pkt-line has been read.
+	// observed twice — once by the writing side as Outbound and once
+	// by the reading side as Inbound. After a fully drained
+	// advertisement and command response, no packets are in flight:
+	// every emitted pkt-line has been read.
 	assert.Equal(t, inbound, outbound,
 		"two-endpoint wiring should yield matching inbound/outbound counts after a full drain")
 }
