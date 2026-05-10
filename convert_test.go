@@ -1,0 +1,364 @@
+package lsremote
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/wire"
+)
+
+func Test_convertCaps(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     wire.RawCapabilities
+		version ProtocolVersion
+		check   func(t *testing.T, c Capabilities)
+	}{
+		{
+			name:    "empty raw, v2",
+			raw:     nil,
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ProtocolV2, c.Version)
+				assert.Equal(t, "", c.Agent)
+				assert.Equal(t, ObjectFormat(""), c.ObjectFormat)
+				assert.Nil(t, c.Commands)
+				assert.Nil(t, c.LSRefsArgs)
+				assert.Nil(t, c.ObjectInfoArgs)
+				assert.Nil(t, c.FetchArgs)
+				assert.Nil(t, c.Symrefs)
+				assert.NotNil(t, c.Raw)
+				assert.Empty(t, c.Raw)
+			},
+		},
+		{
+			name: "v0 with symref, agent, object-format=sha1",
+			raw: wire.RawCapabilities{
+				{Name: "symref", Value: "HEAD:refs/heads/main"},
+				{Name: "agent", Value: "git/2.40.0"},
+				{Name: "object-format", Value: "sha1"},
+			},
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ProtocolV0, c.Version)
+				assert.Equal(t, "git/2.40.0", c.Agent)
+				assert.Equal(t, ObjectFormatSHA1, c.ObjectFormat)
+				assert.Nil(t, c.Commands)
+				assert.Equal(t, []Symref{
+					{Name: "HEAD", Target: "refs/heads/main"},
+				}, c.Symrefs)
+				assert.Nil(t, c.LSRefsArgs)
+				assert.Nil(t, c.ObjectInfoArgs)
+				assert.Nil(t, c.FetchArgs)
+			},
+		},
+		{
+			name: "v2 commands and per-command args",
+			raw: wire.RawCapabilities{
+				{Name: "agent", Value: "git/2.45.0"},
+				{Name: "object-format", Value: "sha256"},
+				{Name: "ls-refs", Value: "unborn"},
+				{Name: "fetch", Value: "shallow filter"},
+				{Name: "object-info", Value: "size"},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ProtocolV2, c.Version)
+				assert.Equal(t, "git/2.45.0", c.Agent)
+				assert.Equal(t, ObjectFormatSHA256, c.ObjectFormat)
+				assert.Equal(t, []string{"ls-refs", "fetch", "object-info"}, c.Commands)
+				assert.Equal(t, []string{"unborn"}, c.LSRefsArgs)
+				assert.Equal(t, []string{"shallow", "filter"}, c.FetchArgs)
+				assert.Equal(t, []string{"size"}, c.ObjectInfoArgs)
+				assert.Empty(t, c.Symrefs)
+			},
+		},
+		{
+			name: "v2 boolean ls-refs has empty args slice, not nil",
+			raw: wire.RawCapabilities{
+				{Name: "ls-refs", Value: ""},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.NotNil(t, c.LSRefsArgs)
+				assert.Empty(t, c.LSRefsArgs)
+				assert.Equal(t, []string{"ls-refs"}, c.Commands)
+			},
+		},
+		{
+			name: "v2 unknown command name not in allow-list is dropped",
+			raw: wire.RawCapabilities{
+				{Name: "ls-refs", Value: "unborn"},
+				{Name: "future-cmd", Value: "x y"},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, []string{"ls-refs"}, c.Commands)
+			},
+		},
+		{
+			name: "v2 bundle-uri is in allow-list",
+			raw: wire.RawCapabilities{
+				{Name: "ls-refs", Value: ""},
+				{Name: "bundle-uri", Value: ""},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, []string{"ls-refs", "bundle-uri"}, c.Commands)
+			},
+		},
+		{
+			name: "v0 duplicate symref entries both retained",
+			raw: wire.RawCapabilities{
+				{Name: "symref", Value: "HEAD:refs/heads/main"},
+				{Name: "symref", Value: "refs/remotes/origin/HEAD:refs/heads/main"},
+			},
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, []Symref{
+					{Name: "HEAD", Target: "refs/heads/main"},
+					{Name: "refs/remotes/origin/HEAD", Target: "refs/heads/main"},
+				}, c.Symrefs)
+			},
+		},
+		{
+			name: "v0 malformed symref without colon is skipped",
+			raw: wire.RawCapabilities{
+				{Name: "symref", Value: "HEAD:refs/heads/main"},
+				{Name: "symref", Value: "garbage"},
+				{Name: "symref", Value: ":nohead"},
+				{Name: "symref", Value: "notarget:"},
+			},
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, []Symref{
+					{Name: "HEAD", Target: "refs/heads/main"},
+				}, c.Symrefs)
+			},
+		},
+		{
+			name: "object-format unknown value preserved raw",
+			raw: wire.RawCapabilities{
+				{Name: "object-format", Value: "sha512"},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ObjectFormat("sha512"), c.ObjectFormat)
+			},
+		},
+		{
+			name: "raw map preserves repeated values in order",
+			raw: wire.RawCapabilities{
+				{Name: "agent", Value: "git/2.45.0"},
+				{Name: "symref", Value: "HEAD:refs/heads/main"},
+				{Name: "symref", Value: "refs/remotes/origin/HEAD:refs/heads/main"},
+				{Name: "multi_ack", Value: ""},
+			},
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				require.NotNil(t, c.Raw)
+				assert.Equal(t, []string{"git/2.45.0"}, c.Raw["agent"])
+				assert.Equal(t, []string{
+					"HEAD:refs/heads/main",
+					"refs/remotes/origin/HEAD:refs/heads/main",
+				}, c.Raw["symref"])
+				assert.Equal(t, []string{""}, c.Raw["multi_ack"])
+			},
+		},
+		{
+			name: "v2 ls-refs with multiple args via whitespace",
+			raw: wire.RawCapabilities{
+				{Name: "ls-refs", Value: "peel symrefs unborn"},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, []string{"peel", "symrefs", "unborn"}, c.LSRefsArgs)
+			},
+		},
+		{
+			name: "v2 does not populate Symrefs even if symref capability present",
+			raw: wire.RawCapabilities{
+				{Name: "symref", Value: "HEAD:refs/heads/main"},
+			},
+			version: ProtocolV2,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Empty(t, c.Symrefs)
+			},
+		},
+		{
+			name: "version reflects the argument exactly",
+			raw:  wire.RawCapabilities{},
+			// Constructing a Capabilities with V1 even though raw is empty —
+			// the public Version reflects the negotiated version verbatim.
+			version: ProtocolV1,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ProtocolV1, c.Version)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := convertCaps(tc.raw, tc.version)
+			tc.check(t, got)
+		})
+	}
+}
+
+// Test_convertCaps_rawIsolation pins that mutating the returned
+// Capabilities.Raw does not alter the source RawCapabilities slice.
+func Test_convertCaps_rawIsolation(t *testing.T) {
+	raw := wire.RawCapabilities{
+		{Name: "agent", Value: "git/2.45.0"},
+	}
+	c := convertCaps(raw, ProtocolV2)
+	c.Raw["agent"] = append(c.Raw["agent"], "tampered")
+	c.Raw["new-key"] = []string{"injected"}
+
+	// Source unchanged.
+	require.Len(t, raw, 1)
+	assert.Equal(t, "git/2.45.0", raw[0].Value)
+}
+
+func Test_convertRef(t *testing.T) {
+	cases := []struct {
+		name string
+		in   wire.RawRef
+		want Ref
+	}{
+		{
+			name: "plain ref",
+			in:   wire.RawRef{OID: "abc", Name: "refs/heads/main"},
+			want: Ref{Hash: "abc", Name: "refs/heads/main"},
+		},
+		{
+			name: "peeled tag",
+			in: wire.RawRef{
+				OID:    "aaa",
+				Name:   "refs/tags/v1.0.0",
+				Peeled: "bbb",
+			},
+			want: Ref{
+				Hash:   "aaa",
+				Name:   "refs/tags/v1.0.0",
+				Peeled: "bbb",
+			},
+		},
+		{
+			name: "symref HEAD",
+			in: wire.RawRef{
+				OID:    "ccc",
+				Name:   "HEAD",
+				Symref: "refs/heads/main",
+			},
+			want: Ref{
+				Hash:   "ccc",
+				Name:   "HEAD",
+				Symref: "refs/heads/main",
+			},
+		},
+		{
+			name: "unborn HEAD",
+			in: wire.RawRef{
+				Name:   "HEAD",
+				Symref: "refs/heads/main",
+				Unborn: true,
+			},
+			want: Ref{
+				Name:   "HEAD",
+				Hash:   "",
+				Symref: "refs/heads/main",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := convertRef(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func Test_convertRefs(t *testing.T) {
+	t.Run("nil input returns nil", func(t *testing.T) {
+		assert.Nil(t, convertRefs(nil))
+	})
+
+	t.Run("empty slice returns empty non-nil slice", func(t *testing.T) {
+		got := convertRefs([]wire.RawRef{})
+		assert.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("multiple refs preserve order", func(t *testing.T) {
+		in := []wire.RawRef{
+			{OID: "a", Name: "refs/heads/main"},
+			{OID: "b", Name: "refs/heads/dev", Peeled: "p"},
+			{Name: "HEAD", Symref: "refs/heads/main", Unborn: true},
+		}
+		got := convertRefs(in)
+		assert.Equal(t, []Ref{
+			{Hash: "a", Name: "refs/heads/main"},
+			{Hash: "b", Name: "refs/heads/dev", Peeled: "p"},
+			{Name: "HEAD", Symref: "refs/heads/main"},
+		}, got)
+	})
+}
+
+func Test_convertObjectInfo(t *testing.T) {
+	cases := []struct {
+		name string
+		in   wire.RawObjectInfo
+		want ObjectInfo
+	}{
+		{
+			name: "size requested and returned",
+			in:   wire.RawObjectInfo{OID: "x", Size: 42},
+			want: ObjectInfo{Hash: "x", Size: 42},
+		},
+		{
+			name: "zero size propagated verbatim",
+			in:   wire.RawObjectInfo{OID: "y", Size: 0},
+			want: ObjectInfo{Hash: "y", Size: 0},
+		},
+		{
+			name: "large size",
+			in:   wire.RawObjectInfo{OID: "z", Size: 1 << 40},
+			want: ObjectInfo{Hash: "z", Size: 1 << 40},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := convertObjectInfo(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func Test_convertObjectInfos(t *testing.T) {
+	t.Run("nil input returns nil", func(t *testing.T) {
+		assert.Nil(t, convertObjectInfos(nil))
+	})
+
+	t.Run("empty slice returns empty non-nil slice", func(t *testing.T) {
+		got := convertObjectInfos([]wire.RawObjectInfo{})
+		assert.NotNil(t, got)
+		assert.Empty(t, got)
+	})
+
+	t.Run("multiple rows preserve order", func(t *testing.T) {
+		in := []wire.RawObjectInfo{
+			{OID: "a", Size: 1},
+			{OID: "b", Size: 2},
+			{OID: "c", Size: 3},
+		}
+		got := convertObjectInfos(in)
+		assert.Equal(t, []ObjectInfo{
+			{Hash: "a", Size: 1},
+			{Hash: "b", Size: 2},
+			{Hash: "c", Size: 3},
+		}, got)
+	})
+}
