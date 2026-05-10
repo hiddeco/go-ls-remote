@@ -14,6 +14,20 @@
 // returned [Conn] owns both the goroutine and the underlying store;
 // [Conn.Close] cancels the goroutine's context, closes the pipes, and
 // releases the store in a single idempotent step.
+//
+// # Concurrency
+//
+// A [Conn] returned by [Transport.Open] is a single-session handle and
+// is not safe for concurrent use. The local-filesystem transport
+// attaches a single in-process server goroutine to one pkt-line pipe
+// pair for the [Conn]'s lifetime, so every advertisement read and
+// every [Conn.Command] call shares one stream and one server end.
+// Concurrent [Conn.Command] invocations would interleave request
+// frames into the same pipe and race against the server's response
+// emission; the contract per [transport.Conn] is that callers
+// serialise these calls themselves. Multiple independent [Conn]s
+// against the same or different repositories can run in parallel —
+// each owns a disjoint goroutine and pipe pair.
 package filet
 
 import (
