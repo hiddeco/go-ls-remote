@@ -2,7 +2,6 @@ package httpt
 
 import (
 	"context"
-	"crypto/tls"
 	"net/http"
 
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -41,10 +40,6 @@ type Transport struct {
 	// creds resolves a [Credentials] per dial. nil means anonymous
 	// requests.
 	creds CredentialResolver
-
-	// tlsConfig overrides TLS for HTTPS dials. nil means use the
-	// stdlib defaults via the configured client.
-	tlsConfig *tls.Config
 
 	// userAgent is the per-Transport agent string. The empty string
 	// defers to [transport.OpenOptions.UserAgent] and ultimately to

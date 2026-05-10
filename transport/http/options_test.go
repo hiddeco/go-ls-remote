@@ -2,7 +2,6 @@ package httpt
 
 import (
 	"context"
-	"crypto/tls"
 	"net/http"
 	"net/url"
 	"testing"
@@ -18,7 +17,6 @@ func TestNew_zeroValueDefaults(t *testing.T) {
 	assert.Nil(t, tr.client, "client is nil; resolved to http.DefaultClient at Open time")
 	assert.Nil(t, tr.creds, "creds is nil; means no credentials")
 	assert.Empty(t, tr.userAgent, "userAgent default is empty; caller decides at Open time")
-	assert.Nil(t, tr.tlsConfig, "tlsConfig is nil unless overridden")
 	assert.Equal(t, FollowRedirectsInitial, tr.followRedirects,
 		"followRedirects zero value is Initial per Documentation/config/http.adoc:359-365")
 	assert.Equal(t, 0, tr.maxRedirects,
@@ -64,13 +62,6 @@ func TestWithUserAgent(t *testing.T) {
 	assert.Equal(t, "test-agent/1.0", tr.userAgent)
 }
 
-func TestWithTLSConfig(t *testing.T) {
-	cfg := &tls.Config{ServerName: "example.com"}
-	tr := New(WithTLSConfig(cfg))
-
-	assert.Same(t, cfg, tr.tlsConfig, "WithTLSConfig stores the *tls.Config verbatim")
-}
-
 func TestWithFollowRedirects(t *testing.T) {
 	tr := New(WithFollowRedirects(FollowRedirectsAlways))
 	assert.Equal(t, FollowRedirectsAlways, tr.followRedirects)
@@ -104,13 +95,11 @@ func TestNew_appliesAllOptions(t *testing.T) {
 	resolver := credentialResolverFunc(func(_ context.Context, _ *url.URL) (Credentials, error) {
 		return nil, nil
 	})
-	tlsCfg := &tls.Config{}
 
 	tr := New(
 		WithClient(client),
 		WithCredentials(resolver),
 		WithUserAgent("ua/1"),
-		WithTLSConfig(tlsCfg),
 		WithFollowRedirects(FollowRedirectsAlways),
 		WithMaxRedirects(7),
 	)
@@ -118,7 +107,6 @@ func TestNew_appliesAllOptions(t *testing.T) {
 	assert.Same(t, client, tr.client)
 	assert.NotNil(t, tr.creds)
 	assert.Equal(t, "ua/1", tr.userAgent)
-	assert.Same(t, tlsCfg, tr.tlsConfig)
 	assert.Equal(t, FollowRedirectsAlways, tr.followRedirects)
 	assert.Equal(t, 7, tr.maxRedirects)
 }

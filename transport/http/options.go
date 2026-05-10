@@ -1,7 +1,6 @@
 package httpt
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net/http"
 )
@@ -52,19 +51,6 @@ func WithCredentials(r CredentialResolver) Option {
 func WithUserAgent(ua string) Option {
 	return optionFunc(func(t *Transport) {
 		t.userAgent = ua
-	})
-}
-
-// WithTLSConfig overrides the TLS configuration the [Transport] uses
-// for HTTPS dials.
-//
-// When set, the [Transport] derives an [http.Transport] whose
-// `TLSClientConfig` is this value; that derivation happens on the
-// first call to [Transport.Open] in a follow-up change. Setting this
-// here only records the configuration.
-func WithTLSConfig(c *tls.Config) Option {
-	return optionFunc(func(t *Transport) {
-		t.tlsConfig = c
 	})
 }
 
