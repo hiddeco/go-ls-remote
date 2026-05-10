@@ -14,7 +14,7 @@ func BenchmarkParseHex_SHA1(b *testing.B) {
 	in := strings.Repeat("a", 40)
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h, err := ParseHex(in, SHA1)
 		if err != nil {
 			b.Fatal(err)
@@ -27,7 +27,7 @@ func BenchmarkParseHex_SHA256(b *testing.B) {
 	in := strings.Repeat("a", 64)
 
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h, err := ParseHex(in, SHA256)
 		if err != nil {
 			b.Fatal(err)

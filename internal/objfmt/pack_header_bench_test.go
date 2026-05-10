@@ -23,7 +23,7 @@ func BenchmarkPack_ReadHeader_SHA1(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, off := range offsets {
 			if _, err := p.ReadHeader(off); err != nil {
 				b.Fatal(err)
@@ -46,7 +46,7 @@ func BenchmarkPack_ReadHeader_SHA256(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, off := range offsets {
 			if _, err := p.ReadHeader(off); err != nil {
 				b.Fatal(err)

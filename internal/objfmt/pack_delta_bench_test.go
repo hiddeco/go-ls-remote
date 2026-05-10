@@ -25,7 +25,7 @@ func BenchmarkPack_ReadDeltaHeader(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, _, err := p.ReadDeltaHeader(bodyAt); err != nil {
 			b.Fatal(err)
 		}
