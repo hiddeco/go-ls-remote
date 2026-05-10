@@ -40,7 +40,7 @@ import (
 // pkt-line + flush. Canonical's handler `die()`s at `ls-refs.c:188`; the
 // structured error lets the dispatcher's error path surface to callers
 // without re-decoding the response stream.
-func handleLSRefs(r *pktline.Reader, w *pktline.Writer,
+func handleLSRefs(r *argsReader, w *pktline.Writer,
 	store *objstore.Store, opts Options) error {
 	_ = opts
 
@@ -69,7 +69,7 @@ func handleLSRefs(r *pktline.Reader, w *pktline.Writer,
 //
 // Mid-args EOF is reported as [io.ErrUnexpectedEOF] so callers can
 // distinguish a truncated request from a clean stream close.
-func parseLSRefsArgs(r *pktline.Reader, w *pktline.Writer) (wire.RefsArgs, error) {
+func parseLSRefsArgs(r *argsReader, w *pktline.Writer) (wire.RefsArgs, error) {
 	var args wire.RefsArgs
 	for {
 		pkt, err := r.ReadPacket()

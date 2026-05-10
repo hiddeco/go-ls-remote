@@ -184,3 +184,39 @@ func TestServe_V2UnknownCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, pktline.Flush, pkt.Kind)
 }
+
+// TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs pins the
+// canonical "flush instead of delim" path from
+// `serve.c::process_request` lines 314-329: the dispatcher detects a
+// flush in place of the args-section delim, leaves the flush on the
+// wire ("the flush packet isn't consume here"), and dispatches the
+// command. The command's handler then reads the flush as its own
+// args-section terminator and emits an empty body.
+//
+// The follow-up `command=object-info` request on the same stream is
+// the canary: if the dispatcher (incorrectly) consumed the early
+// flush, the ls-refs handler's args-section reader would see the
+// `command=object-info\n` line and refuse it as an unknown argument.
+// A clean end-to-end response with both bodies emitted in sequence
+// proves the early flush stayed on the wire and was consumed by the
+// ls-refs handler exactly once.
+func TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs(t *testing.T) {
+	store := openEmptyStore(t)
+
+	var req bytes.Buffer
+	req.Write(pktBytes("command=ls-refs\n"))
+	req.Write(flushBytes) // early flush — args terminator, NOT consumed by outer loop
+	req.Write(pktBytes("command=object-info\n"))
+	req.Write(delimBytes)
+	req.Write(pktBytes("size\n"))
+	req.Write(flushBytes) // end of object-info args
+	req.Write(flushBytes) // empty-request: terminate session
+
+	resp, err := runV2Session(t, store, req.Bytes())
+	require.NoError(t, err)
+
+	// ls-refs body for an empty repo with no args: just a flush.
+	// object-info body for an empty OID list (even with `size`):
+	// just a flush, per `protocol-caps.c:44-45`.
+	assert.Equal(t, "00000000", string(resp))
+}

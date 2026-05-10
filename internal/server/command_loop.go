@@ -19,6 +19,37 @@ import (
 // canonical parser at `serve.c::parse_command` lines 254-269.
 const commandPrefix = "command="
 
+// argsReader wraps a [pktline.Reader] with a single-slot pushback so
+// the dispatcher can carry one already-read pkt into the handler. It
+// supports the canonical "flush before delim" case from
+// `serve.c::process_request` lines 314-329, where the outer loop
+// observes the flush that terminates the args section and the comment
+// reads "The flush packet isn't consume here ... so that the command
+// can read the flush packet and see the end of the request in the
+// same way it would if command specific arguments were provided after
+// a delim packet." The wrapper preserves that contract: the outer
+// loop hands the held flush to the handler via `pending`, and the
+// handler's first [argsReader.ReadPacket] call returns it before any
+// further bytes are consumed from the underlying reader.
+//
+// In the delim path (`pending == nil`), the wrapper degenerates to a
+// thin pass-through over the underlying reader.
+type argsReader struct {
+	r       *pktline.Reader
+	pending *pktline.Packet
+}
+
+// ReadPacket returns the held packet (when one is pending) and clears
+// the slot, otherwise it forwards to the underlying reader.
+func (a *argsReader) ReadPacket() (pktline.Packet, error) {
+	if a.pending != nil {
+		pkt := *a.pending
+		a.pending = nil
+		return pkt, nil
+	}
+	return a.r.ReadPacket()
+}
+
 // runV2CommandLoop drives the v2 command-request loop after the
 // advertisement. It mirrors `serve.c::protocol_v2_serve_loop` lines
 // 356-371: read zero or more command-requests, dispatching each to the
@@ -100,20 +131,22 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 			if !seenCmdOrCap {
 				return false, nil
 			}
-			// A flush after at least one normal pkt but before a
-			// delim is malformed under the canonical grammar
-			// (`gitprotocol-v2.adoc` §"Command Request" requires a
-			// delim before command-args). Dispatch anyway with an
-			// empty args section so the handler can decide whether
-			// to enforce its own grammar; the handler reads the
-			// terminating flush of its args section, and a flush
-			// here looks identical to that.
-			return true, dispatchV2(r, w, store, opts, commandName)
+			// Flush in place of the args-section delim. Per
+			// `serve.c:322-329` the canonical loop peeks-not-consumes
+			// this flush so the dispatched command reads it as its
+			// own args-section terminator. We mirror the contract by
+			// queuing the flush into the [argsReader] handed to the
+			// handler — the outer loop has already advanced past the
+			// flush, but the handler's first read returns it just as
+			// canonical's would.
+			pending := pkt
+			return true, dispatchV2(&argsReader{r: r, pending: &pending},
+				w, store, opts, commandName)
 		case pktline.Delim:
 			// End of capability section; command-args follow. The
 			// handler is responsible for reading them up to the
 			// terminating flush (`serve.c:323-329`).
-			return true, dispatchV2(r, w, store, opts, commandName)
+			return true, dispatchV2(&argsReader{r: r}, w, store, opts, commandName)
 		case pktline.Data:
 			seenCmdOrCap = true
 			line := trimTrailingLF(pkt.Data)
@@ -160,7 +193,7 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 // refusal and a CommandEvent for `fetch` (or any other unimplemented
 // name) would advertise behaviour the emulator does not actually
 // implement.
-func dispatchV2(r *pktline.Reader, w *pktline.Writer, store *objstore.Store,
+func dispatchV2(r *argsReader, w *pktline.Writer, store *objstore.Store,
 	opts Options, commandName string) error {
 	switch commandName {
 	case "":

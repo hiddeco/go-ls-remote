@@ -74,7 +74,7 @@ import (
 // object corrupt or unresolvable: <wrapped>\n` data pkt-line followed
 // by a flush, then returns a wrapped [wire.ErrServerRefused] so the
 // dispatcher terminates the v2 session.
-func handleObjectInfo(r *pktline.Reader, w *pktline.Writer,
+func handleObjectInfo(r *argsReader, w *pktline.Writer,
 	store *objstore.Store, opts Options) error {
 	_ = opts
 
@@ -109,7 +109,7 @@ func handleObjectInfo(r *pktline.Reader, w *pktline.Writer,
 //
 // Mid-args EOF is reported as [io.ErrUnexpectedEOF] so callers can
 // distinguish a truncated request from a clean stream close.
-func parseObjectInfoArgs(r *pktline.Reader, w *pktline.Writer) (wire.ObjectInfoArgs, []string, error) {
+func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs, []string, error) {
 	var (
 		args wire.ObjectInfoArgs
 		oids []string
