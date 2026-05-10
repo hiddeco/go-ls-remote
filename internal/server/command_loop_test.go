@@ -185,6 +185,41 @@ func TestServe_V2UnknownCommand(t *testing.T) {
 	assert.Equal(t, pktline.Flush, pkt.Kind)
 }
 
+// TestServe_V2CancelledContextStopsDispatch pins that a cancelled
+// context surfaces as a `context.Canceled` error from `Serve` rather
+// than running the command-dispatch loop to completion. The check
+// fires between commands — long enough after the advertisement that
+// every byte the client wrote up to that point is still serviced,
+// short enough that a misbehaving or disconnected client cannot
+// hold the loop hostage. The cancelled-before-Serve case is the
+// strictest variant: the loop must observe `ctx.Err()` on its very
+// first iteration after the advertisement.
+func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
+	store := openEmptyStore(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var req bytes.Buffer
+	req.Write(pktBytes("command=ls-refs\n"))
+	req.Write(delimBytes)
+	req.Write(flushBytes)
+	req.Write(flushBytes) // empty-request
+
+	src := bytes.NewReader(req.Bytes())
+	var sink bytes.Buffer
+	r := pktline.NewReader(src)
+	w := pktline.NewWriter(&sink)
+
+	err := Serve(ctx, r, w, store, Options{
+		Agent:             "test-agent/0.0",
+		PreferredProtocol: transport.ProtocolV2,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, context.Canceled),
+		"want errors.Is(err, context.Canceled); got %v", err)
+}
+
 // TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs pins the
 // canonical "flush instead of delim" path from
 // `serve.c::process_request` lines 314-329: the dispatcher detects a

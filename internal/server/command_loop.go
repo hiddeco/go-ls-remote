@@ -63,8 +63,18 @@ func (a *argsReader) ReadPacket() (pktline.Packet, error) {
 // All other errors propagate from the handler or the underlying I/O.
 func runV2CommandLoop(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store, opts Options) error {
-	_ = ctx
 	for {
+		// Cancellation point between commands: the bytes for the
+		// previous request have been fully serviced and the next
+		// request's first byte has not yet been read. Cancelling
+		// here matches what the canonical session does on a
+		// SIGTERM-equivalent — it tears down between requests, not
+		// mid-handler. Mid-handler cancellation would require
+		// closing the underlying reader, which is outside this
+		// loop's contract.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		cont, err := processV2Request(r, w, store, opts)
 		if err != nil {
 			return err
