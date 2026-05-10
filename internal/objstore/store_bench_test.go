@@ -221,7 +221,6 @@ func BenchmarkStore_ObjectInfo_CRC(b *testing.B) {
 // over with a smaller fixture mislabelled as a larger one.
 func BenchmarkStore_IterRefs(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
-		n := n
 		b.Run("Loose/N="+strconv.Itoa(n), func(b *testing.B) {
 			root := makeLooseRefsFixture(b, n)
 			s, err := Open(root)
@@ -323,7 +322,7 @@ func makeLooseRefsFixture(b *testing.B, n int) string {
 		[]byte(mainOID+"\n"), 0o644); err != nil {
 		b.Fatal(err)
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		oid := fmt.Sprintf("%040x", uint64(i+1)*0x0101010101010101)
 		name := fmt.Sprintf("branch-%d", i)
 		if err := os.WriteFile(filepath.Join(gitDir, "refs", "heads", name),
@@ -459,7 +458,7 @@ func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byt
 	idx := new(bytes.Buffer)
 	idx.Write([]byte{0xff, 't', 'O', 'c'})
 	_ = binary.Write(idx, binary.BigEndian, uint32(2))
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, r := range records {
 			if r.oid[0] <= byte(n) {
@@ -518,7 +517,7 @@ func zlibCompressB(b *testing.B, body []byte) []byte {
 // idx population.
 func benchSyntheticOID(tag uint8) objfmt.Hash {
 	var h objfmt.Hash
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		h[i] = tag
 	}
 	h[19] ^= byte(tag * 13)

@@ -155,7 +155,7 @@ func (s *Store) walkPackChain(oid objfmt.Hash, pack *objfmt.Pack, at int64) (Inf
 		targetSize      int64
 		targetSizeKnown bool
 	)
-	for depth := 0; depth < maxChainDepth; depth++ {
+	for range maxChainDepth {
 		hdr, err := pack.ReadHeader(at)
 		if err != nil {
 			return Info{}, fmt.Errorf(

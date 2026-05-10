@@ -254,7 +254,7 @@ func (r *looseRefs) resolveHead() (Head, error) {
 func (r *looseRefs) followSymrefChain(target string) (Head, error) {
 	seen := make(map[string]struct{}, maxRefDepth)
 	current := target
-	for depth := 0; depth < maxRefDepth; depth++ {
+	for range maxRefDepth {
 		if _, ok := seen[current]; ok {
 			return Head{}, fmt.Errorf(
 				"objstore: symref cycle at %s: %w", current, ErrCorruptObject)

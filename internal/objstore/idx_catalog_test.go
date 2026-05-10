@@ -141,7 +141,7 @@ func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 	// same mtime, the basename tiebreaker pins the order to
 	// `ofs-delta`, `three-objects`.
 	wantNames := []string{"ofs-delta.idx", "three-objects.idx"}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		root := materializeFixture(t, "idx-multi")
 		gitDir := filepath.Join(root, ".git")
 		stampPackMtimes(t, gitDir, map[string]time.Time{

@@ -439,7 +439,7 @@ func TestObjectInfo_ConcurrentSameOIDConverges(t *testing.T) {
 	errs := make([]error, goroutines)
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(i int) {
 			defer wg.Done()
 			results[i], errs[i] = s.ObjectInfo(target)
@@ -447,7 +447,7 @@ func TestObjectInfo_ConcurrentSameOIDConverges(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		require.NoErrorf(t, errs[i], "goroutine %d", i)
 		assert.Equalf(t, want, results[i], "goroutine %d disagrees", i)
 	}
@@ -701,7 +701,7 @@ func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.Hash {
 	idx := new(bytes.Buffer)
 	idx.Write([]byte{0xff, 't', 'O', 'c'})
 	_ = binary.Write(idx, binary.BigEndian, uint32(2))
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, r := range records {
 			if r.oid[0] <= byte(n) {
@@ -769,7 +769,7 @@ func buildSyntheticDeltaBody(t *testing.T) []byte {
 // chain head by OID. Distinct tags yield distinct OIDs.
 func syntheticOID(tag uint8) objfmt.Hash {
 	var h objfmt.Hash
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		h[i] = tag
 	}
 	// Perturb one byte so two adjacent tags do not collide on the
@@ -849,7 +849,7 @@ func buildSinglePackAndIdx(t *testing.T, entries []packEntryWire) (packBytes, id
 	_ = binary.Write(idx, binary.BigEndian, uint32(2))
 
 	// 256-entry fan-out: cumulative count of OIDs whose first byte ≤ N.
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, r := range records {
 			if r.oid[0] <= byte(n) {
