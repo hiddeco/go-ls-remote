@@ -1,11 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -18,6 +18,11 @@ import (
 // pkt-line per `gitprotocol-v2.adoc` §"Command Request" and the
 // canonical parser at `serve.c::parse_command` lines 254-269.
 const commandPrefix = "command="
+
+// commandPrefixBytes is the byte-slice form used by the dispatcher's
+// pkt-line scan so [bytes.CutPrefix] can match against the raw
+// payload without converting each Data packet to a string.
+var commandPrefixBytes = []byte(commandPrefix)
 
 // argsReader wraps a [pktline.Reader] with a single-slot pushback so
 // the dispatcher can carry one already-read pkt into the handler. It
@@ -118,7 +123,7 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 	// Read the first packet under the canonical "gentle on EOF" rule:
 	// a clean stream-close before any byte of this request means the
 	// client terminated the session.
-	first, err := r.ReadPacket()
+	pkt, err := r.ReadPacket()
 	if errors.Is(err, io.EOF) {
 		return false, nil
 	}
@@ -126,14 +131,7 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 		return false, fmt.Errorf("server: read v2 request: %w", err)
 	}
 
-	for pkt := first; ; pkt, err = r.ReadPacket() {
-		if err != nil {
-			// Mid-request EOF is a protocol error: the canonical code
-			// `BUG()`s after disabling `PACKET_READ_GENTLE_ON_EOF` at
-			// `serve.c:298`. We propagate the wrapped error instead of
-			// crashing the process.
-			return false, fmt.Errorf("server: read v2 request: %w", err)
-		}
+	for {
 		switch pkt.Kind {
 		case pktline.Flush:
 			// Empty request: bare flush before any command/cap →
@@ -159,28 +157,36 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 			return true, dispatchV2(&argsReader{r: r}, w, store, opts, commandName)
 		case pktline.Data:
 			seenCmdOrCap = true
-			line := trimTrailingLF(pkt.Data)
-			if name, ok := strings.CutPrefix(string(line), commandPrefix); ok {
+			payload := trimTrailingLF(pkt.Data)
+			if name, ok := bytes.CutPrefix(payload, commandPrefixBytes); ok {
 				if commandName != "" {
 					return false, fmt.Errorf(
 						"server: command %q requested after command %q",
 						name, commandName)
 				}
-				commandName = name
-				continue
+				commandName = string(name)
 			}
-			// Capability echo. Canonical Git validates each one
-			// against the advertised set (`serve.c:241-252`); for the
-			// dispatch shell we accept any line without a `command=`
-			// prefix and rely on the per-command handlers to enforce
-			// the advertised cap set on their side.
-			continue
+			// Otherwise: capability echo. Canonical Git validates
+			// each one against the advertised set
+			// (`serve.c:241-252`); for the dispatch shell we accept
+			// any line without a `command=` prefix and rely on the
+			// per-command handlers to enforce the advertised cap set
+			// on their side.
 		case pktline.ResponseEnd:
 			return false, fmt.Errorf(
 				"server: unexpected response-end packet in v2 request")
 		default:
 			return false, fmt.Errorf(
 				"server: unknown pkt-line kind %d in v2 request", pkt.Kind)
+		}
+
+		// Advance to the next packet. Mid-request EOF is a protocol
+		// error: the canonical code `BUG()`s after disabling
+		// `PACKET_READ_GENTLE_ON_EOF` at `serve.c:298`. We propagate
+		// the wrapped error instead of crashing the process.
+		pkt, err = r.ReadPacket()
+		if err != nil {
+			return false, fmt.Errorf("server: read v2 request: %w", err)
 		}
 	}
 }
