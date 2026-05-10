@@ -191,3 +191,60 @@ func TestServe_V0SortedRefs(t *testing.T) {
 		"0000"
 	assert.Equal(t, want, string(got))
 }
+
+// buildUnbornHeadStrayRefsFixture materializes a gitdir whose HEAD
+// points symbolically at `refs/heads/main` while the underlying ref
+// does not exist (so [objstore.Store.Head] reports unborn) AND a
+// stray packed ref does exist. No committed fixture under
+// `testdata/repos/` carries this combination, so the directory is
+// built inline in `t.TempDir()`.
+func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.Store {
+	t.Helper()
+
+	root := t.TempDir()
+	gitDir := filepath.Join(root, ".git")
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "objects", "pack"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(gitDir, "refs"), 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "HEAD"),
+		[]byte("ref: refs/heads/main\n"), 0o644))
+
+	// `packed-refs` carries the stray ref but no entry for
+	// `refs/heads/main`, so HEAD's symref target is unresolved and
+	// `Head` returns the unborn shape.
+	packedRefs := "" +
+		"# pack-refs with: peeled fully-peeled sorted\n" +
+		strayOID + " refs/tags/v1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "packed-refs"),
+		[]byte(packedRefs), 0o644))
+
+	s, err := objstore.Open(gitDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// TestServe_V0UnbornHeadWithStrayRefs covers the v0 advertise path
+// where `head.Unborn` is true but the ref list is non-empty: HEAD is
+// not advertised (canonical Git's `mark_our_ref` filters the all-zero
+// oid out), the canonical empty-repo placeholder also does not fire
+// (the ref walk produces refs), and the cap list lands on the first
+// sorted non-HEAD ref via the `capsEmitted=false` fall-through in
+// `writeV0Advertisement`. The `symref=HEAD:<target>` cap is still
+// emitted because `format_symref_info` (`upload-pack.c:1216-1224`)
+// formats whatever `data.symref` carries regardless of whether HEAD
+// itself is advertised.
+func TestServe_V0UnbornHeadWithStrayRefs(t *testing.T) {
+	strayOID := strings.Repeat("e", 40)
+	store := buildUnbornHeadStrayRefsFixture(t, strayOID)
+
+	got := runAdvertise(t, store, Options{
+		Agent:             "test-agent/0.0",
+		PreferredProtocol: transport.ProtocolV0,
+	})
+
+	caps := "symref=HEAD:refs/heads/main object-format=sha1 agent=test-agent/0.0"
+	want := pktLine(strayOID+" refs/tags/v1\x00"+caps+"\n") +
+		"0000"
+	assert.Equal(t, want, string(got))
+}
