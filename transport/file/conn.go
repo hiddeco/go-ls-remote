@@ -133,6 +133,11 @@ func (c *Conn) Close() error {
 		// deadlock the goroutine. Closing a `*io.PipeReader` returns
 		// `io.ErrClosedPipe` on subsequent writes; closing a
 		// `*io.PipeWriter` returns `io.EOF` on subsequent reads.
+		// `*io.Pipe{Reader,Writer}.Close` itself always returns nil
+		// and is safe under repeated calls (see `io/pipe.go`), so
+		// the discarded returns below are honest — not a hidden
+		// failure swallow analogous to `c.store.Close` below, whose
+		// error IS joined into the close cascade.
 		_ = c.clientReader.Close()
 		_ = c.clientWriter.Close()
 		_ = c.serverReader.Close()
