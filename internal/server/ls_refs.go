@@ -161,14 +161,11 @@ func writeLSRefsResponse(w *pktline.Writer, store *objstore.Store, args wire.Ref
 		return err
 	}
 
-	refs, err := collectLSRefsRefs(store)
+	refs, err := collectLSRefsRefs(store, args.Prefixes)
 	if err != nil {
 		return err
 	}
 	for _, ref := range refs {
-		if !refMatch(args.Prefixes, ref.Name) {
-			continue
-		}
 		line, err := formatRefLine(store, algo, ref, args)
 		if err != nil {
 			return err
@@ -262,11 +259,21 @@ func formatRefLine(store *objstore.Store, algo objfmt.Algo,
 // the v2 grammar, but canonical Git emits refs in the merged sorted
 // order of `for_each_namespaced_ref_1` and we match that for byte
 // equivalence with `git upload-pack` against the same fixture.
-func collectLSRefsRefs(store *objstore.Store) ([]objstore.RefEntry, error) {
+//
+// When prefixes is non-empty, refs whose name does not begin with any
+// of the listed prefixes are dropped during iteration rather than
+// after the slice is built. Canonical Git collapses the same filter
+// into the per-ref callback at `ls-refs.c::send_ref` line 88; we do
+// it at collection time so a request with a bounded prefix set
+// does not allocate a slice scaled to the entire ref namespace.
+func collectLSRefsRefs(store *objstore.Store, prefixes []string) ([]objstore.RefEntry, error) {
 	var refs []objstore.RefEntry
 	for entry, err := range store.IterRefs() {
 		if err != nil {
 			return nil, fmt.Errorf("server: ls-refs: iterate refs: %w", err)
+		}
+		if !refMatch(prefixes, entry.Name) {
+			continue
 		}
 		refs = append(refs, entry)
 	}
