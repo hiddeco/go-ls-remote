@@ -26,6 +26,10 @@ import (
 // custom `*http.Transport.RoundTrip` wrapper or threading the tracer
 // through `*http.Client.CheckRedirect`, neither of which the current
 // design takes on.
+//
+// `Time` on the emitted event is the wall-clock instant the call
+// returned (end of round-trip); `Duration` is `time.Since(start)`,
+// i.e. end minus the caller-supplied start.
 func emitHTTPEvent(t trace.Tracer, req *http.Request, resp *http.Response, err error, start time.Time) {
 	if !trace.IsEnabled(t) {
 		return
@@ -76,6 +80,9 @@ func inboundReaderOpts(t trace.Tracer, redactedURL string) []pktline.ReaderOptio
 // outboundWriterOpts is the [pktline.WriterOption] counterpart to
 // [inboundReaderOpts] for outbound (client-to-server) request bodies
 // such as the v2 command POST.
+//
+// Returns nil when the tracer is disabled, so the per-call option
+// slice is allocation-free on the no-tracer path.
 func outboundWriterOpts(t trace.Tracer, redactedURL string) []pktline.WriterOption {
 	if !trace.IsEnabled(t) {
 		return nil

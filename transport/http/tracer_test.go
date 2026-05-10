@@ -221,8 +221,8 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 	_ = readAllPackets(t, rdr)
 
 	got := tracer.httpEvents()
-	require.GreaterOrEqual(t, len(got), 2,
-		"probe GET plus command POST must each emit one HTTPEvent")
+	require.Len(t, got, 2,
+		"probe GET plus command POST must each emit one HTTPEvent; a stray third call would be a regression")
 	var sawPost bool
 	for _, e := range got {
 		if e.Method == http.MethodPost {
@@ -527,6 +527,120 @@ func TestTracer_HTTPEvent_OnRedirect(t *testing.T) {
 	assert.Equal(t, int32(2), hops, "both endpoints must have been hit")
 }
 
+// TestTracer_PacketEvent_OutboundURLIsPreRedirect pins the doc
+// contract on `encodeCommandBody`: every outbound `PacketEvent`
+// carries the request URL at the time the body was encoded, not the
+// post-redirect URL. The body is constructed once and a single
+// tracer URL applies to every pkt-line in it, even when a follow-on
+// redirect resends those bytes against a different URL.
+//
+// The fixture uses a [stubRoundTripper] to fake a same-host scheme
+// upgrade under `FollowRedirectsAlways`: the probe and the initial
+// command POST land on `http://example.com`, then the POST gets a
+// 302 to the same host on `https`. A scheme upgrade is same-origin,
+// so `Authorization` is preserved and the redirect runs cleanly.
+// All outbound `PacketEvent` URLs must name the original `http`
+// POST URL.
+func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
+	// Build a probe body that drives the smart advertisement to a
+	// flush so [drainAdvertisement] terminates: `# service=` preamble,
+	// flush, then a v2 capability line, then the closing flush.
+	var probeBuf bytes.Buffer
+	pw := pktline.NewWriter(&probeBuf)
+	require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+	require.NoError(t, pw.WriteFlush())
+	require.NoError(t, pw.WritePacket([]byte("version 2\n")))
+	require.NoError(t, pw.WriteFlush())
+	probeBody := probeBuf.Bytes()
+
+	// Build a non-empty success body for the redirected POST so the
+	// inbound reader has packets to drain.
+	var respBuf bytes.Buffer
+	rw := pktline.NewWriter(&respBuf)
+	require.NoError(t, rw.WritePacket([]byte("ok\n")))
+	require.NoError(t, rw.WriteFlush())
+	respBody := respBuf.Bytes()
+
+	rt := &stubRoundTripper{}
+	rt.respond = func(req *http.Request, hop int) *http.Response {
+		switch {
+		case req.Method == http.MethodGet:
+			h := http.Header{}
+			h.Set("Content-Type", smartAdvHeader)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     h,
+				Body:       io.NopCloser(bytes.NewReader(probeBody)),
+			}
+		case req.Method == http.MethodPost && req.URL.Scheme == "http":
+			h := http.Header{}
+			// A scheme upgrade to the same host is same-origin under
+			// canonical Git's rule, so [stubRoundTripper] returns 307
+			// (preserves method on follow-up; 302 would rewrite POST
+			// to GET per RFC 7231 §6.4.3) to the `https` URL.
+			h.Set("Location", "https://example.com/repo.git/git-upload-pack")
+			return &http.Response{StatusCode: http.StatusTemporaryRedirect, Header: h}
+		case req.Method == http.MethodPost && req.URL.Scheme == "https":
+			h := http.Header{}
+			h.Set("Content-Type", commandAcceptType)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     h,
+				Body:       io.NopCloser(bytes.NewReader(respBody)),
+			}
+		}
+		return nil
+	}
+
+	tracer := &capturingTracer{}
+	tr := New(
+		WithClient(&http.Client{Transport: rt}),
+		WithFollowRedirects(FollowRedirectsAlways),
+	)
+	u, err := transport.ParseURL("http://example.com/repo.git")
+	require.NoError(t, err)
+
+	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	c := conn.(*Conn)
+	drainAdvertisement(t, c)
+
+	rdr, err := c.Command(context.Background(), "ls-refs",
+		nil, []string{"object-format=sha1"})
+	require.NoError(t, err)
+	_ = readAllPackets(t, rdr)
+
+	// The chain hit two POST hops (`http` then `https`). Confirm both
+	// were observed so the test is meaningful.
+	var sawHTTPS bool
+	for _, req := range rt.requests {
+		if req.Method == http.MethodPost && req.URL.Scheme == "https" {
+			sawHTTPS = true
+			break
+		}
+	}
+	require.True(t, sawHTTPS,
+		"the test fixture must have driven the chain through the https hop")
+
+	// Every outbound `PacketEvent` must carry the pre-redirect URL —
+	// `http://example.com/repo.git/git-upload-pack` — not the
+	// post-redirect `https://...` URL the bytes ultimately reached.
+	var outbound []trace.PacketEvent
+	for _, e := range tracer.packetEvents() {
+		if e.Direction == trace.DirectionOutbound {
+			outbound = append(outbound, e)
+		}
+	}
+	require.NotEmpty(t, outbound,
+		"the command request body must emit outbound PacketEvents")
+	for _, p := range outbound {
+		assert.Equal(t,
+			"http://example.com/repo.git/git-upload-pack", p.URL,
+			"every outbound PacketEvent must pin the pre-redirect POST URL")
+	}
+}
+
 // TestTracer_PacketEvent_NoEmissionsWhenNoTracer pins the no-overhead
 // guarantee: a `*pktline.Reader` constructed without a tracer must
 // not collect events anywhere observable. Smoke-tested by reading
@@ -552,4 +666,3 @@ func TestTracer_PacketEvent_NoEmissionsWhenNoTracer(t *testing.T) {
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 }
-
