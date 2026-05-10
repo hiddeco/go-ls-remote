@@ -24,7 +24,7 @@ import (
 //     scales on.
 //   - attribute mix (`plain`, `peel`, `peel+symrefs`): the
 //     decoration set the per-ref formatter touches. The peel arm
-//     hits [refPeel]'s [objstore.RefEntry.PeelKnown] short-circuit
+//     hits [refPeel]'s [objstore.RefEntry[objfmt.SHA1Hash].PeelKnown] short-circuit
 //     for ~5% of refs (annotated tags carrying recorded peels in
 //     the synthesised packed-refs file). The symrefs arm adds the
 //     `symref-target:` decoration on HEAD.

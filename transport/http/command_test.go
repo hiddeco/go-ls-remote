@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/server"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
@@ -28,13 +29,13 @@ import (
 
 // openFixtureStore materialises the named fixture, ensures a
 // `objects/pack/` directory exists (some ref-only fixtures ship
-// without one), and returns an opened [objstore.Store] that closes
+// without one), and returns an opened [objstore.Store[objfmt.SHA1Hash]] that closes
 // when the test ends.
-func openFixtureStore(t *testing.T, name string) *objstore.Store {
+func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
-	store, err := objstore.Open(gitdir)
+	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store
@@ -51,7 +52,7 @@ func openFixtureStore(t *testing.T, name string) *objstore.Store {
 // the same in `service_rpc`'s upload-pack-info-refs path. The POST
 // handler delegates straight to `Serve`, which reads the v2 command
 // request and writes the response.
-func serveHandler(t *testing.T, store *objstore.Store, repoPath string) http.Handler {
+func serveHandler(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath string) http.Handler {
 	t.Helper()
 	infoRefsPath := repoPath + "/info/refs"
 	uploadPackPath := repoPath + "/git-upload-pack"

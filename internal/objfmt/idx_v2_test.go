@@ -76,7 +76,7 @@ func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	t.Helper()
 	// Sort by oid so the binary search invariant holds.
 	for i := 1; i < len(entries); i++ {
-		for j := i; j > 0 && bytes.Compare(entries[j-1].oid[:20], entries[j].oid[:20]) > 0; j-- {
+		for j := i; j > 0 && bytes.Compare(entries[j-1].oid[:], entries[j].oid[:]) > 0; j-- {
 			entries[j-1], entries[j] = entries[j], entries[j-1]
 		}
 	}
@@ -94,7 +94,7 @@ func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 		_ = binary.Write(buf, binary.BigEndian, count)
 	}
 	for _, e := range entries {
-		buf.Write(e.oid[:20])
+		buf.Write(e.oid[:])
 	}
 	for _, e := range entries {
 		_ = binary.Write(buf, binary.BigEndian, e.crc)
@@ -129,21 +129,25 @@ func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	return path
 }
 
+// v2Entry pairs a SHA-1 OID, pack offset, and CRC for [writeV2Idx].
+// The synthetic v2 idx fixtures the helper produces are SHA-1 only;
+// SHA-256 v2 idx tests draw from canonical Git fixtures rather than
+// this helper.
 type v2Entry struct {
-	oid    Hash
+	oid    SHA1Hash
 	offset uint64
 	crc    uint32
 }
 
 func TestIdx_FindOffset_v2(t *testing.T) {
 	t.Run("three-objects SHA-1 offsets match verify-pack", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
 		entries := readOffsets(t, idxFixture(t, "three-objects.offsets.txt"))
 		for _, e := range entries {
-			oid, err := ParseHex(e.oid, SHA1)
+			oid, err := ParseSHA1Hex(e.oid)
 			require.NoError(t, err)
 			off, ok := idx.FindOffset(oid)
 			require.Truef(t, ok, "missing oid %s", e.oid)
@@ -152,13 +156,13 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 	})
 
 	t.Run("sha256-three offsets match verify-pack", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "sha256-three.idx"), SHA256)
+		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
 		entries := readOffsets(t, idxFixture(t, "sha256-three.offsets.txt"))
 		for _, e := range entries {
-			oid, err := ParseHex(e.oid, SHA256)
+			oid, err := ParseSHA256Hex(e.oid)
 			require.NoError(t, err)
 			off, ok := idx.FindOffset(oid)
 			require.Truef(t, ok, "missing oid %s", e.oid)
@@ -167,11 +171,11 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 	})
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
-		absent, err := ParseHex("ffffffffffffffffffffffffffffffffffffffff", SHA1)
+		absent, err := ParseSHA1Hex("ffffffffffffffffffffffffffffffffffffffff")
 		require.NoError(t, err)
 		off, ok := idx.FindOffset(absent)
 		assert.False(t, ok)
@@ -179,9 +183,9 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 	})
 
 	t.Run("offset > 2 GiB resolves via overflow table", func(t *testing.T) {
-		small, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		big, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, err)
 		const bigOffset uint64 = (1 << 31) + 12345
 		path := writeV2Idx(t, t.TempDir(), []v2Entry{
@@ -189,7 +193,7 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 			{oid: big, offset: bigOffset, crc: 0x22222222},
 		})
 
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -205,16 +209,16 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 
 func TestIdx_FindCRC32(t *testing.T) {
 	t.Run("returns the recorded CRC for present oids", func(t *testing.T) {
-		small, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		big, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, err)
 		path := writeV2Idx(t, t.TempDir(), []v2Entry{
 			{oid: small, offset: 12, crc: 0xdeadbeef},
 			{oid: big, offset: 256, crc: 0xcafef00d},
 		})
 
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -228,11 +232,11 @@ func TestIdx_FindCRC32(t *testing.T) {
 	})
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
-		absent, err := ParseHex("ffffffffffffffffffffffffffffffffffffffff", SHA1)
+		absent, err := ParseSHA1Hex("ffffffffffffffffffffffffffffffffffffffff")
 		require.NoError(t, err)
 		crc, ok := idx.FindCRC32(absent)
 		assert.False(t, ok)
@@ -240,11 +244,11 @@ func TestIdx_FindCRC32(t *testing.T) {
 	})
 
 	t.Run("v1 idx returns ok=false for every lookup", func(t *testing.T) {
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
 
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -256,7 +260,7 @@ func TestIdx_FindCRC32(t *testing.T) {
 
 func TestIdx_PackChecksum(t *testing.T) {
 	t.Run("matches the trailer of the paired pack", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -272,32 +276,32 @@ func TestIdx_PackChecksum(t *testing.T) {
 		_, err = pack.ReadAt(buf, st.Size()-20)
 		require.NoError(t, err)
 
-		var want Hash
-		copy(want[:20], buf)
+		var want SHA1Hash
+		copy(want[:], buf)
 		assert.Equal(t, want, got)
 	})
 }
 
 func TestIdx_VerifyChecksum(t *testing.T) {
 	t.Run("intact v2 SHA-1 idx verifies", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 		assert.NoError(t, idx.VerifyChecksum())
 	})
 
 	t.Run("intact v2 SHA-256 idx verifies", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "sha256-three.idx"), SHA256)
+		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 		assert.NoError(t, idx.VerifyChecksum())
 	})
 
 	t.Run("intact v1 idx verifies", func(t *testing.T) {
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 		assert.NoError(t, idx.VerifyChecksum())
@@ -330,7 +334,7 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		idx, err := OpenIdx(dst, SHA1)
+		idx, err := OpenIdx[SHA1Hash](dst, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 		assert.Error(t, idx.VerifyChecksum())
@@ -343,7 +347,7 @@ func TestIdx_OffsetAfter(t *testing.T) {
 		// and 179 (per the sidecar). OffsetAfter must return the next
 		// strictly-larger value regardless of OID-sort order, and report
 		// `false` once asked past the last entry.
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -369,16 +373,16 @@ func TestIdx_OffsetAfter(t *testing.T) {
 		// One entry sits in the small-offset slot, one spills into the
 		// 64-bit overflow table. OffsetAfter must walk both representations
 		// and pick the next-larger value across the unified offset space.
-		small, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		big, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, err)
 		const bigOffset uint64 = (1 << 31) + 4096
 		path := writeV2Idx(t, t.TempDir(), []v2Entry{
 			{oid: small, offset: 12, crc: 0x11111111},
 			{oid: big, offset: bigOffset, crc: 0x22222222},
 		})
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -394,15 +398,15 @@ func TestIdx_OffsetAfter(t *testing.T) {
 		// v1 has no overflow table; the offset slot is 32-bit and lives at
 		// the head of every record. The helper accepts the same shape used
 		// elsewhere; assert next-greater across two stable values.
-		oidA, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oidA, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		oidB, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		oidB, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{
 			{offset: 12, oid: oidA},
 			{offset: 256, oid: oidB},
 		})
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 

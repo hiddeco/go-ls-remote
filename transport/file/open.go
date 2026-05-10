@@ -3,9 +3,11 @@ package filet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/server"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -75,7 +77,37 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		return nil, &ProtocolError{URL: redacted, Op: "dial", Err: ErrNotFound}
 	}
 
-	store, err := objstore.Open(path)
+	// Discover the repository's hash algorithm before instantiating
+	// the typed store. This is the one polymorphism boundary in the
+	// typed-per-algo design: the algo is read at runtime here and
+	// dispatched to the matching `Conn[H]` constructor. Mismatches
+	// inside the dispatch are unreachable because `openTyped` hard-
+	// codes the type parameter to the discovered branch.
+	algo, err := objstore.DiscoverAlgo(path)
+	if err != nil {
+		return nil, mapOpenError(err, redacted)
+	}
+	switch algo {
+	case objfmt.SHA1:
+		return openTyped[objfmt.SHA1Hash](ctx, t, opts, path, redacted, preferred)
+	case objfmt.SHA256:
+		return openTyped[objfmt.SHA256Hash](ctx, t, opts, path, redacted, preferred)
+	default:
+		return nil, &ProtocolError{
+			URL: redacted, Op: "dial",
+			Err: fmt.Errorf("file: unsupported object format %v: %w", algo, ErrUnsupportedFormat),
+		}
+	}
+}
+
+// openTyped instantiates the typed [Conn] once [Transport.open] has
+// resolved the repository's algo. It owns the store-open, the pipe
+// wiring, and the goroutine spawn; the dispatch in [Transport.open]
+// picks the type parameter based on the algo discovered from the
+// repo config.
+func openTyped[H objfmt.HashType](ctx context.Context, t *Transport, opts transport.OpenOptions,
+	path, redacted string, preferred transport.ProtocolVersion) (transport.Conn, error) {
+	store, err := objstore.Open[H](path)
 	if err != nil {
 		return nil, mapOpenError(err, redacted)
 	}
@@ -91,7 +123,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 	// see `tracer.go` for the event-doubling rationale and why the
 	// default matches the HTTP transport's one-event-per-pkt-line
 	// shape.
-	conn := &Conn{
+	conn := &Conn[H]{
 		reader:       pktline.NewReader(clientReader, inboundReaderOpts(opts.Tracer, redacted)...),
 		writer:       pktline.NewWriter(clientWriter, outboundWriterOpts(opts.Tracer, redacted)...),
 		store:        store,
@@ -140,7 +172,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 // pkt-line crossing the pipe pair produces a single [trace.PacketEvent]
 // from the client side rather than two. `redacted` is the dial URL with
 // credentials redacted, attached to every emitted event.
-func (c *Conn) runServer(ctx context.Context, srvOpts server.Options, tracer trace.Tracer, redacted string) {
+func (c *Conn[H]) runServer(ctx context.Context, srvOpts server.Options, tracer trace.Tracer, redacted string) {
 	defer close(c.done)
 
 	srvErr := server.Serve(ctx,

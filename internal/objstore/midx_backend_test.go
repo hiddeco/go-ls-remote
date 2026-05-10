@@ -36,11 +36,11 @@ const (
 // the midx backend rooted at its `.git/`. Mirrors the helper the
 // idx-catalog tests use so each test stays focused on the assertion it
 // is making.
-func openMidxBackendFromFixture(t *testing.T, name string) *midxBackend {
+func openMidxBackendFromFixture(t *testing.T, name string) *midxBackend[objfmt.SHA1Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 	return b
@@ -138,7 +138,7 @@ func TestMidxBackend_AllPacksDeterministicOrder(t *testing.T) {
 			"three-objects.pack": packMtimeAnchor,
 		})
 
-		b, err := openMidxBackend(gitDir, objfmt.SHA1)
+		b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = b.Close() })
 
@@ -167,7 +167,7 @@ func TestMidxBackend_AllPacksOrderedByMtimeDesc(t *testing.T) {
 		"three-objects.pack": packMtimeAnchor.Add(2 * time.Hour),
 	})
 
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
@@ -202,7 +202,7 @@ func TestMidxBackend_SiblingFallbackHitsYoungerSiblingFirst(t *testing.T) {
 		"three-objects.pack": packMtimeAnchor.Add(time.Hour),
 	})
 
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 	require.Len(t, b.siblings, 2,
@@ -234,7 +234,7 @@ func TestMidxBackend_BasenameTiebreaker(t *testing.T) {
 		"aaa-tied.pack":      packMtimeAnchor,
 	})
 
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
@@ -269,7 +269,7 @@ func TestMidxBackend_PackByChecksumLookup(t *testing.T) {
 	// Unknown checksum surfaces as a clean miss: the (nil, false) shape
 	// is part of the accessor's contract for the future REF_DELTA
 	// resolver.
-	pack, ok := b.packByChecksum(objfmt.Hash{})
+	pack, ok := b.packByChecksum(objfmt.SHA1Hash{})
 	assert.False(t, ok)
 	assert.Nil(t, pack)
 }
@@ -304,11 +304,11 @@ func TestMidxBackend_CorruptMidxReturnsErrorWithoutLeak(t *testing.T) {
 	// midx path; the no-leak claim is enforced by the constructor
 	// closing every already-opened resource on failure (impossible to
 	// observe without a leak counter, but covered by the failure-cleanup
-	// discipline shared with `idxCatalog`).
+	// discipline shared with `idxCatalog[objfmt.SHA1Hash]`).
 	root := materializeFixture(t, "midx-corrupt")
 	gitDir := filepath.Join(root, ".git")
 
-	_, err := openMidxBackend(gitDir, objfmt.SHA1)
+	_, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.Error(t, err)
 	midxPath := filepath.Join(gitDir, "objects", "pack", "multi-pack-index")
 	assert.Contains(t, err.Error(), midxPath,
@@ -324,7 +324,7 @@ func TestMidxBackend_MissingPackReferencedByMidxIsCorrupt(t *testing.T) {
 	root := materializeFixture(t, "midx-missing-pack")
 	gitDir := filepath.Join(root, ".git")
 
-	_, err := openMidxBackend(gitDir, objfmt.SHA1)
+	_, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrCorruptObject,
 		"missing-pack errors must wrap ErrCorruptObject")
@@ -335,12 +335,12 @@ func TestMidxBackend_MissingPackReferencedByMidxIsCorrupt(t *testing.T) {
 func TestMidxBackend_CloseIsIdempotent(t *testing.T) {
 	// `Close` cascades to the midx + every wrapped idx + every wrapped
 	// pack. Subsequent calls must return the same joined error (here,
-	// nil) without re-running the cascade — the Store-level idempotency
+	// nil) without re-running the cascade — the Store[objfmt.SHA1Hash]-level idempotency
 	// guarantee assumes this.
 	root := materializeFixture(t, "midx-with-siblings")
 	gitDir := filepath.Join(root, ".git")
 
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 
 	first := b.Close()
@@ -356,15 +356,15 @@ func TestMidxBackend_OpenStoreSelectsMidxWithExpectedPacks(t *testing.T) {
 	// `AllPacks`.
 	root := materializeFixture(t, "midx-with-siblings")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	mb, ok := s.packs.(*midxBackend)
-	require.True(t, ok, "want *midxBackend, got %T", s.packs)
+	mb, ok := s.packs.(*midxBackend[objfmt.SHA1Hash])
+	require.True(t, ok, "want *midxBackend[objfmt.SHA1Hash], got %T", s.packs)
 	assert.Len(t, mb.ordered, 3)
 
-	// Spot-check both lookup paths through the Store-owned backend.
+	// Spot-check both lookup paths through the Store[objfmt.SHA1Hash]-owned backend.
 	pack, off, hit, err := mb.Lookup(hashFromHex(t, midxPack1CommitOID, objfmt.SHA1))
 	require.NoError(t, err)
 	require.True(t, hit)
@@ -390,12 +390,12 @@ func TestMidxBackend_IgnoresNonIdxEntries(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(gitDir,
 		"objects", "pack", "noise.txt"), []byte("ignore me"), 0o644))
 
-	b, err := openMidxBackend(gitDir, objfmt.SHA1)
+	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 	assert.Len(t, b.ordered, 3, "noise files must not change the inventory")
 }
 
-// Compile-time guard: the backend satisfies the [packBackend] contract
-// the Store opener selects through.
-var _ packBackend = (*midxBackend)(nil)
+// Compile-time guard: the backend satisfies the [packBackend[objfmt.SHA1Hash]] contract
+// the Store[objfmt.SHA1Hash] opener selects through.
+var _ packBackend[objfmt.SHA1Hash] = (*midxBackend[objfmt.SHA1Hash])(nil)

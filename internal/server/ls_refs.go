@@ -40,8 +40,8 @@ import (
 // pkt-line + flush. Canonical's handler `die()`s at `ls-refs.c:188`; the
 // structured error lets the dispatcher's error path surface to callers
 // without re-decoding the response stream.
-func handleLSRefs(r *argsReader, w *pktline.Writer,
-	store *objstore.Store, opts Options) error {
+func handleLSRefs[H objfmt.HashType](r *argsReader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) error {
 	_ = opts
 
 	args, err := parseLSRefsArgs(r, w)
@@ -149,15 +149,13 @@ func refuseUnknownArg(w *pktline.Writer, arg string) error {
 // [wire.RefsArgs.Peel] is set; the loose-refs HEAD does not carry a
 // packed peel hint, so the cheap `RefEntry.PeelKnown` short-circuit
 // does not apply.
-func writeLSRefsResponse(w *pktline.Writer, store *objstore.Store, args wire.RefsArgs) error {
-	algo := store.Algo()
-
+func writeLSRefsResponse[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], args wire.RefsArgs) error {
 	head, err := store.Head()
 	if err != nil {
 		return fmt.Errorf("server: ls-refs: resolve HEAD: %w", err)
 	}
 
-	if err := emitHead(w, store, algo, head, args); err != nil {
+	if err := emitHead(w, store, head, args); err != nil {
 		return err
 	}
 
@@ -175,7 +173,7 @@ func writeLSRefsResponse(w *pktline.Writer, store *objstore.Store, args wire.Ref
 	var line []byte
 	for _, ref := range refs {
 		line = line[:0]
-		line, err = formatRefLine(line, store, algo, ref, args)
+		line, err = formatRefLine(line, store, ref, args)
 		if err != nil {
 			return err
 		}
@@ -190,15 +188,15 @@ func writeLSRefsResponse(w *pktline.Writer, store *objstore.Store, args wire.Ref
 // `send_possibly_unborn_head` rules admit it, subject to the same
 // prefix filter that applies to non-HEAD refs (`ls-refs.c:88`'s
 // `ref_match` check fires before any other gate).
-func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
-	head objstore.Head, args wire.RefsArgs) error {
+func emitHead[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H],
+	head objstore.Head[H], args wire.RefsArgs) error {
 	if !refMatch(args.Prefixes, "HEAD") {
 		return nil
 	}
 
 	switch {
 	case !head.Unborn && !head.OID.IsZero():
-		line := head.OID.AppendHex(nil, algo)
+		line := head.OID.AppendHex(nil)
 		line = append(line, " HEAD"...)
 		if args.Symrefs && head.Symref != "" {
 			line = append(line, " symref-target:"...)
@@ -211,7 +209,7 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 			}
 			if ok && !peeled.IsZero() {
 				line = append(line, " peeled:"...)
-				line = peeled.AppendHex(line, algo)
+				line = peeled.AppendHex(line)
 			}
 		}
 		line = append(line, '\n')
@@ -248,11 +246,11 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 // handing it straight to [pktline.Writer.WritePacket] saves the
 // per-iteration `strings.Builder` growth and the
 // `[]byte(line.String())` conversion that the previous shape
-// allocated. OID hex is appended directly into the scratch via
-// [objfmt.Hash.AppendHex] so no per-ref string allocates either.
-func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
-	ref objstore.RefEntry, args wire.RefsArgs) ([]byte, error) {
-	dst = ref.OID.AppendHex(dst, algo)
+// allocated. OID hex is appended directly into the scratch via the
+// typed `H.AppendHex` so no per-ref string allocates either.
+func formatRefLine[H objfmt.HashType](dst []byte, store *objstore.Store[H],
+	ref objstore.RefEntry[H], args wire.RefsArgs) ([]byte, error) {
+	dst = ref.OID.AppendHex(dst)
 	dst = append(dst, ' ')
 	dst = append(dst, ref.Name...)
 	if args.Peel {
@@ -262,7 +260,7 @@ func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
 		}
 		if ok && !peeled.IsZero() {
 			dst = append(dst, " peeled:"...)
-			dst = peeled.AppendHex(dst, algo)
+			dst = peeled.AppendHex(dst)
 		}
 	}
 	dst = append(dst, '\n')
@@ -282,8 +280,8 @@ func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
 // into the per-ref callback at `ls-refs.c::send_ref` line 88; we do
 // it at collection time so a request with a bounded prefix set
 // does not allocate a slice scaled to the entire ref namespace.
-func collectLSRefsRefs(store *objstore.Store, prefixes []string) ([]objstore.RefEntry, error) {
-	var refs []objstore.RefEntry
+func collectLSRefsRefs[H objfmt.HashType](store *objstore.Store[H], prefixes []string) ([]objstore.RefEntry[H], error) {
+	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {
 		if err != nil {
 			return nil, fmt.Errorf("server: ls-refs: iterate refs: %w", err)
@@ -293,7 +291,7 @@ func collectLSRefsRefs(store *objstore.Store, prefixes []string) ([]objstore.Ref
 		}
 		refs = append(refs, entry)
 	}
-	slices.SortFunc(refs, func(a, b objstore.RefEntry) int {
+	slices.SortFunc(refs, func(a, b objstore.RefEntry[H]) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return refs, nil

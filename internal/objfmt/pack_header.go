@@ -27,13 +27,17 @@ const packHeaderPeek = 32
 
 // ObjectHeader is the decoded form of a pack object's leading
 // type/size header, plus the delta base reference for delta types.
-type ObjectHeader struct {
+//
+// The type parameter `H` carries the OID type of the parent [Pack];
+// the [DeltaRef.RefBase] field is typed per algo so REF_DELTA bases
+// flow back to the caller without an [Algo]-keyed reinterpretation.
+type ObjectHeader[H HashType] struct {
 	// Type is the 3-bit pack object type.
 	Type ObjectType
 
 	// DeltaRef carries the base reference for delta types. For
 	// non-delta types the zero value is meaningful (no base).
-	DeltaRef DeltaRef
+	DeltaRef DeltaRef[H]
 
 	// Size is the value encoded in the header's size bits. For
 	// non-delta objects this is the inflated body size; for delta
@@ -50,14 +54,17 @@ type ObjectHeader struct {
 // DeltaRef identifies the base of a delta object. Exactly one of
 // OfsBase or RefBase is meaningful, picked by the [ObjectHeader.Type]
 // of the carrying header.
-type DeltaRef struct {
+//
+// `H` is the OID type of the carrying [Pack]; [DeltaRef.RefBase]
+// holds the typed value directly.
+type DeltaRef[H HashType] struct {
 	// OfsBase is the absolute offset of the base object in the
 	// same pack. Set when the delta type is [TypeOfsDelta].
 	OfsBase int64
 
 	// RefBase is the hash of the base object. The base may live in
 	// a different pack. Set when the delta type is [TypeRefDelta].
-	RefBase Hash
+	RefBase H
 }
 
 // ReadHeader decodes the pack object header that begins at offset
@@ -78,12 +85,17 @@ type DeltaRef struct {
 // big-endian offset varint with the +1-per-continuation-byte quirk
 // per `packfile.c::get_delta_base` (lines 1278-1292); the absolute
 // base offset is `at - relativeOffset`. For [TypeRefDelta] the next
-// `algo.Size()` raw bytes are the base hash. Reserved type 5 is
+// `len(*new(H))` raw bytes are the base hash. Reserved type 5 is
 // rejected; types 1..4, 6, 7 are accepted.
-func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
+func (p *Pack[H]) ReadHeader(at int64) (ObjectHeader[H], error) {
 	if at < 0 || at >= p.r.Len() {
-		return ObjectHeader{}, fmt.Errorf("objfmt: header offset %d out of range", at)
+		return ObjectHeader[H]{}, fmt.Errorf("objfmt: header offset %d out of range", at)
 	}
+
+	// Hash size is constant per instantiation: `len(zero)` for an
+	// array-typed `H` folds to a literal 20 or 32 at compile time.
+	var zero H
+	hashLen := len(zero)
 
 	// Scratch comes from `packHeaderScratch` rather than `make`
 	// per call: `Pack` is concurrent-safe so the buffer cannot
@@ -91,7 +103,7 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	// slices removes the per-call heap allocation that escape
 	// analysis enforces here (the interface call to `p.r.ReadAt`
 	// prevents stack allocation).
-	want := packHeaderPeek + p.algo.Size()
+	want := packHeaderPeek + hashLen
 	if rem := p.r.Len() - at; rem < int64(want) {
 		want = int(rem)
 	}
@@ -100,11 +112,11 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	buf := (*bufp)[:want]
 	n, err := p.r.ReadAt(buf, at)
 	if err != nil && n == 0 {
-		return ObjectHeader{}, fmt.Errorf("objfmt: read header at %d: %w", at, err)
+		return ObjectHeader[H]{}, fmt.Errorf("objfmt: read header at %d: %w", at, err)
 	}
 	buf = buf[:n]
 	if len(buf) == 0 {
-		return ObjectHeader{}, fmt.Errorf("objfmt: empty pack header: %w", ErrTruncated)
+		return ObjectHeader[H]{}, fmt.Errorf("objfmt: empty pack header: %w", ErrTruncated)
 	}
 
 	typeBits := (buf[0] >> 4) & 0x07
@@ -113,40 +125,46 @@ func (p *Pack) ReadHeader(at int64) (ObjectHeader, error) {
 	used := 1
 	for buf[used-1]&0x80 != 0 {
 		if used >= len(buf) {
-			return ObjectHeader{}, fmt.Errorf("objfmt: pack header overruns buffer: %w", ErrTruncated)
+			return ObjectHeader[H]{}, fmt.Errorf("objfmt: pack header overruns buffer: %w", ErrTruncated)
 		}
 		size |= int64(buf[used]&0x7f) << shift
 		shift += 7
 		used++
 		if shift >= 64 {
-			return ObjectHeader{}, fmt.Errorf("objfmt: pack header size overflow: %w", ErrCorrupt)
+			return ObjectHeader[H]{}, fmt.Errorf("objfmt: pack header size overflow: %w", ErrCorrupt)
 		}
 	}
 
-	hdr := ObjectHeader{Type: ObjectType(typeBits), Size: size}
+	hdr := ObjectHeader[H]{Type: ObjectType(typeBits), Size: size}
 
 	switch hdr.Type {
 	case TypeOfsDelta:
 		offset, advanced, err := readOfsBase(buf[used:])
 		if err != nil {
-			return ObjectHeader{}, err
+			return ObjectHeader[H]{}, err
 		}
 		hdr.DeltaRef.OfsBase = at - offset
 		if hdr.DeltaRef.OfsBase <= 0 || hdr.DeltaRef.OfsBase >= at {
-			return ObjectHeader{}, fmt.Errorf("objfmt: OFS_DELTA base offset out of range: %w", ErrCorrupt)
+			return ObjectHeader[H]{}, fmt.Errorf("objfmt: OFS_DELTA base offset out of range: %w", ErrCorrupt)
 		}
 		used += advanced
 	case TypeRefDelta:
-		hashLen := p.algo.Size()
 		if used+hashLen > len(buf) {
-			return ObjectHeader{}, fmt.Errorf("objfmt: REF_DELTA base hash overruns buffer: %w", ErrTruncated)
+			return ObjectHeader[H]{}, fmt.Errorf("objfmt: REF_DELTA base hash overruns buffer: %w", ErrTruncated)
 		}
-		copy(hdr.DeltaRef.RefBase[:hashLen], buf[used:used+hashLen])
+		// Copy the on-disk hash bytes into the typed array. `H` is a
+		// fixed-size byte array, but the union of [SHA1Hash] and
+		// [SHA256Hash] has no single core type so `ref[:]` does not
+		// compile; [hashBytes] takes the address to recover a byte
+		// slice view of the in-place storage.
+		var ref H
+		copy(hashBytes(&ref), buf[used:used+hashLen])
+		hdr.DeltaRef.RefBase = ref
 		used += hashLen
 	case TypeCommit, TypeTree, TypeBlob, TypeTag:
 		// no extra header bytes
 	default:
-		return ObjectHeader{}, fmt.Errorf("objfmt: unknown pack object type %d: %w", typeBits, ErrCorrupt)
+		return ObjectHeader[H]{}, fmt.Errorf("objfmt: unknown pack object type %d: %w", typeBits, ErrCorrupt)
 	}
 
 	hdr.BodyAt = at + int64(used)

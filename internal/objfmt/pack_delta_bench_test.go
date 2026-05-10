@@ -16,7 +16,7 @@ import "testing"
 // representative of the medium-sized base + same-size target shape
 // produced by the `git pack-objects` heuristic for blob deltas.
 func BenchmarkPack_ReadDeltaHeader(b *testing.B) {
-	p, err := OpenPack(benchPackFixture("ofs-delta.pack"), SHA1)
+	p, err := OpenPack[SHA1Hash](benchPackFixture("ofs-delta.pack"), SHA1)
 	if err != nil {
 		b.Fatal(err)
 	}

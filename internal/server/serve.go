@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -57,8 +58,8 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // The store argument sources the `object-format` capability value
 // today and will source ref enumeration and object metadata in later
 // iterations. Passing a nil store is not permitted.
-func Serve(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store, opts Options) error {
+func Serve[H objfmt.HashType](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) error {
 	switch opts.PreferredProtocol {
 	case transport.ProtocolV2:
 		if err := writeV2Advertisement(w, store, opts); err != nil {

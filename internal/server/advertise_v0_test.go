@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
@@ -17,16 +18,30 @@ import (
 // openStoreFromFixture materializes the named fixture, creates any
 // missing `objects/` and `objects/pack/` directories so the gitdir
 // satisfies canonical Git's `is_git_directory` check (see
-// `setup.c::is_git_directory`), and returns an opened [objstore.Store].
+// `setup.c::is_git_directory`), and returns an opened [objstore.Store[objfmt.SHA1Hash]].
 // A handful of ref-only fixtures (`unborn-head`, `detached-head`,
 // `mixed`) ship without an `objects/` directory because they were
 // authored for the ref-backend tests; the server tests need the full
 // gitdir shape so the empty objects directory is conjured here.
-func openStoreFromFixture(t *testing.T, name string) *objstore.Store {
+func openStoreFromFixture(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
-	store, err := objstore.Open(gitdir)
+	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+// openStoreFromFixture256 is the SHA-256 sibling of
+// [openStoreFromFixture]. The two are split rather than parameterised
+// so callsites that already hard-code the SHA-1 type stay readable;
+// the SHA-256 path is exercised by exactly two tests.
+func openStoreFromFixture256(t *testing.T, name string) *objstore.Store[objfmt.SHA256Hash] {
+	t.Helper()
+	gitdir := testfixture.MaterializeRepo(t, name)
+	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
+	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 	return store
@@ -195,11 +210,11 @@ func TestServe_V0SortedRefs(t *testing.T) {
 
 // buildUnbornHeadStrayRefsFixture materializes a gitdir whose HEAD
 // points symbolically at `refs/heads/main` while the underlying ref
-// does not exist (so [objstore.Store.Head] reports unborn) AND a
+// does not exist (so [objstore.Store[objfmt.SHA1Hash].Head] reports unborn) AND a
 // stray packed ref does exist. No committed fixture under
 // `testdata/repos/` carries this combination, so the directory is
 // built inline in `t.TempDir()`.
-func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.Store {
+func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 
 	root := t.TempDir()
@@ -219,7 +234,7 @@ func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.St
 	require.NoError(t, os.WriteFile(filepath.Join(gitDir, "packed-refs"),
 		[]byte(packedRefs), 0o644))
 
-	s, err := objstore.Open(gitDir)
+	s, err := objstore.Open[objfmt.SHA1Hash](gitDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s

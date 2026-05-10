@@ -39,9 +39,9 @@ func buildObjectInfoRequest(argLines []string) []byte {
 // store. Used by byte-pinned tests so the fixture's objects drive the
 // expected wire bytes without the test having to hard-code sizes that
 // would drift if the fixture were ever regenerated.
-func querySize(t *testing.T, store *objstore.Store, oidHex string) int64 {
+func querySize[H objfmt.HashType](t *testing.T, store *objstore.Store[H], oidHex string) int64 {
 	t.Helper()
-	hash, err := objfmt.ParseHex(oidHex, store.Algo())
+	hash, err := objfmt.ParseHexAs[H](oidHex)
 	require.NoError(t, err)
 	info, err := store.ObjectInfo(hash)
 	require.NoError(t, err)
@@ -317,7 +317,7 @@ func TestObjectInfo_UnknownArg(t *testing.T) {
 // through the handler. The fixture has one resolvable blob; the
 // response shape is the same as the sha1 case but with longer OIDs.
 func TestObjectInfo_SHA256(t *testing.T) {
-	store := openStoreFromFixture(t, "loose-objects-sha256")
+	store := openStoreFromFixture256(t, "loose-objects-sha256")
 	blobSize := querySize(t, store, loose256BlobOID)
 
 	req := buildObjectInfoRequest([]string{
@@ -364,7 +364,7 @@ func TestObjectInfo_CorruptObject(t *testing.T) {
 	packPath := filepath.Join(dir, ".git", "objects", "pack", "three-objects.pack")
 	flipPackByte(t, packPath, 64)
 
-	store, err := objstore.Open(filepath.Join(dir, ".git"))
+	store, err := objstore.Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 

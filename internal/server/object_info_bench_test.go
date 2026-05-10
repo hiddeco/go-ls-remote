@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -18,7 +19,7 @@ import (
 // requested OID, with the per-OID branch selecting between a hit
 // (`<oid> <size>` formatting), a miss (`<oid> ` empty-size form), or
 // a parse error (inline ERR pkt-line). The hit path also touches
-// [objstore.Store.ObjectInfo] for size resolution; the miss path
+// [objstore.Store[objfmt.SHA1Hash].ObjectInfo] for size resolution; the miss path
 // short-circuits at the loose-first / pack-second lookup.
 //
 // Sub-benches parameterise on:
@@ -96,7 +97,7 @@ func BenchmarkWriteObjectInfoResponse(b *testing.B) {
 
 // openBenchPackOnlyStore copies the committed `pack-only` fixture
 // into a fresh `b.TempDir()`, renames the `dotgit` component to
-// `.git`, and opens an `objstore.Store` rooted at it with the CRC
+// `.git`, and opens an `objstore.Store[objfmt.SHA1Hash]` rooted at it with the CRC
 // check disabled. Mirrors `testfixture.MaterializeRepo` in shape but
 // takes a `*testing.B` and returns the opened store directly so the
 // bench loop stays terse.
@@ -105,7 +106,7 @@ func BenchmarkWriteObjectInfoResponse(b *testing.B) {
 // cost rather than the per-object CRC-32 verification budget. The
 // CRC path is benched separately in
 // `internal/objstore/store_bench_test.go::BenchmarkStore_ObjectInfo_CRC`.
-func openBenchPackOnlyStore(b *testing.B) *objstore.Store {
+func openBenchPackOnlyStore(b *testing.B) *objstore.Store[objfmt.SHA1Hash] {
 	b.Helper()
 
 	wd, err := os.Getwd()
@@ -122,7 +123,7 @@ func openBenchPackOnlyStore(b *testing.B) *objstore.Store {
 		b.Fatal(err)
 	}
 
-	s, err := objstore.Open(filepath.Join(dst, ".git"),
+	s, err := objstore.Open[objfmt.SHA1Hash](filepath.Join(dst, ".git"),
 		objstore.WithoutCRCCheck())
 	if err != nil {
 		b.Fatal(err)

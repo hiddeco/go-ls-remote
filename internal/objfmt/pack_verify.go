@@ -13,15 +13,16 @@ import (
 // VerifyChecksum walks the entire pack and reports an error if its
 // trailing hash does not match a fresh hash of every preceding byte.
 //
-// The trailer is `algo.Size()` bytes wide — 20 for SHA-1, 32 for
-// SHA-256 — per the pack file layout in
+// The trailer is `len(*new(H))` bytes wide — 20 for [SHA1Hash], 32 for
+// [SHA256Hash] — per the pack file layout in
 // `Documentation/gitformat-pack.adoc`. Verifying the trailer is
 // expensive (whole-file read) but it is the only way to prove the
 // pack body is intact end-to-end; callers should run it once at open
 // time for untrusted packs and lean on the OS page cache for any
 // subsequent random-access reads.
-func (p *Pack) VerifyChecksum() error {
-	hashLen := int64(p.algo.Size())
+func (p *Pack[H]) VerifyChecksum() error {
+	var zero H
+	hashLen := int64(len(zero))
 	if hashLen == 0 {
 		return fmt.Errorf("objfmt: unsupported algo %v: %w", p.algo, ErrUnsupportedAlgo)
 	}

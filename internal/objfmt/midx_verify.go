@@ -16,8 +16,9 @@ import (
 // been silently corrupted on disk. Canonical Git computes the same
 // trailer in `midx-write.c` (`finalize_hashfile`), so an intact midx
 // emitted by `git multi-pack-index write` always verifies.
-func (m *Midx) VerifyChecksum() error {
-	hashLen := m.algo.Size()
+func (m *Midx[H]) VerifyChecksum() error {
+	var zero H
+	hashLen := len(zero)
 	if hashLen == 0 {
 		return fmt.Errorf("objfmt: unsupported algo %v: %w", m.algo, ErrUnsupportedAlgo)
 	}

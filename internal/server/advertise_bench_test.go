@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -27,7 +28,7 @@ import (
 // fixture carries a peel mix (`with-peel` keeps ~5% of refs as
 // annotated tags with recorded `^<peel>` lines). The peel arm
 // exercises the `refPeel` short-circuit through
-// [objstore.RefEntry.PeelKnown] without needing real tag bodies on
+// [objstore.RefEntry[objfmt.SHA1Hash].PeelKnown] without needing real tag bodies on
 // disk.
 //
 // The store, options and writer are constructed once outside the
@@ -113,7 +114,7 @@ func BenchmarkWriteV2Advertisement(b *testing.B) {
 // ordering matches the natural numerical ordering — without padding,
 // `branch-10` would sort before `branch-2` and the benchmarks across
 // `n` would not be directly comparable.
-func buildBenchPackedRefsRepo(tb testing.TB, n int, withPeel bool) *objstore.Store {
+func buildBenchPackedRefsRepo(tb testing.TB, n int, withPeel bool) *objstore.Store[objfmt.SHA1Hash] {
 	tb.Helper()
 
 	root := tb.TempDir()
@@ -153,7 +154,7 @@ func buildBenchPackedRefsRepo(tb testing.TB, n int, withPeel bool) *objstore.Sto
 		tb.Fatal(err)
 	}
 
-	s, err := objstore.Open(gitDir)
+	s, err := objstore.Open[objfmt.SHA1Hash](gitDir)
 	if err != nil {
 		tb.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -64,7 +65,7 @@ func BenchmarkTransport_Open(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				c := conn.(*Conn)
+				c := conn.(*Conn[objfmt.SHA1Hash])
 				drainAdvertisement(b, c)
 				if err := conn.Close(); err != nil {
 					b.Fatal(err)

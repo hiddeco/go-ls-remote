@@ -22,14 +22,14 @@ const (
 	tagOfTagCommitOID   = "619aaeb618057787fe6afee2c284331701ef9583"
 )
 
-// openStoreFromFixture is the [Store]-level sibling of
+// openStoreFromFixture is the [Store[objfmt.SHA1Hash]]-level sibling of
 // [openLooseObjectsFromFixture]: materializes the named fixture, opens
-// the full Store, and registers the cleanup. Centralised so each test
+// the full Store[objfmt.SHA1Hash], and registers the cleanup. Centralised so each test
 // stays focused on the assertion it is making.
-func openStoreFromFixture(t *testing.T, name string) *Store {
+func openStoreFromFixture(t *testing.T, name string) *Store[objfmt.SHA1Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
@@ -73,7 +73,7 @@ func TestStorePeel_NonTagInputReturnsNotPeelable(t *testing.T) {
 			peeled, ok, err := s.Peel(hashFromHex(t, tc.oid, objfmt.SHA1))
 			require.NoError(t, err)
 			assert.False(t, ok)
-			assert.Equal(t, objfmt.Hash{}, peeled)
+			assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 		})
 	}
 }
@@ -82,7 +82,7 @@ func TestStorePeel_TagOfTagRecursesToTerminalCommit(t *testing.T) {
 	// Recursive peel: v2 -> v1 -> commit. The outer tag's terminal
 	// target is the commit, not the inner tag. This is the canonical
 	// "annotated tag of an annotated tag" shape `git tag -a v2 v1`
-	// produces, and the recursion is the part of [Store.Peel] not
+	// produces, and the recursion is the part of [Store[objfmt.SHA1Hash].Peel] not
 	// exercised by the single-link fixture.
 	s := openStoreFromFixture(t, "loose-tag-of-tag")
 
@@ -124,7 +124,7 @@ func TestStorePeel_CacheHitSurvivesUnreadableObject(t *testing.T) {
 	}
 
 	root := materializeFixture(t, "loose-objects")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -160,7 +160,7 @@ func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 	}
 
 	root := materializeFixture(t, "loose-objects")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -169,7 +169,7 @@ func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 	peeled, ok, err := s.Peel(blobOID)
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.Equal(t, objfmt.Hash{}, peeled)
+	require.Equal(t, objfmt.SHA1Hash{}, peeled)
 
 	blobPath := filepath.Join(root, ".git", "objects",
 		looseFixtureBlobOID[:2], looseFixtureBlobOID[2:])
@@ -179,7 +179,7 @@ func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 	peeled, ok, err = s.Peel(blobOID)
 	require.NoError(t, err, "cached negative result must not re-read")
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 }
 
 func TestStorePeel_DepthBoundCollapsesToNotPeelable(t *testing.T) {
@@ -196,13 +196,13 @@ func TestStorePeel_DepthBoundCollapsesToNotPeelable(t *testing.T) {
 	peeled, ok, err := s.Peel(v17)
 	require.NoError(t, err)
 	assert.False(t, ok, "17-link chain must hit the depth bound")
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 }
 
 func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 	// Depth overrun must NOT poison the cache: a future bump of
 	// `maxPeelDepth` is supposed to make a previously-overrunning
-	// chain resolvable on the next call without a Store restart, and
+	// chain resolvable on the next call without a Store[objfmt.SHA1Hash] restart, and
 	// the only way that contract holds is if the first call's
 	// "not peelable" answer was never written to the cache. Probe the
 	// invariant by removing the chain head between two `Peel` calls.
@@ -217,13 +217,13 @@ func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 	peeled, ok, err := s.Peel(v17)
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.Equal(t, objfmt.Hash{}, peeled)
+	require.Equal(t, objfmt.SHA1Hash{}, peeled)
 
 	// Delete the chain-head loose object so any uncached re-read fails
 	// loudly. If the overrun was cached the second call would return
 	// (Hash{}, false, nil) silently from the cache.
 	objPath := filepath.Join(s.loose.commonDir, "objects",
-		v17.Hex(s.algo)[:2], v17.Hex(s.algo)[2:])
+		v17.Hex()[:2], v17.Hex()[2:])
 	require.NoError(t, os.Remove(objPath))
 
 	peeled2, ok2, err2 := s.Peel(v17)
@@ -231,7 +231,7 @@ func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 		"deleting the head plus a cache miss should still surface as a clean miss")
 	require.False(t, ok2,
 		"the missing-object cache miss must collapse to not-peelable")
-	require.Equal(t, objfmt.Hash{}, peeled2)
+	require.Equal(t, objfmt.SHA1Hash{}, peeled2)
 
 	// A direct probe via `loose.Find` confirms the file really is gone:
 	// without that, the cache-miss assertion above would be vacuous.
@@ -281,13 +281,13 @@ func TestStorePeel_UnknownOIDIsNotAnError(t *testing.T) {
 	peeled, ok, err := s.Peel(missing)
 	require.NoError(t, err)
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 
-	zero := objfmt.Hash{}
+	zero := objfmt.SHA1Hash{}
 	peeled, ok, err = s.Peel(zero)
 	require.NoError(t, err)
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 }
 
 func TestStorePeel_ConcurrentCallsConverge(t *testing.T) {
@@ -319,7 +319,7 @@ func TestStorePeel_ConcurrentCallsConverge(t *testing.T) {
 				peeled, ok, err := s.Peel(tagOID)
 				if err != nil || !ok || peeled != commitOID {
 					t.Errorf("worker %d iter %d: got (%v, %v, %v); want (%x, true, nil)",
-						i, j, peeled.Hex(objfmt.SHA1), ok, err, commitOID)
+						i, j, peeled.Hex(), ok, err, commitOID)
 					return
 				}
 			}
@@ -338,7 +338,7 @@ func TestStore_PeelRef_FullyPeeledShortCircuits(t *testing.T) {
 	// Asserting equality against the recorded hex is itself the proof:
 	// no object-body read could synthesize that value here.
 	root := materializeFixture(t, "packed-refs-fully-peeled")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -356,14 +356,14 @@ func TestStore_PeelRef_FullyPeeledNoPeelShortCircuits(t *testing.T) {
 	// definitive. PeelRef must return (zero, false, nil) without
 	// consulting the object store.
 	root := materializeFixture(t, "packed-refs-fully-peeled")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
 	peeled, ok, err := s.PeelRef("refs/heads/main")
 	require.NoError(t, err)
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 }
 
 func TestStore_PeelRef_NoTraitFallsThrough(t *testing.T) {
@@ -400,7 +400,7 @@ func TestStore_PeelRef_ReftableUsesRecordPeel(t *testing.T) {
 	// must surface PeelKnown=true. PeelRef short-circuits on the record
 	// without falling through to the object-body read.
 	root := materializeFixture(t, "with-reftable-content")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -409,7 +409,7 @@ func TestStore_PeelRef_ReftableUsesRecordPeel(t *testing.T) {
 	peeled, ok, err := s.PeelRef("refs/heads/main")
 	require.NoError(t, err)
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 
 	// The short-circuit signal: the same Lookup that PeelRef consults
 	// reports PeelKnown=true for the reftable backend.
@@ -428,7 +428,7 @@ func TestStore_PeelRef_MissingRef(t *testing.T) {
 	peeled, ok, err := s.PeelRef("refs/heads/does-not-exist")
 	require.NoError(t, err)
 	assert.False(t, ok)
-	assert.Equal(t, objfmt.Hash{}, peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, peeled)
 }
 
 // readRefOID resolves name through the store's iterator. Used by the
@@ -436,7 +436,7 @@ func TestStore_PeelRef_MissingRef(t *testing.T) {
 // hex that the fixture generator might rotate. Iteration is O(N) in
 // the ref count but the chain fixture only ships 17 refs, so the
 // cost is negligible compared to keeping the assertion fixture-stable.
-func readRefOID(t *testing.T, s *Store, name string) objfmt.Hash {
+func readRefOID(t *testing.T, s *Store[objfmt.SHA1Hash], name string) objfmt.SHA1Hash {
 	t.Helper()
 	for entry, err := range s.IterRefs() {
 		require.NoError(t, err)
@@ -445,5 +445,5 @@ func readRefOID(t *testing.T, s *Store, name string) objfmt.Hash {
 		}
 	}
 	t.Fatalf("ref %q not found in store", name)
-	return objfmt.Hash{}
+	return objfmt.SHA1Hash{}
 }

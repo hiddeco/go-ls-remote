@@ -23,8 +23,9 @@ const idxV2OverflowMSB uint32 = 0x80000000
 // `packfile.c`: index past the 8-byte header and the 256-entry
 // fan-out, then `8 + N*hashLen + N*4 + i*4` lands on the four-byte
 // offset slot for record `i`.
-func (i *Idx) findOffsetV2(h Hash) (int64, bool) {
-	hashLen := i.algo.Size()
+func (i *Idx[H]) findOffsetV2(h H) (int64, bool) {
+	var zero H
+	hashLen := len(zero)
 	if i.count == 0 || hashLen == 0 {
 		return -1, false
 	}
@@ -59,11 +60,12 @@ func (i *Idx) findOffsetV2(h Hash) (int64, bool) {
 // The CRC table is new in v2 — see `gitformat-pack.adoc` lines
 // 299-302 — and lets repacking copy compressed entries verbatim while
 // still detecting bit-rot at copy time.
-func (i *Idx) FindCRC32(h Hash) (uint32, bool) {
+func (i *Idx[H]) FindCRC32(h H) (uint32, bool) {
 	if i.ver != 2 || i.count == 0 {
 		return 0, false
 	}
-	hashLen := i.algo.Size()
+	var zero H
+	hashLen := len(zero)
 	idx, ok := i.searchV2(h)
 	if !ok {
 		return 0, false
@@ -81,15 +83,14 @@ func (i *Idx) FindCRC32(h Hash) (uint32, bool) {
 //
 // In both v1 and v2 the pack-trailer copy sits immediately before the
 // idx self-checksum at the end of the file (`gitformat-pack.adoc`
-// lines 213-218 and 314-319). For SHA-1 idxs the result occupies the
-// low 20 bytes of the returned [Hash]; the high 12 are zero.
-func (i *Idx) PackChecksum() Hash {
-	hashLen := i.algo.Size()
+// lines 213-218 and 314-319).
+func (i *Idx[H]) PackChecksum() H {
+	var h H
+	hashLen := len(h)
 	if hashLen == 0 || len(i.data) < 2*hashLen {
-		return Hash{}
+		return h
 	}
-	var h Hash
-	copy(h[:hashLen], i.data[len(i.data)-2*hashLen:len(i.data)-hashLen])
+	copy(hashBytes(&h), i.data[len(i.data)-2*hashLen:len(i.data)-hashLen])
 	return h
 }
 
@@ -100,8 +101,9 @@ func (i *Idx) PackChecksum() Hash {
 // The trailer is the *idx* self-hash, not the pack-trailer copy that
 // sits just before it (`gitformat-pack.adoc` lines 314-319). Use
 // [Idx.PackChecksum] to read the pack-trailer copy.
-func (i *Idx) VerifyChecksum() error {
-	hashLen := i.algo.Size()
+func (i *Idx[H]) VerifyChecksum() error {
+	var zero H
+	hashLen := len(zero)
 	if hashLen == 0 {
 		return fmt.Errorf("objfmt: unsupported algo %v: %w", i.algo, ErrUnsupportedAlgo)
 	}
@@ -136,8 +138,9 @@ func (i *Idx) VerifyChecksum() error {
 
 // searchV2 binary-searches the sorted-name table for h, narrowed by
 // the 256-entry fan-out, and returns the matching record index.
-func (i *Idx) searchV2(h Hash) (uint32, bool) {
-	hashLen := i.algo.Size()
+func (i *Idx[H]) searchV2(h H) (uint32, bool) {
+	var zero H
+	hashLen := len(zero)
 	if hashLen == 0 || i.count == 0 {
 		return 0, false
 	}
@@ -163,7 +166,7 @@ func (i *Idx) searchV2(h Hash) (uint32, bool) {
 	if len(i.data) < nameTable+int(i.count)*hashLen {
 		return 0, false
 	}
-	want := h[:hashLen]
+	want := hashBytes(&h)
 	for lo < hi {
 		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
 		// summands set bit 31; `lo + (hi-lo)/2` does not.

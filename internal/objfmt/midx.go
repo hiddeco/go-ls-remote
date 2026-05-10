@@ -22,11 +22,15 @@ import (
 // recognised in the table but only `LOFF` is consumed by this reader.
 // Reachability bitmaps and incremental chains are out of scope.
 //
+// The type parameter `H` selects the OID width — [SHA1Hash] when the
+// midx header's `hash_version` byte is 1, [SHA256Hash] when it is 2.
+// [OpenMidx]'s `algo` argument must agree with `H`.
+//
 // The file is read into memory at [OpenMidx] time and every lookup is
 // then arithmetic over the in-memory slice; midx files for typical
 // multi-gigabyte repositories are well under 10 MiB so the simpler
 // model wins over mmap.
-type Midx struct {
+type Midx[H HashType] struct {
 	path      string
 	algo      Algo
 	ver       uint32
@@ -111,7 +115,7 @@ var (
 // `num_base` byte — are out of scope and rejected here. Bitmap-related
 // chunks (`BTMP`, `RIDX`) are tolerated when present but never
 // consulted.
-func OpenMidx(path string, algo Algo) (*Midx, error) {
+func OpenMidx[H HashType](path string, algo Algo) (*Midx[H], error) {
 	if algo == nil {
 		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
@@ -126,7 +130,7 @@ func OpenMidx(path string, algo Algo) (*Midx, error) {
 		return nil, fmt.Errorf("objfmt: not a midx (magic = %q): %w", data[0:4], ErrBadMagic)
 	}
 
-	m := &Midx{path: path, algo: algo, data: data}
+	m := &Midx[H]{path: path, algo: algo, data: data}
 	m.ver = uint32(data[4])
 	if m.ver != 1 && m.ver != 2 {
 		return nil, fmt.Errorf("objfmt: unsupported midx version %d (want 1 or 2): %w", m.ver, ErrUnsupportedVersion)
@@ -183,12 +187,13 @@ func midxHashVersion(a Algo) (byte, error) {
 // the final chunk's end and is used to size the previous extent.
 //
 // Mirrors `read_table_of_contents` in `chunk-format.c`.
-func (m *Midx) parseChunkTable(numChunks int) error {
+func (m *Midx[H]) parseChunkTable(numChunks int) error {
 	if numChunks < 0 {
 		return fmt.Errorf("objfmt: negative midx chunk count: %w", ErrCorrupt)
 	}
 	end := midxHeaderSize + (numChunks+1)*midxChunkTOCEntry
-	hashLen := m.algo.Size()
+	var zero H
+	hashLen := len(zero)
 	if end > len(m.data)-hashLen {
 		return fmt.Errorf("objfmt: midx chunk table overflows file (%d chunks): %w", numChunks, ErrTruncated)
 	}
@@ -260,7 +265,7 @@ func (id chunkID) String() string { return string(id[:]) }
 // duplicates ("multi-pack-index pack names out of order" in
 // `midx.c:213-218`). v2 relaxes the ordering, so the check fires only
 // when `m.ver == 1`.
-func (m *Midx) parsePackNames() error {
+func (m *Midx[H]) parsePackNames() error {
 	ext := m.chunks[chunkPNAM]
 	body := m.data[ext.off : ext.off+ext.len]
 	names := make([]string, 0, m.numPacks)
@@ -295,7 +300,7 @@ func (m *Midx) parsePackNames() error {
 // bytes (256 × uint32), checks that the entries are non-decreasing
 // (`midx.c:62-71` rejects "oid fanout out of order"), and reads the
 // count out of the last slot.
-func (m *Midx) parseFanout() error {
+func (m *Midx[H]) parseFanout() error {
 	ext := m.chunks[chunkOIDF]
 	if ext.len != 256*4 {
 		return fmt.Errorf("objfmt: midx OIDF wrong size (%d, want 1024): %w", ext.len, ErrCorrupt)
@@ -315,7 +320,8 @@ func (m *Midx) parseFanout() error {
 	// Cross-check OIDL while we are here: the lookup table must hold
 	// exactly count × hashLen bytes.
 	oidl := m.chunks[chunkOIDL]
-	hashLen := int64(m.algo.Size())
+	var zero H
+	hashLen := int64(len(zero))
 	if oidl.len != int64(m.count)*hashLen {
 		return fmt.Errorf("objfmt: midx OIDL size %d != count*%d: %w", oidl.len, hashLen, ErrCorrupt)
 	}
@@ -357,12 +363,13 @@ func (m *Midx) parseFanout() error {
 // stricter here as defense-in-depth: a one-pass walk at parse time
 // costs nothing and acts as a tripwire for both malformed external
 // files and any future v0 write path that produces a corrupt OIDL.
-func (m *Midx) validateOIDLookup() error {
+func (m *Midx[H]) validateOIDLookup() error {
 	if m.count < 2 {
 		return nil
 	}
 	oidl := m.chunks[chunkOIDL]
-	hashLen := int64(m.algo.Size())
+	var zero H
+	hashLen := int64(len(zero))
 	body := m.data[oidl.off : oidl.off+oidl.len]
 	for i := int64(1); i < int64(m.count); i++ {
 		prev := body[(i-1)*hashLen : i*hashLen]
@@ -379,7 +386,7 @@ func (m *Midx) validateOIDLookup() error {
 // Close releases the in-memory body for garbage collection. Subsequent
 // lookup calls observe an empty body and report misses; Close is safe
 // to call more than once.
-func (m *Midx) Close() error {
+func (m *Midx[H]) Close() error {
 	m.data = nil
 	m.chunks = nil
 	m.packNames = nil
@@ -391,24 +398,24 @@ func (m *Midx) Close() error {
 // Algo returns the hash algorithm asserted by the caller at
 // [OpenMidx] time. The midx header's `hash_version` byte was checked
 // against this algo.
-func (m *Midx) Algo() Algo { return m.algo }
+func (m *Midx[H]) Algo() Algo { return m.algo }
 
 // Version returns the midx format version recorded in the header
 // (1 or 2; canonical Git emits both).
-func (m *Midx) Version() uint32 { return m.ver }
+func (m *Midx[H]) Version() uint32 { return m.ver }
 
 // Count returns the number of object entries indexed by the midx,
 // read from the last fan-out slot (`fanout[255]`).
-func (m *Midx) Count() uint32 { return m.count }
+func (m *Midx[H]) Count() uint32 { return m.count }
 
 // PackNames returns the `.idx` basenames listed in the PNAM chunk in
 // chunk order. The midx's `OOFF` chunk encodes pack indices into this
 // slice. The caller receives a copy and may mutate it freely.
-func (m *Midx) PackNames() []string {
+func (m *Midx[H]) PackNames() []string {
 	out := make([]string, len(m.packNames))
 	copy(out, m.packNames)
 	return out
 }
 
 // Path returns the filesystem path passed to [OpenMidx].
-func (m *Midx) Path() string { return m.path }
+func (m *Midx[H]) Path() string { return m.path }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -19,10 +20,10 @@ import (
 // store rooted at it. The majority of tests in this package only
 // need the empty repository, so the helper hides the
 // fixture-name plumbing and the cleanup wiring at every call site.
-func openEmptyStore(t *testing.T) *objstore.Store {
+func openEmptyStore(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 	gitdir := testfixture.MaterializeRepo(t, "empty")
-	s, err := objstore.Open(gitdir)
+	s, err := objstore.Open[objfmt.SHA1Hash](gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s

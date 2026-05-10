@@ -33,13 +33,12 @@ func idxFixture(t *testing.T, name string) string {
 //
 // The pack-trailer SHA-1 is fabricated; nothing in this file references
 // a real `.pack`. The idx-trailer SHA-1 is computed over every byte
-// preceding it so [Idx.VerifyChecksum] (added in Task 12) accepts the
-// result.
+// preceding it so [Idx.VerifyChecksum] accepts the result.
 func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	t.Helper()
 	// Sort by SHA so the binary search invariant holds.
 	slices.SortFunc(entries, func(a, b v1Entry) int {
-		return bytes.Compare(a.oid[:20], b.oid[:20])
+		return bytes.Compare(a.oid[:], b.oid[:])
 	})
 
 	buf := new(bytes.Buffer)
@@ -56,7 +55,7 @@ func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	// Main table.
 	for _, e := range entries {
 		_ = binary.Write(buf, binary.BigEndian, uint32(e.offset))
-		buf.Write(e.oid[:20])
+		buf.Write(e.oid[:])
 	}
 	// Fake pack-trailer SHA-1.
 	var packTrailer [20]byte
@@ -73,14 +72,16 @@ func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	return path
 }
 
+// v1Entry pairs a SHA-1 OID with its pack offset for [writeV1Idx]. v1
+// idxs only ever stored SHA-1 ids so the entry is not generic.
 type v1Entry struct {
 	offset uint32
-	oid    Hash
+	oid    SHA1Hash
 }
 
 func TestIdx_OpenIdx(t *testing.T) {
 	t.Run("v2 SHA-1 idx reports algo, version, count", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -91,7 +92,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 	})
 
 	t.Run("v2 SHA-256 idx reports algo, version, count", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "sha256-three.idx"), SHA256)
+		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -101,7 +102,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 	})
 
 	t.Run("v2 SHA-256 empty idx reports zero objects", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "sha256-empty.idx"), SHA256)
+		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-empty.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -111,11 +112,11 @@ func TestIdx_OpenIdx(t *testing.T) {
 	})
 
 	t.Run("hand-rolled v1 idx reports version 1", func(t *testing.T) {
-		oid, err := ParseHex("0123456789abcdef0123456789abcdef01234567", SHA1)
+		oid, err := ParseSHA1Hex("0123456789abcdef0123456789abcdef01234567")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
 
-		idx, err := OpenIdx(path, SHA1)
+		idx, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 
@@ -132,7 +133,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "v99.idx")
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
 
-		_, err := OpenIdx(path, SHA1)
+		_, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "version")
 	})
@@ -141,22 +142,22 @@ func TestIdx_OpenIdx(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "tiny.idx")
 		require.NoError(t, os.WriteFile(path, []byte{0xff, 't'}, 0o600))
 
-		_, err := OpenIdx(path, SHA1)
+		_, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a nil algo", func(t *testing.T) {
-		_, err := OpenIdx(idxFixture(t, "three-objects.idx"), nil)
+		_, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a missing file", func(t *testing.T) {
-		_, err := OpenIdx(filepath.Join(t.TempDir(), "nope.idx"), SHA1)
+		_, err := OpenIdx[SHA1Hash](filepath.Join(t.TempDir(), "nope.idx"), SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("Close is idempotent", func(t *testing.T) {
-		idx, err := OpenIdx(idxFixture(t, "three-objects.idx"), SHA1)
+		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		assert.NoError(t, idx.Close())
 		assert.NoError(t, idx.Close())
@@ -166,7 +167,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 		// Synthesise a v1 idx then patch fanout[5] to a value larger
 		// than fanout[6]. Mirrors `packfile.c:215-220`, which rejects
 		// non-monotonic indices with "non-monotonic index ...".
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
 		raw, err := os.ReadFile(path)
@@ -176,14 +177,14 @@ func TestIdx_OpenIdx(t *testing.T) {
 		binary.BigEndian.PutUint32(raw[5*4:6*4], 100)
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenIdx(path, SHA1)
+		_, err = OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "fanout")
 	})
 
 	t.Run("rejects v2 idx with non-monotonic fanout", func(t *testing.T) {
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV2Idx(t, t.TempDir(), []v2Entry{
 			{oid: oid, offset: 12, crc: 0xdeadbeef},
@@ -195,7 +196,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 		binary.BigEndian.PutUint32(raw[fanoutStart+5*4:fanoutStart+6*4], 100)
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenIdx(path, SHA1)
+		_, err = OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "fanout")

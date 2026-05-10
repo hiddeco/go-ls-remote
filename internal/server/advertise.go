@@ -42,7 +42,7 @@ import (
 //     `serve.c::object_format_advertise` lines 53-58.
 //   - `object-info` — boolean, no `=value`. Canonical reference:
 //     `serve.c::object_info_advertise` lines 92-101.
-func writeV2Advertisement(w *pktline.Writer, store *objstore.Store, opts Options) error {
+func writeV2Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	if err := w.WritePacket([]byte("version 2\n")); err != nil {
 		return fmt.Errorf("server: write v2 version line: %w", err)
 	}
@@ -99,15 +99,13 @@ func writeV2Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 // [objstore.Store.Peel] otherwise. The peel is suppressed when the
 // resolved peel hash is zero, matching `reference_get_peeled_oid`'s
 // "no peel" return at `upload-pack.c:1268-1270`.
-func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options) error {
-	algo := store.Algo()
-
+func writeV0Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	head, err := store.Head()
 	if err != nil {
 		return fmt.Errorf("server: resolve HEAD: %w", err)
 	}
 
-	caps := buildV0Caps(head, algo, opts)
+	caps := buildV0Caps(head, store.Algo(), opts)
 
 	// Drain `IterRefs` into a sorted slice so the wire output honours
 	// the C-locale byte ordering required by
@@ -124,8 +122,8 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 	// `data.sent_capabilities` stays zero after the ref walk.
 	headValid := !head.Unborn && (head.Symref != "" || !head.OID.IsZero())
 	if !headValid && len(refs) == 0 {
-		var zero objfmt.Hash
-		payload := zero.Hex(algo) + " capabilities^{}\x00" + caps + "\n"
+		var zero H
+		payload := zero.Hex() + " capabilities^{}\x00" + caps + "\n"
 		if err := w.WritePacket([]byte(payload)); err != nil {
 			return fmt.Errorf("server: write v0 capabilities placeholder: %w", err)
 		}
@@ -147,7 +145,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 
 	capsEmitted := false
 	if headValid {
-		line = head.OID.AppendHex(line, algo)
+		line = head.OID.AppendHex(line)
 		line = append(line, " HEAD\x00"...)
 		line = append(line, caps...)
 		line = append(line, '\n')
@@ -159,7 +157,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 
 	for _, ref := range refs {
 		line = line[:0]
-		line = ref.OID.AppendHex(line, algo)
+		line = ref.OID.AppendHex(line)
 		line = append(line, ' ')
 		line = append(line, ref.Name...)
 		if !capsEmitted {
@@ -178,7 +176,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 		}
 		if ok && !peeled.IsZero() {
 			line = line[:0]
-			line = peeled.AppendHex(line, algo)
+			line = peeled.AppendHex(line)
 			line = append(line, ' ')
 			line = append(line, ref.Name...)
 			line = append(line, "^{}\n"...)
@@ -198,7 +196,7 @@ func writeV0Advertisement(w *pktline.Writer, store *objstore.Store, opts Options
 // advertisement. The caller frames it into the first ref's pkt-line.
 // Order matches `write_v0_ref` at `upload-pack.c:1249-1262` reduced
 // to the emulator's discovery-only subset.
-func buildV0Caps(head objstore.Head, algo objfmt.Algo, opts Options) string {
+func buildV0Caps[H objfmt.HashType](head objstore.Head[H], algo objfmt.Algo, opts Options) string {
 	var b strings.Builder
 	if head.Symref != "" {
 		b.WriteString("symref=HEAD:")
@@ -221,15 +219,15 @@ func buildV0Caps(head objstore.Head, algo objfmt.Algo, opts Options) string {
 // by name in C-locale byte order. `gitprotocol-pack.adoc:201-203`
 // requires the wire output to be C-sorted; canonical Git delivers
 // this through `for_each_namespaced_ref_1`'s merged sorted view.
-func collectV0Refs(store *objstore.Store) ([]objstore.RefEntry, error) {
-	var refs []objstore.RefEntry
+func collectV0Refs[H objfmt.HashType](store *objstore.Store[H]) ([]objstore.RefEntry[H], error) {
+	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {
 		if err != nil {
 			return nil, fmt.Errorf("server: iterate refs: %w", err)
 		}
 		refs = append(refs, entry)
 	}
-	slices.SortFunc(refs, func(a, b objstore.RefEntry) int {
+	slices.SortFunc(refs, func(a, b objstore.RefEntry[H]) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return refs, nil
@@ -241,7 +239,7 @@ func collectV0Refs(store *objstore.Store) ([]objstore.RefEntry, error) {
 // reading the object body. The bool follows
 // [objstore.Store.Peel]'s convention: false means "no peel known"
 // (the caller skips emitting `^{}`).
-func refPeel(store *objstore.Store, ref objstore.RefEntry) (objfmt.Hash, bool, error) {
+func refPeel[H objfmt.HashType](store *objstore.Store[H], ref objstore.RefEntry[H]) (H, bool, error) {
 	if ref.PeelKnown {
 		return ref.Peeled, !ref.Peeled.IsZero(), nil
 	}

@@ -12,14 +12,14 @@ import (
 
 func TestMidx_VerifyChecksum(t *testing.T) {
 	t.Run("intact SHA-1 fixture verifies", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
+		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 		assert.NoError(t, m.VerifyChecksum())
 	})
 
 	t.Run("intact SHA-256 fixture verifies", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "sha256-multi-pack-index"), SHA256)
+		m, err := OpenMidx[SHA256Hash](idxFixture(t, "sha256-multi-pack-index"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 		assert.NoError(t, m.VerifyChecksum())
@@ -55,14 +55,14 @@ func TestMidx_VerifyChecksum(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		m, err := OpenMidx(dst, SHA1)
+		m, err := OpenMidx[SHA1Hash](dst, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 		assert.Error(t, m.VerifyChecksum())
 	})
 
 	t.Run("returns an error after Close", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
+		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		require.NoError(t, m.Close())
 		assert.Error(t, m.VerifyChecksum())

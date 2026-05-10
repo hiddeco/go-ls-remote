@@ -28,7 +28,7 @@ func writeMinPack(t *testing.T, body []byte) string {
 
 func TestPack_ReadHeader(t *testing.T) {
 	t.Run("decodes a single-byte non-delta header", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -44,7 +44,7 @@ func TestPack_ReadHeader(t *testing.T) {
 	})
 
 	t.Run("decodes a multi-byte non-delta header", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -67,7 +67,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		// Pack is SHA-256 so `algo.Size() == 32`; the peek size and
 		// any REF_DELTA stride change with the algo, but every
 		// non-delta header decodes the same way.
-		p, err := OpenPack(packFixture(t, "sha256-three.pack"), SHA256)
+		p, err := OpenPack[SHA256Hash](packFixture(t, "sha256-three.pack"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -90,7 +90,7 @@ func TestPack_ReadHeader(t *testing.T) {
 	})
 
 	t.Run("decodes an OFS_DELTA header", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -106,7 +106,7 @@ func TestPack_ReadHeader(t *testing.T) {
 	})
 
 	t.Run("decodes a REF_DELTA header", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "ref-delta.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "ref-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -118,13 +118,13 @@ func TestPack_ReadHeader(t *testing.T) {
 		assert.Equal(t, int64(9), hdr.Size)
 		assert.Equal(t, int64(228), hdr.BodyAt)
 		assert.Equal(t, int64(0), hdr.DeltaRef.OfsBase)
-		want, err := ParseHex("87bab3f4f5c79ca006911993eaec265a51c49a8b", SHA1)
+		want, err := ParseSHA1Hex("87bab3f4f5c79ca006911993eaec265a51c49a8b")
 		require.NoError(t, err)
 		assert.Equal(t, want, hdr.DeltaRef.RefBase)
 	})
 
 	t.Run("rejects offsets past EOF", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -141,7 +141,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		// (`packfile.c::1290`) fires.
 		path := writeMinPack(t, []byte{0x60, 0x0c})
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -166,7 +166,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		}
 		path := writeBytes(t, t.TempDir(), "overrun.pack", buf)
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -186,7 +186,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		}
 		path := writeMinPack(t, body)
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -213,7 +213,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		}
 		path := writeBytes(t, t.TempDir(), "ofs-overrun.pack", buf)
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -237,7 +237,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		}
 		path := writeMinPack(t, body)
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -260,7 +260,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		buf[15] = 0x70
 		path := writeBytes(t, t.TempDir(), "ref-overrun.pack", buf)
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -276,7 +276,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		// `packfile.c::unpack_object_header_buffer`.
 		path := writeMinPack(t, []byte{0x50})
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -292,7 +292,7 @@ func TestPack_ReadHeader(t *testing.T) {
 		// test pins the contract: many goroutines hammering
 		// `ReadHeader` on a shared `Pack` must each see the
 		// expected header without buffer aliasing.
-		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 

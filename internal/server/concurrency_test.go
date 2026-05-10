@@ -23,7 +23,7 @@ import (
 // probe for the in-process [Serve] emulator. It establishes the
 // concurrency contract callers like the `transport/file` connection
 // rely on: many independent sessions can run against a single shared
-// [objstore.Store] without interfering, both within a protocol family
+// [objstore.Store[objfmt.SHA1Hash]] without interfering, both within a protocol family
 // (many v2 sessions racing over `IterRefs` / `Head` / `Peel` /
 // `ObjectInfo`) and across families (a v0 advertisement loop racing a
 // v2 command-dispatch loop over the same backend).
@@ -60,7 +60,7 @@ func TestServe_ConcurrentSessionsRaceClean(t *testing.T) {
 	store := openConcurrentSessionsFixture(t)
 
 	commitOID := packCommitOID
-	commitHash, err := objfmt.ParseHex(commitOID, store.Algo())
+	commitHash, err := objfmt.ParseSHA1Hex(commitOID)
 	require.NoError(t, err)
 	commitInfo, err := store.ObjectInfo(commitHash)
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestServe_ConcurrentSessionsRaceClean(t *testing.T) {
 // concurrency assertions can cover the advertisement and response in a
 // single comparison without re-running [writeV2Advertisement] inside
 // the worker loop.
-func runConcurrentSession(t *testing.T, store *objstore.Store, agent string, request []byte) []byte {
+func runConcurrentSession(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], agent string, request []byte) []byte {
 	t.Helper()
 
 	var sink bytes.Buffer
@@ -183,7 +183,7 @@ func runConcurrentSession(t *testing.T, store *objstore.Store, agent string, req
 // returns the bytes it emitted. It mirrors [runAdvertise] but accepts
 // the protocol version so the same helper covers both v0 and v2
 // advertisement-only sessions inside the worker loop.
-func runConcurrentAdvertise(t *testing.T, store *objstore.Store, proto transport.ProtocolVersion, agent string) []byte {
+func runConcurrentAdvertise(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], proto transport.ProtocolVersion, agent string) []byte {
 	t.Helper()
 
 	// A single flush in the inbound stream is the v2 empty-request
@@ -223,7 +223,7 @@ func runConcurrentAdvertise(t *testing.T, store *objstore.Store, proto transport
 // `testdata/repos/` would couple two unrelated generators
 // (`testdata/_gen/repos.sh` and `testdata/_gen/objfmt.sh`) for one
 // test's benefit.
-func openConcurrentSessionsFixture(t *testing.T) *objstore.Store {
+func openConcurrentSessionsFixture(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 
 	root := t.TempDir()
@@ -255,7 +255,7 @@ func openConcurrentSessionsFixture(t *testing.T) *objstore.Store {
 			filepath.Join(gitDir, "objects", "pack", name))
 	}
 
-	s, err := objstore.Open(gitDir)
+	s, err := objstore.Open[objfmt.SHA1Hash](gitDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s

@@ -36,12 +36,12 @@ import (
 // safe for concurrent use from multiple goroutines without further
 // synchronisation. [Close] is guarded by a [sync.Once] so the cascade
 // runs exactly once.
-type midxBackend struct {
+type midxBackend[H objfmt.HashType] struct {
 	commonDir string
 
 	// midx is the parsed `multi-pack-index`. The midx reader owns the
 	// in-memory body and is closed alongside the wrapped packs.
-	midx *objfmt.Midx
+	midx *objfmt.Midx[H]
 
 	// packNames is a one-time cached copy of `midx.PackNames()`.
 	// `Midx.PackNames` allocates a fresh slice on every call; caching
@@ -53,26 +53,26 @@ type midxBackend struct {
 	// `PackNames()`, so a hit on [Midx.Find] translates to a `*Pack`
 	// with a single positional slice access — no map probe, no string
 	// indirection.
-	coveredByMidxIndex []*objfmt.Pack
+	coveredByMidxIndex []*objfmt.Pack[H]
 
 	// coveredIdxs is the `*objfmt.Idx` parallel to
 	// [coveredByMidxIndex]. Lookups never consult these — the midx
 	// itself owns the pack-id / offset table — but [Close] needs them
 	// to release the underlying file handles, and `idx.PackChecksum()`
 	// is read at open time to populate [packsByChecksum].
-	coveredIdxs []*objfmt.Idx
+	coveredIdxs []*objfmt.Idx[H]
 
 	// packsByChecksum maps every opened pack — midx-covered AND
 	// sibling — by its trailer hash (as recorded by the paired idx;
 	// see [objfmt.Idx.PackChecksum]). Used by the cross-pack REF_DELTA
 	// resolver in a follow-up; intentionally unused today.
-	packsByChecksum map[objfmt.Hash]*objfmt.Pack
+	packsByChecksum map[H]*objfmt.Pack[H]
 
 	// idxByPack maps every opened pack — midx-covered AND sibling — to
 	// its paired idx. The CRC verification path on [Store.ObjectInfo]
 	// reaches for an idx by pack pointer, and a map lookup keeps that
 	// hot path O(1) regardless of how many packs the backend tracks.
-	idxByPack map[*objfmt.Pack]*objfmt.Idx
+	idxByPack map[*objfmt.Pack[H]]*objfmt.Idx[H]
 
 	// siblings carries every (idx, pack) pair from the directory that
 	// is NOT covered by the midx. [midxBackend.Lookup] falls through to
@@ -82,7 +82,7 @@ type midxBackend struct {
 	// as a stable tiebreaker so the fallback walk consults the pack
 	// most likely to satisfy the next lookup first, matching
 	// canonical Git's `packfile.c::sort_pack` heuristic.
-	siblings []packEntry
+	siblings []packEntry[H]
 
 	// ordered enumerates every opened pack in the order
 	// [midxBackend.AllPacks] yields. Unlike `Lookup` — which keeps the
@@ -93,7 +93,7 @@ type midxBackend struct {
 	// "younger first" heuristic Git applies in `sort_pack`; the
 	// midx-insertion order is an implementation detail and would
 	// otherwise leak into them.
-	ordered []*objfmt.Pack
+	ordered []*objfmt.Pack[H]
 
 	closeOnce sync.Once
 	closeErr  error
@@ -123,11 +123,11 @@ type midxBackend struct {
 // resource — the midx and every (idx, pack) pair — is closed before
 // the error is returned, so a partially-constructed backend never
 // leaks file handles.
-func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
+func openMidxBackend[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*midxBackend[H], error) {
 	packDir := filepath.Join(commonDir, "objects", "pack")
 	midxPath := filepath.Join(packDir, "multi-pack-index")
 
-	midx, err := objfmt.OpenMidx(midxPath, algo)
+	midx, err := objfmt.OpenMidx[H](midxPath, algo)
 	if err != nil {
 		return nil, fmt.Errorf("objstore: open midx %s: %w", midxPath, err)
 	}
@@ -136,14 +136,14 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 	// and the lookup hot path consults it on every midx hit.
 	packNames := midx.PackNames()
 
-	b := &midxBackend{
+	b := &midxBackend[H]{
 		commonDir:          commonDir,
 		midx:               midx,
 		packNames:          packNames,
-		coveredByMidxIndex: make([]*objfmt.Pack, len(packNames)),
-		coveredIdxs:        make([]*objfmt.Idx, len(packNames)),
-		packsByChecksum:    map[objfmt.Hash]*objfmt.Pack{},
-		idxByPack:          map[*objfmt.Pack]*objfmt.Idx{},
+		coveredByMidxIndex: make([]*objfmt.Pack[H], len(packNames)),
+		coveredIdxs:        make([]*objfmt.Idx[H], len(packNames)),
+		packsByChecksum:    map[H]*objfmt.Pack[H]{},
+		idxByPack:          map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 	}
 
 	// coveredMtimes parallels `coveredByMidxIndex`, recording each
@@ -210,7 +210,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		}
 
 		idxPath := filepath.Join(packDir, name)
-		idx, err := objfmt.OpenIdx(idxPath, algo)
+		idx, err := objfmt.OpenIdx[H](idxPath, algo)
 		if err != nil {
 			closeOpened()
 			return nil, fmt.Errorf("objstore: open idx %s: %w", idxPath, err)
@@ -218,7 +218,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 
 		// Paired pack lives next to the idx with the same basename.
 		packPath := strings.TrimSuffix(idxPath, ".idx") + ".pack"
-		pack, err := objfmt.OpenPack(packPath, algo)
+		pack, err := objfmt.OpenPack[H](packPath, algo)
 		if err != nil {
 			_ = idx.Close()
 			closeOpened()
@@ -247,7 +247,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 			b.coveredIdxs[i] = idx
 			coveredMtimes[i] = mtime
 		} else {
-			b.siblings = append(b.siblings, packEntry{
+			b.siblings = append(b.siblings, packEntry[H]{
 				idx:   idx,
 				pack:  pack,
 				mtime: mtime,
@@ -272,7 +272,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 	// as a stable tiebreaker so the midx-miss fallback scan consults
 	// the pack most likely to satisfy the next lookup first
 	// (`packfile.c::sort_pack`).
-	slices.SortFunc(b.siblings, func(a, c packEntry) int {
+	slices.SortFunc(b.siblings, func(a, c packEntry[H]) int {
 		if d := c.mtime.Compare(a.mtime); d != 0 {
 			return d
 		}
@@ -287,8 +287,8 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 	// on; canonical Git's `packfile.c::sort_pack` heuristic governs
 	// the order across the whole pack set.
 	type orderedEntry struct {
-		pack  *objfmt.Pack
-		idx   *objfmt.Idx
+		pack  *objfmt.Pack[H]
+		idx   *objfmt.Idx[H]
 		mtime time.Time
 	}
 	all := make([]orderedEntry, 0, len(b.coveredByMidxIndex)+len(b.siblings))
@@ -309,7 +309,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 		return strings.Compare(filepath.Base(a.idx.Path()),
 			filepath.Base(c.idx.Path()))
 	})
-	b.ordered = make([]*objfmt.Pack, len(all))
+	b.ordered = make([]*objfmt.Pack[H], len(all))
 	for i, e := range all {
 		b.ordered[i] = e.pack
 	}
@@ -333,7 +333,7 @@ func openMidxBackend(commonDir string, algo objfmt.Algo) (*midxBackend, error) {
 // reinterpreting the error slot. The error slot is preserved for
 // forward compatibility with a future shape that may surface per-pack
 // failures (e.g. a lazily-mapped read error).
-func (b *midxBackend) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
+func (b *midxBackend[H]) Lookup(h H) (*objfmt.Pack[H], int64, bool, error) {
 	if packIdx, off, ok := b.midx.Find(h); ok {
 		// `coveredByMidxIndex` is sized to `PackNames()` at open
 		// (see [openMidxBackend]) and `Midx.Find` returns the same
@@ -362,8 +362,8 @@ func (b *midxBackend) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
 // that does NOT survive in the enumeration; consumers (the cross-pack
 // REF_DELTA scan, integrity walks) want "younger first" across the
 // whole set. See [packBackend.AllPacks] for the contract.
-func (b *midxBackend) AllPacks() iter.Seq[*objfmt.Pack] {
-	return func(yield func(*objfmt.Pack) bool) {
+func (b *midxBackend[H]) AllPacks() iter.Seq[*objfmt.Pack[H]] {
+	return func(yield func(*objfmt.Pack[H]) bool) {
 		for _, p := range b.ordered {
 			if !yield(p) {
 				return
@@ -383,7 +383,7 @@ func (b *midxBackend) AllPacks() iter.Seq[*objfmt.Pack] {
 // OID without naming the pack the base lives in, so resolving across
 // packs needs an OID-keyed scan; this accessor exists so that scan can
 // short-circuit when the base's pack-checksum hint is known up front.
-func (b *midxBackend) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
+func (b *midxBackend[H]) packByChecksum(h H) (*objfmt.Pack[H], bool) {
 	p, ok := b.packsByChecksum[h]
 	return p, ok
 }
@@ -393,7 +393,7 @@ func (b *midxBackend) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
 // contract. The map covers both midx-covered and sibling packs, so the
 // CRC path resolves either bucket through a single probe. ok=false
 // signals that pack is not one this backend opened.
-func (b *midxBackend) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
+func (b *midxBackend[H]) IdxFor(pack *objfmt.Pack[H]) (*objfmt.Idx[H], bool) {
 	idx, ok := b.idxByPack[pack]
 	return idx, ok
 }
@@ -403,7 +403,7 @@ func (b *midxBackend) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
 // [errors.Join] so a single failure does not mask the rest. Close is
 // idempotent: subsequent calls return the same joined error without
 // re-running the cascade.
-func (b *midxBackend) Close() error {
+func (b *midxBackend[H]) Close() error {
 	b.closeOnce.Do(func() {
 		var errs []error
 		if b.midx != nil {

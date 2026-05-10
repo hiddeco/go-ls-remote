@@ -15,8 +15,8 @@ func makeMidxBenchObjs(n, packCount int, baseOffset uint64) []midxObj {
 	for i := range n {
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 		sum := sha1.Sum(k[:])
-		var h Hash
-		copy(h[:20], sum[:])
+		var h SHA1Hash
+		copy(h[:], sum[:])
 		out[i] = midxObj{
 			oid:     h,
 			packIdx: uint32(i % packCount),
@@ -38,13 +38,13 @@ func BenchmarkMidx_Find_hit(b *testing.B) {
 		packs: packNames,
 		objs:  objs,
 	})
-	m, err := OpenMidx(path, SHA1)
+	m, err := OpenMidx[SHA1Hash](path, SHA1)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = m.Close() })
 
-	probes := make([]Hash, 0, n/7+1)
+	probes := make([]SHA1Hash, 0, n/7+1)
 	for i := 0; i < n; i += 7 {
 		probes = append(probes, objs[i].oid)
 	}
@@ -71,19 +71,19 @@ func BenchmarkMidx_Find_miss(b *testing.B) {
 		packs: []string{"pack-1.idx", "pack-2.idx", "pack-3.idx", "pack-4.idx"},
 		objs:  objs,
 	})
-	m, err := OpenMidx(path, SHA1)
+	m, err := OpenMidx[SHA1Hash](path, SHA1)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = m.Close() })
 
-	probes := make([]Hash, 0, 1024)
+	probes := make([]SHA1Hash, 0, 1024)
 	var k [8]byte
 	for i := n; i < n+1024; i++ {
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 		sum := sha1.Sum(k[:])
-		var h Hash
-		copy(h[:20], sum[:])
+		var h SHA1Hash
+		copy(h[:], sum[:])
 		probes = append(probes, h)
 	}
 
@@ -111,13 +111,13 @@ func BenchmarkMidx_Find_loff(b *testing.B) {
 		packs: []string{"pack-1.idx", "pack-2.idx", "pack-3.idx", "pack-4.idx"},
 		objs:  objs,
 	})
-	m, err := OpenMidx(path, SHA1)
+	m, err := OpenMidx[SHA1Hash](path, SHA1)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { _ = m.Close() })
 
-	probes := make([]Hash, 0, n/7+1)
+	probes := make([]SHA1Hash, 0, n/7+1)
 	for i := 0; i < n; i += 7 {
 		probes = append(probes, objs[i].oid)
 	}

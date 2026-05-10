@@ -34,7 +34,7 @@ var zlibReaderPool sync.Pool
 // Note: this varint encoding is little-endian without the
 // "+1 per continuation byte" quirk that OFS_DELTA's offset varint
 // uses (see [Pack.ReadHeader]).
-func (p *Pack) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err error) {
+func (p *Pack[H]) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err error) {
 	if bodyAt < 0 || bodyAt >= p.r.Len() {
 		return 0, 0, fmt.Errorf("objfmt: delta body offset %d out of range", bodyAt)
 	}

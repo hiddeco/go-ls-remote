@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -92,7 +93,7 @@ func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, stri
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 
 	drainAdvertisement(t, c)
@@ -207,7 +208,7 @@ func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 
 	drainAdvertisement(t, c)
@@ -257,7 +258,7 @@ func TestTracer_NilTracer_NoEvents(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 
 	drainAdvertisement(t, c)

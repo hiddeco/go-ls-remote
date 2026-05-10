@@ -60,7 +60,7 @@ func FuzzOpenPack(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, in []byte) {
 		path := writeFuzzInput(t, "fuzz.pack", in)
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		if err != nil {
 			return
 		}
@@ -86,7 +86,7 @@ func FuzzOpenIdx(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, in []byte) {
 		path := writeFuzzInput(t, "fuzz.idx", in)
-		i, err := OpenIdx(path, SHA1)
+		i, err := OpenIdx[SHA1Hash](path, SHA1)
 		if err != nil {
 			return
 		}
@@ -110,7 +110,7 @@ func FuzzOpenMidx(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, in []byte) {
 		path := writeFuzzInput(t, "multi-pack-index", in)
-		m, err := OpenMidx(path, SHA1)
+		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		if err != nil {
 			return
 		}
@@ -128,7 +128,7 @@ func FuzzOpenMidx(f *testing.F) {
 //
 // Run with `go test -fuzz=FuzzPack_ReadHeader ./internal/objfmt/...`.
 func FuzzPack_ReadHeader(f *testing.F) {
-	p, err := OpenPack(filepath.Join("..", "..", "testdata", "objfmt", "three-objects.pack"), SHA1)
+	p, err := OpenPack[SHA1Hash](filepath.Join("..", "..", "testdata", "objfmt", "three-objects.pack"), SHA1)
 	require.NoError(f, err)
 	f.Cleanup(func() { _ = p.Close() })
 
@@ -156,7 +156,7 @@ func FuzzPack_ReadHeader(f *testing.F) {
 //
 // Run with `go test -fuzz=FuzzPack_ReadDeltaHeader ./internal/objfmt/...`.
 func FuzzPack_ReadDeltaHeader(f *testing.F) {
-	p, err := OpenPack(filepath.Join("..", "..", "testdata", "objfmt", "ofs-delta.pack"), SHA1)
+	p, err := OpenPack[SHA1Hash](filepath.Join("..", "..", "testdata", "objfmt", "ofs-delta.pack"), SHA1)
 	require.NoError(f, err)
 	f.Cleanup(func() { _ = p.Close() })
 

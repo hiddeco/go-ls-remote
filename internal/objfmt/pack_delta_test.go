@@ -9,7 +9,7 @@ import (
 
 func TestPack_ReadDeltaHeader(t *testing.T) {
 	t.Run("decodes the source and target sizes of an OFS_DELTA", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -27,7 +27,7 @@ func TestPack_ReadDeltaHeader(t *testing.T) {
 	})
 
 	t.Run("decodes the source and target sizes of a REF_DELTA", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "ref-delta.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "ref-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -42,7 +42,7 @@ func TestPack_ReadDeltaHeader(t *testing.T) {
 	})
 
 	t.Run("rejects a corrupt zlib stream", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -60,7 +60,7 @@ func TestPack_ReadDeltaHeader(t *testing.T) {
 // function-local 64-byte peek buffer plus the [io.SectionReader]
 // value).
 func TestPack_ReadDeltaHeader_AllocsAfterWarmup(t *testing.T) {
-	p, err := OpenPack(packFixture(t, "ofs-delta.pack"), SHA1)
+	p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = p.Close() })
 	const bodyAt = int64(210)

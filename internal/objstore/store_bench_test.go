@@ -18,17 +18,17 @@ import (
 )
 
 // benchInfoSink and benchHashSink defeat dead-code elimination on
-// `Store`-level benchmarks where the result would otherwise go unused.
+// `Store[objfmt.SHA1Hash]`-level benchmarks where the result would otherwise go unused.
 var (
 	benchInfoSink Info
-	benchHashSink objfmt.Hash
+	benchHashSink objfmt.SHA1Hash
 	benchOKSink   bool
 )
 
-// BenchmarkStore_PeelRef compares the two paths through `Store.PeelRef`:
+// BenchmarkStore_PeelRef compares the two paths through `Store[objfmt.SHA1Hash].PeelRef`:
 // the `fully-peeled` short-circuit that resolves entirely from the ref
 // backend's recorded peel slot, and the fall-through that drops into
-// `Store.Peel` and reads the loose tag body.
+// `Store[objfmt.SHA1Hash].Peel` and reads the loose tag body.
 //
 // Both sub-benches go through the exact same call (`store.PeelRef`); the
 // fixture choice is what selects the path:
@@ -45,7 +45,7 @@ var (
 func BenchmarkStore_PeelRef(b *testing.B) {
 	b.Run("ShortCircuit", func(b *testing.B) {
 		root := materializeBenchFixture(b, "packed-refs-fully-peeled")
-		s, err := Open(root)
+		s, err := Open[objfmt.SHA1Hash](root)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -75,7 +75,7 @@ func BenchmarkStore_PeelRef(b *testing.B) {
 
 	b.Run("Fallthrough", func(b *testing.B) {
 		root := materializeBenchFixture(b, "loose-tag-deep")
-		s, err := Open(root)
+		s, err := Open[objfmt.SHA1Hash](root)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func BenchmarkStore_PeelRef(b *testing.B) {
 }
 
 // BenchmarkStore_ObjectInfo_DeltaChain measures the OFS_DELTA walk in
-// `Store.ObjectInfo` across chain depths the resolver realistically
+// `Store[objfmt.SHA1Hash].ObjectInfo` across chain depths the resolver realistically
 // encounters. Depth 0 is a non-delta blob — the loose-first miss falls
 // straight through to a non-delta pack lookup. Depth 1 is the smallest
 // pack-delta (one OFS_DELTA hop landing on its base). Depths 8 and 63
@@ -127,7 +127,7 @@ func BenchmarkStore_ObjectInfo_DeltaChain(b *testing.B) {
 			// the blob.
 			oid := makeBenchOfsDeltaChain(b, dir, depth)
 
-			s, err := Open(dir, WithoutCRCCheck())
+			s, err := Open[objfmt.SHA1Hash](dir, WithoutCRCCheck())
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -162,7 +162,7 @@ func BenchmarkStore_ObjectInfo_CRC(b *testing.B) {
 
 	b.Run("CRCEnabled", func(b *testing.B) {
 		root := materializeBenchFixture(b, "pack-only")
-		s, err := Open(root)
+		s, err := Open[objfmt.SHA1Hash](root)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -184,7 +184,7 @@ func BenchmarkStore_ObjectInfo_CRC(b *testing.B) {
 
 	b.Run("CRCDisabled", func(b *testing.B) {
 		root := materializeBenchFixture(b, "pack-only")
-		s, err := Open(root, WithoutCRCCheck())
+		s, err := Open[objfmt.SHA1Hash](root, WithoutCRCCheck())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func BenchmarkStore_ObjectInfo_CRC(b *testing.B) {
 // BenchmarkStore_IterRefs measures a full forward walk of every ref the
 // configured backend exposes. The drained-iterator shape is the
 // steady-state cost a `git ls-remote` consumer pays per call once any
-// per-Store caches are warm.
+// per-Store[objfmt.SHA1Hash] caches are warm.
 //
 // The size matrix covers loose-files refs at N=10 / 100 / 1000 via a
 // synthetic fixture that lays N branches under `refs/heads/` plus a
@@ -223,7 +223,7 @@ func BenchmarkStore_IterRefs(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
 		b.Run("Loose/N="+strconv.Itoa(n), func(b *testing.B) {
 			root := makeLooseRefsFixture(b, n)
-			s, err := Open(root)
+			s, err := Open[objfmt.SHA1Hash](root)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -262,7 +262,7 @@ func BenchmarkStore_IterRefs(b *testing.B) {
 	// shape above and drop this scaffolded single sub-bench.
 	b.Run("Reftable/Fixture=with-reftable-content", func(b *testing.B) {
 		root := materializeBenchFixture(b, "with-reftable-content")
-		s, err := Open(root)
+		s, err := Open[objfmt.SHA1Hash](root)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -345,7 +345,7 @@ func makeLooseRefsFixture(b *testing.B, n int) string {
 // helper: a 1-byte type/size header, a 1-byte OFS varint pointing
 // back at the predecessor, and a hand-rolled zlib delta body whose
 // inflated leading varints are `source_size = target_size = 2`.
-func makeBenchOfsDeltaChain(b *testing.B, root string, depth int) objfmt.Hash {
+func makeBenchOfsDeltaChain(b *testing.B, root string, depth int) objfmt.SHA1Hash {
 	b.Helper()
 	if depth < 0 {
 		b.Fatalf("makeBenchOfsDeltaChain: depth must be >= 0, got %d", depth)
@@ -378,9 +378,12 @@ func makeBenchOfsDeltaChain(b *testing.B, root string, depth int) objfmt.Hash {
 // path needs `*testing.B` and a plain `b.Fatal`, so the two cannot
 // share a body without dragging `interface { Fatal(...) }` plumbing
 // through every caller.
-func hashFromHexB(b *testing.B, s string, algo objfmt.Algo) objfmt.Hash {
+func hashFromHexB(b *testing.B, s string, algo objfmt.Algo) objfmt.SHA1Hash {
 	b.Helper()
-	h, err := objfmt.ParseHex(s, algo)
+	if algo != objfmt.SHA1 {
+		b.Fatalf("hashFromHexB only supports SHA-1, got %v", algo)
+	}
+	h, err := objfmt.ParseSHA1Hex(s)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -395,7 +398,7 @@ func hashFromHexB(b *testing.B, s string, algo objfmt.Algo) objfmt.Hash {
 // layout mirrors `makeDeepOfsDeltaChain` in `object_info_test.go`;
 // see that function's doc comment for the canonical-Git framing
 // citations.
-func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byte, head objfmt.Hash) {
+func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byte, head objfmt.SHA1Hash) {
 	b.Helper()
 
 	// Terminal blob: type=3, size in low 4 bits, no continuation,
@@ -414,7 +417,7 @@ func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byt
 	_ = binary.Write(pack, binary.BigEndian, uint32(depth+1))
 
 	type entry struct {
-		oid    objfmt.Hash
+		oid    objfmt.SHA1Hash
 		offset uint32
 		crc    uint32
 	}
@@ -515,8 +518,8 @@ func zlibCompressB(b *testing.B, body []byte) []byte {
 // on a 1-byte tag. Same shape as the test-side `syntheticOID`: the
 // hash is not a real SHA-1 over any object, only a stable identity for
 // idx population.
-func benchSyntheticOID(tag uint8) objfmt.Hash {
-	var h objfmt.Hash
+func benchSyntheticOID(tag uint8) objfmt.SHA1Hash {
+	var h objfmt.SHA1Hash
 	for i := range 20 {
 		h[i] = tag
 	}

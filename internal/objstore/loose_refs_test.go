@@ -12,12 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// hashFromHex parses s under algo or fails the test. Used in tests
-// where the OID is a fixture-known synthetic value rather than something
-// derived from a real object.
-func hashFromHex(t *testing.T, s string, algo objfmt.Algo) objfmt.Hash {
+// hashFromHex parses s as a SHA-1 hex string or fails the test. The
+// algo argument is kept for source-compatibility with callsites that
+// explicitly pass `objfmt.SHA1` for documentation; the helper rejects
+// any other algo so SHA-256 fixtures route through `hashFromHex256`.
+func hashFromHex(t *testing.T, s string, algo objfmt.Algo) objfmt.SHA1Hash {
 	t.Helper()
-	h, err := objfmt.ParseHex(s, algo)
+	require.Equal(t, objfmt.SHA1, algo,
+		"hashFromHex only supports SHA-1; use hashFromHex256 for SHA-256")
+	h, err := objfmt.ParseSHA1Hex(s)
+	require.NoError(t, err)
+	return h
+}
+
+// hashFromHex256 parses s as a SHA-256 hex string or fails the test.
+func hashFromHex256(t *testing.T, s string) objfmt.SHA256Hash {
+	t.Helper()
+	h, err := objfmt.ParseSHA256Hex(s)
 	require.NoError(t, err)
 	return h
 }
@@ -26,9 +37,9 @@ func hashFromHex(t *testing.T, s string, algo objfmt.Algo) objfmt.Hash {
 // backend yields refs in lexical order; tests compare the slice
 // directly rather than re-sorting, so a regression in ordering is
 // surfaced as a diff rather than masked.
-func collectRefs(t *testing.T, r *looseRefs) []RefEntry {
+func collectRefs(t *testing.T, r *looseRefs[objfmt.SHA1Hash]) []RefEntry[objfmt.SHA1Hash] {
 	t.Helper()
-	var out []RefEntry
+	var out []RefEntry[objfmt.SHA1Hash]
 	for entry, err := range r.IterRefs() {
 		require.NoError(t, err)
 		out = append(out, entry)
@@ -39,11 +50,11 @@ func collectRefs(t *testing.T, r *looseRefs) []RefEntry {
 // openLooseFromFixture materializes the named fixture and opens the
 // loose-refs backend on it. The helper centralises the gitdir + algo
 // plumbing every loose-refs test needs.
-func openLooseFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseRefs {
+func openLooseFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseRefs[objfmt.SHA1Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
-	r, err := openLooseRefs(gitDir, gitDir, algo)
+	r, err := openLooseRefs[objfmt.SHA1Hash](gitDir, gitDir, algo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 	return r
@@ -56,7 +67,7 @@ func TestLooseRefs_LooseOnly_IterRefsSorted(t *testing.T) {
 	r := openLooseFromFixture(t, "loose-only", objfmt.SHA1)
 	got := collectRefs(t, r)
 
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{Name: "refs/heads/feature/x", OID: hashFromHex(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", objfmt.SHA1)},
 		{Name: "refs/heads/main", OID: hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1)},
 		{Name: "refs/tags/v1", OID: hashFromHex(t, "cccccccccccccccccccccccccccccccccccccccc", objfmt.SHA1)},
@@ -68,11 +79,11 @@ func TestLooseRefs_PackedOnly_IterRefs(t *testing.T) {
 	// Only `packed-refs` carries entries. The parser must surface them
 	// all, the trait header sets `peeled` and `fully-peeled` (so every
 	// entry's PeelKnown is true), and the tag's `^peel` line populates
-	// packedEntry.peeled.
+	// packedEntry[objfmt.SHA1Hash].peeled.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
 	got := collectRefs(t, r)
 
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
@@ -102,7 +113,7 @@ func TestLooseRefs_Mixed_LooseShadowsPacked(t *testing.T) {
 	// missing `^<oid>` line is authoritative under the trait). The
 	// loose-shadowed `refs/heads/main` keeps PeelKnown=false because
 	// the trait does not apply to a loose-override OID.
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{Name: "refs/heads/main", OID: wantLoose},
 		{Name: "refs/heads/old", OID: wantOld, PeelKnown: true},
 	}
@@ -116,7 +127,7 @@ func TestLooseRefs_Mixed_LooseShadowsPacked(t *testing.T) {
 	require.True(t, found)
 	assert.False(t, entry.PeelKnown,
 		"loose override must drop packed peel hint")
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_Head_SymrefToExistingRef(t *testing.T) {
@@ -140,7 +151,7 @@ func TestLooseRefs_Head_SymrefToMissingRefIsUnborn(t *testing.T) {
 	head, err := r.Head()
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", head.Symref)
-	assert.Equal(t, objfmt.Hash{}, head.OID)
+	assert.Equal(t, objfmt.SHA1Hash{}, head.OID)
 	assert.True(t, head.Unborn)
 }
 
@@ -164,14 +175,14 @@ func TestLooseRefs_Head_DetachedSHA256(t *testing.T) {
 	hex64 := "5555555555555555555555555555555555555555555555555555555555555555"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte(hex64+"\n"), 0o644))
 
-	r, err := openLooseRefs(dir, dir, objfmt.SHA256)
+	r, err := openLooseRefs[objfmt.SHA256Hash](dir, dir, objfmt.SHA256)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 
 	head, err := r.Head()
 	require.NoError(t, err)
 	assert.Equal(t, "", head.Symref)
-	assert.Equal(t, hashFromHex(t, hex64, objfmt.SHA256), head.OID)
+	assert.Equal(t, hashFromHex256(t, hex64), head.OID)
 	assert.False(t, head.Unborn)
 }
 
@@ -197,7 +208,7 @@ func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
 	writeRefFile(t, dir, "refs/heads/x", "ref: refs/heads/y\n")
 	writeRefFile(t, dir, "refs/heads/y", oid+"\n")
 
-	r, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	r, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 
@@ -223,7 +234,7 @@ func TestLooseRefs_Head_ChainExceedingMaxDepthFails(t *testing.T) {
 	writeRefFile(t, dir, "refs/heads/f",
 		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n")
 
-	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"deep chain must wrap ErrCorruptObject, got %v", err)
@@ -238,7 +249,7 @@ func TestLooseRefs_Head_SymrefCycleDetected(t *testing.T) {
 	writeRefFile(t, dir, "refs/heads/a", "ref: refs/heads/b\n")
 	writeRefFile(t, dir, "refs/heads/b", "ref: refs/heads/a\n")
 
-	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"cycle must wrap ErrCorruptObject, got %v", err)
@@ -252,14 +263,14 @@ func TestLooseRefs_Head_ChainTerminatingInUnbornRefIsUnborn(t *testing.T) {
 	writeRefFile(t, dir, "HEAD", "ref: refs/heads/x\n")
 	writeRefFile(t, dir, "refs/heads/x", "ref: refs/heads/y\n")
 
-	r, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	r, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
 
 	head, err := r.Head()
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/y", head.Symref)
-	assert.Equal(t, objfmt.Hash{}, head.OID)
+	assert.Equal(t, objfmt.SHA1Hash{}, head.OID)
 	assert.True(t, head.Unborn)
 }
 
@@ -324,7 +335,7 @@ func TestLooseRefs_PeelKnown_NonTag_FullyPeeledMakesItKnown(t *testing.T) {
 	require.True(t, found)
 	assert.True(t, entry.PeelKnown,
 		"fully-peeled trait must make missing peel definitive")
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_MalformedPackedRefsLine(t *testing.T) {
@@ -336,7 +347,7 @@ func TestLooseRefs_MalformedPackedRefsLine(t *testing.T) {
 	body := "# pack-refs with: peeled\nnotahexnotaref\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "packed-refs"), []byte(body), 0o644))
 
-	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"expected ErrCorruptObject, got %v", err)
@@ -350,7 +361,7 @@ func TestLooseRefs_MalformedHEADContent(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("garbage-not-a-ref-or-oid\n"), 0o644))
 
-	_, err := openLooseRefs(dir, dir, objfmt.SHA1)
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"expected ErrCorruptObject, got %v", err)
@@ -381,11 +392,11 @@ func TestLooseRefs_IterRefs_PeelFieldsPopulated_FullyPeeled(t *testing.T) {
 
 	wantPeel := hashFromHex(t,
 		"dddddddddddddddddddddddddddddddddddddddd", objfmt.SHA1)
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
-			Peeled:    objfmt.Hash{},
+			Peeled:    objfmt.SHA1Hash{},
 			PeelKnown: true,
 		},
 		{
@@ -417,7 +428,7 @@ func TestLooseRefs_IterRefs_PeelFieldsPopulated_NoTrait(t *testing.T) {
 		if entry.Name == "refs/heads/main" {
 			assert.False(t, entry.PeelKnown,
 				"branch ref without trait must have PeelKnown=false")
-			assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+			assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 		}
 	}
 }
@@ -435,7 +446,7 @@ func TestLooseRefs_Lookup_FullyPeeledTrait_NoPeelMeansDefinitive(t *testing.T) {
 		hashFromHex(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", objfmt.SHA1),
 		entry.OID)
 	assert.True(t, entry.PeelKnown)
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_Lookup_PeelLineRecorded(t *testing.T) {
@@ -475,7 +486,7 @@ func TestLooseRefs_Lookup_NoTrait_NoPeelLineUnknown(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.False(t, entry.PeelKnown)
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
 
 func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
@@ -484,7 +495,7 @@ func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
 	entry, found, err := r.Lookup("refs/heads/does-not-exist")
 	require.NoError(t, err)
 	assert.False(t, found)
-	assert.Equal(t, RefEntry{}, entry)
+	assert.Equal(t, RefEntry[objfmt.SHA1Hash]{}, entry)
 }
 
 // TestLooseRefs_PeeledTrait_TagsKnowPeel exercises the `peeled`-trait
@@ -512,7 +523,7 @@ func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
 	require.True(t, found)
 	assert.True(t, lightweight.PeelKnown,
 		"`peeled` trait makes a tag's missing `^peel` line authoritative")
-	assert.Equal(t, objfmt.Hash{}, lightweight.Peeled,
+	assert.Equal(t, objfmt.SHA1Hash{}, lightweight.Peeled,
 		"commit-target tag yields zero peel under the `peeled` trait")
 }
 
@@ -529,5 +540,5 @@ func TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown(t *testing.T) {
 	require.True(t, found)
 	assert.False(t, entry.PeelKnown,
 		"`peeled` trait does not apply to non-tag refs")
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }

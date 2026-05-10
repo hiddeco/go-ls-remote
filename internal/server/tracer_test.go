@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -51,7 +52,7 @@ func (r *recordingTracer) commandEvents() []trace.CommandEvent {
 // The advertisement bytes are stripped from the returned response, in
 // the same way `runV2Session` does, to keep the assertions focused on
 // the post-advertisement bytes.
-func runV2SessionWithTracer(t *testing.T, store *objstore.Store,
+func runV2SessionWithTracer(t *testing.T, store *objstore.Store[objfmt.SHA1Hash],
 	tracer trace.Tracer, request []byte) (response []byte, err error) {
 	t.Helper()
 
@@ -177,7 +178,7 @@ func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 	packPath := filepath.Join(dir, ".git", "objects", "pack", "three-objects.pack")
 	flipPackByte(t, packPath, 64)
 
-	store, err := objstore.Open(filepath.Join(dir, ".git"))
+	store, err := objstore.Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 

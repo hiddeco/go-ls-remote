@@ -39,8 +39,8 @@ const maxChainDepth = 64
 // in pack P" (found=true) and "this base is unreachable in any open
 // pack" (found=false) — are cached so a missing base never re-scans
 // every pack on the next call.
-type refDeltaCacheEntry struct {
-	pack   *objfmt.Pack
+type refDeltaCacheEntry[H objfmt.HashType] struct {
+	pack   *objfmt.Pack[H]
 	offset int64
 	found  bool
 }
@@ -92,7 +92,7 @@ type refDeltaCacheEntry struct {
 //   - REF_DELTA base unreachable → wrapped [ErrCorruptObject].
 //   - Chain depth exceeded → wrapped [ErrCorruptObject].
 //   - CRC mismatch (when enabled) → wrapped [ErrCorruptObject].
-func (s *Store) ObjectInfo(oid objfmt.Hash) (Info, error) {
+func (s *Store[H]) ObjectInfo(oid H) (Info, error) {
 	// Loose-first: matches canonical Git's lookup precedence
 	// (`object-file.c::oid_object_info_extended` consults the loose
 	// store ahead of pack lookup) and skips the delta-chain machinery
@@ -146,7 +146,7 @@ func (s *Store) ObjectInfo(oid objfmt.Hash) (Info, error) {
 // [objfmt.Pack.VerifyChecksum]. Mirrors canonical Git's
 // `packfile.c::check_pack_crc`, which also runs on the OID-keyed
 // entry rather than on every chain step.
-func (s *Store) walkPackChain(oid objfmt.Hash, pack *objfmt.Pack, at int64) (Info, error) {
+func (s *Store[H]) walkPackChain(oid H, pack *objfmt.Pack[H], at int64) (Info, error) {
 	if err := s.verifyPackCRC(pack, oid, at); err != nil {
 		return Info{}, err
 	}
@@ -192,7 +192,7 @@ func (s *Store) walkPackChain(oid objfmt.Hash, pack *objfmt.Pack, at int64) (Inf
 			if !found {
 				return Info{}, fmt.Errorf(
 					"objstore: REF_DELTA base %s not found: %w",
-					hdr.DeltaRef.RefBase.Hex(s.algo), ErrCorruptObject)
+					hdr.DeltaRef.RefBase.Hex(), ErrCorruptObject)
 			}
 			pack = basePack
 			at = baseOff
@@ -218,7 +218,7 @@ func (s *Store) walkPackChain(oid objfmt.Hash, pack *objfmt.Pack, at int64) (Inf
 // the (carrier-pack, base-OID) pair: REF_DELTA bases are global to
 // the store, and two carriers asking for the same base must collapse
 // to a single cache slot.
-func (s *Store) lookupRefDeltaBase(base objfmt.Hash) (*objfmt.Pack, int64, bool) {
+func (s *Store[H]) lookupRefDeltaBase(base H) (*objfmt.Pack[H], int64, bool) {
 	s.refDeltaMu.Lock()
 	if entry, ok := s.refDeltaCache[base]; ok {
 		s.refDeltaMu.Unlock()
@@ -234,7 +234,7 @@ func (s *Store) lookupRefDeltaBase(base objfmt.Hash) (*objfmt.Pack, int64, bool)
 	// miss.
 
 	s.refDeltaMu.Lock()
-	s.refDeltaCache[base] = refDeltaCacheEntry{
+	s.refDeltaCache[base] = refDeltaCacheEntry[H]{
 		pack:   pack,
 		offset: off,
 		found:  found,
@@ -257,7 +257,7 @@ func (s *Store) lookupRefDeltaBase(base objfmt.Hash) (*objfmt.Pack, int64, bool)
 // Mirrors `packfile.c::check_pack_crc`.
 //
 // A CRC mismatch wraps [ErrCorruptObject].
-func (s *Store) verifyPackCRC(pack *objfmt.Pack, oid objfmt.Hash, at int64) error {
+func (s *Store[H]) verifyPackCRC(pack *objfmt.Pack[H], oid H, at int64) error {
 	if !s.cfg.verifyCRC {
 		return nil
 	}
@@ -292,7 +292,7 @@ func (s *Store) verifyPackCRC(pack *objfmt.Pack, oid objfmt.Hash, at int64) erro
 			idx.Path(), at, ErrCorruptObject)
 	}
 
-	gotCRC, err := crc32Range(pack, at, end)
+	gotCRC, err := crc32Range[H](pack, at, end)
 	if err != nil {
 		return fmt.Errorf(
 			"objstore: pack %s offset %d crc32 read: %w: %w",
@@ -311,7 +311,7 @@ func (s *Store) verifyPackCRC(pack *objfmt.Pack, oid objfmt.Hash, at int64) erro
 // that even a multi-megabyte delta payload reads in a handful of
 // `ReadAt` calls; pack mappings are usually mmap-backed so the
 // underlying `ReadAt` is a memory copy rather than a syscall.
-func crc32Range(pack *objfmt.Pack, start, end int64) (uint32, error) {
+func crc32Range[H objfmt.HashType](pack *objfmt.Pack[H], start, end int64) (uint32, error) {
 	const chunk = 1 << 16
 	h := crc32.NewIEEE()
 	buf := make([]byte, chunk)

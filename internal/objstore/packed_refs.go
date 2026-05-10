@@ -18,13 +18,13 @@ import (
 // The same shape is reused for loose refs that override packed entries —
 // loose ref files never carry peel information, so peelKnown is always
 // false in that case and peeled is the zero hash.
-type packedEntry struct {
+type packedEntry[H objfmt.HashType] struct {
 	// oid is the resolved object id of the ref's terminal target.
-	oid objfmt.Hash
+	oid H
 
 	// peeled is the dereferenced commit id when the entry was followed
 	// by a `^<oid>` line in `packed-refs`. The zero hash otherwise.
-	peeled objfmt.Hash
+	peeled H
 
 	// peelKnown is true when a `^<oid>` line followed this ref in
 	// `packed-refs`. Loose ref overrides set it to false because loose
@@ -73,8 +73,8 @@ type packedTraits struct {
 // map keyed by fully-qualified ref name, plus the header-derived
 // [packedTraits]. The zero value is the canonical "empty packed-refs"
 // shape returned when the file is absent.
-type packedRefs struct {
-	refs   map[string]packedEntry
+type packedRefs[H objfmt.HashType] struct {
+	refs   map[string]packedEntry[H]
 	traits packedTraits
 }
 
@@ -102,8 +102,8 @@ type packedRefs struct {
 // lines (wrong hex length, no separator, `^` with no preceding ref,
 // duplicate peel) surface as an error wrapping [ErrCorruptObject], with
 // the offending line number and text included for diagnostics.
-func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
-	out := packedRefs{refs: make(map[string]packedEntry)}
+func parsePackedRefs[H objfmt.HashType](r io.Reader) (packedRefs[H], error) {
+	out := packedRefs[H]{refs: make(map[string]packedEntry[H])}
 
 	scanner := bufio.NewScanner(r)
 	// Allow generously large lines; canonical Git imposes no fixed
@@ -111,7 +111,8 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 	// still bounding pathological input.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 
-	hexLen := algo.Size() * 2
+	var zero H
+	hexLen := len(zero) * 2
 
 	var (
 		lineNo  int
@@ -155,25 +156,25 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 
 		if line[0] == '^' {
 			if lastRef == "" {
-				return packedRefs{}, fmt.Errorf(
+				return packedRefs[H]{}, fmt.Errorf(
 					"objstore: packed-refs line %d: peel without preceding ref %q: %w",
 					lineNo, raw, ErrCorruptObject)
 			}
 			entry := out.refs[lastRef]
 			if entry.peelKnown {
-				return packedRefs{}, fmt.Errorf(
+				return packedRefs[H]{}, fmt.Errorf(
 					"objstore: packed-refs line %d: duplicate peel for %q: %q: %w",
 					lineNo, lastRef, raw, ErrCorruptObject)
 			}
 			peelHex := line[1:]
 			if len(peelHex) != hexLen {
-				return packedRefs{}, fmt.Errorf(
+				return packedRefs[H]{}, fmt.Errorf(
 					"objstore: packed-refs line %d: peel hex length %d, want %d %q: %w",
 					lineNo, len(peelHex), hexLen, raw, ErrCorruptObject)
 			}
-			peeled, err := objfmt.ParseHex(peelHex, algo)
+			peeled, err := objfmt.ParseHexAs[H](peelHex)
 			if err != nil {
-				return packedRefs{}, fmt.Errorf(
+				return packedRefs[H]{}, fmt.Errorf(
 					"objstore: packed-refs line %d: parse peel %q: %w",
 					lineNo, raw, ErrCorruptObject)
 			}
@@ -197,7 +198,7 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		// A future need to read non-canonical packed-refs would have to
 		// loosen this gate to match canonical's `isspace` rule.
 		if !ok || name == "" || name[0] == ' ' || name[0] == '\t' || name[0] == '^' {
-			return packedRefs{}, fmt.Errorf(
+			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: missing separator %q: %w",
 				lineNo, raw, ErrCorruptObject)
 		}
@@ -211,18 +212,18 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		// safer — embedded NUL bytes or control characters in a
 		// "valid" ref would be invisible to the caller otherwise.
 		if !checkRefnameFormat(name) {
-			return packedRefs{}, fmt.Errorf(
+			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: invalid refname %q: %w",
 				lineNo, name, ErrCorruptObject)
 		}
 		if len(oidHex) != hexLen {
-			return packedRefs{}, fmt.Errorf(
+			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: oid hex length %d, want %d %q: %w",
 				lineNo, len(oidHex), hexLen, raw, ErrCorruptObject)
 		}
-		oid, err := objfmt.ParseHex(oidHex, algo)
+		oid, err := objfmt.ParseHexAs[H](oidHex)
 		if err != nil {
-			return packedRefs{}, fmt.Errorf(
+			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: parse oid %q: %w",
 				lineNo, raw, ErrCorruptObject)
 		}
@@ -237,11 +238,11 @@ func parsePackedRefs(r io.Reader, algo objfmt.Algo) (packedRefs, error) {
 		if out.traits.sorted && lastRef != "" && name < lastRef {
 			out.traits.sorted = false
 		}
-		out.refs[name] = packedEntry{oid: oid, fromPacked: true}
+		out.refs[name] = packedEntry[H]{oid: oid, fromPacked: true}
 		lastRef = name
 	}
 	if err := scanner.Err(); err != nil {
-		return packedRefs{}, fmt.Errorf("objstore: read packed-refs: %w", err)
+		return packedRefs[H]{}, fmt.Errorf("objstore: read packed-refs: %w", err)
 	}
 	return out, nil
 }

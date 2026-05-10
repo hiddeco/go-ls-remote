@@ -14,11 +14,11 @@ import (
 )
 
 // TestStore_ConcurrentReadsRaceClean is the cross-method `-race` probe
-// for the [Store] doc claim that "*Store is safe for concurrent reads
+// for the [Store[objfmt.SHA1Hash]] doc claim that "*Store[objfmt.SHA1Hash] is safe for concurrent reads
 // from multiple goroutines once Open has returned." The per-method
 // concurrent tests in `peel_test.go` and `object_info_test.go` already
 // fence each cache mutation against itself; this test fences the public
-// surface as a whole — every method on the same Store, hammered from
+// surface as a whole — every method on the same Store[objfmt.SHA1Hash], hammered from
 // many goroutines simultaneously, must stay race-clean AND return the
 // same answers every iteration.
 //
@@ -26,21 +26,21 @@ import (
 //
 //   - The four loose objects from `testdata/repos/loose-objects/`
 //     (blob, tree, commit, annotated tag pointing at the commit) so the
-//     loose-object lookup, the [Store.Peel] cache, and the loose path
-//     of [Store.ObjectInfo] all see contention.
+//     loose-object lookup, the [Store[objfmt.SHA1Hash].Peel] cache, and the loose path
+//     of [Store[objfmt.SHA1Hash].ObjectInfo] all see contention.
 //   - The canonical `three-objects.{pack,idx}` pair from
 //     `testdata/objfmt/` so a known-good pack offset feeds the CRC
-//     verification path of [Store.ObjectInfo].
+//     verification path of [Store[objfmt.SHA1Hash].ObjectInfo].
 //   - The canonical `ref-delta.{pack,idx}` pair so a probe of the
 //     REF_DELTA target OID drives the cross-pack base resolver
-//     ([Store.lookupRefDeltaBase]) and races every worker on the
+//     ([Store[objfmt.SHA1Hash].lookupRefDeltaBase]) and races every worker on the
 //     shared `refDeltaCache` install.
 //   - A hand-rolled `packed-refs` file that resolves `refs/heads/main`
-//     (so [Store.Head] is non-unborn), records the annotated tag at
+//     (so [Store[objfmt.SHA1Hash].Head] is non-unborn), records the annotated tag at
 //     `refs/tags/v1` with its `^peel` line, and pins the packed-only
-//     commit at `refs/tags/three` so [Store.IterRefs] surfaces it.
+//     commit at `refs/tags/three` so [Store[objfmt.SHA1Hash].IterRefs] surfaces it.
 //
-// The per-iteration probe set is seven methods (IterRefs, Head, Peel,
+// The per-iteration probe set is seven methods (IterRefs, Head[objfmt.SHA1Hash], Peel,
 // ObjectInfo×4 covering loose blob + loose commit + packed commit +
 // REF_DELTA target, and Algo). The shared start barrier pins every
 // worker on `<-start` until the test loop releases them, maximising
@@ -95,10 +95,10 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 	// of the surface the per-method tests do not cover at this scale:
 	// many writers concurrently seeding the same cache slot.
 	s.peelMu.Lock()
-	s.peelCache = make(map[objfmt.Hash]peelEntry)
+	s.peelCache = make(map[objfmt.SHA1Hash]peelEntry[objfmt.SHA1Hash])
 	s.peelMu.Unlock()
 	s.refDeltaMu.Lock()
-	s.refDeltaCache = make(map[objfmt.Hash]refDeltaCacheEntry)
+	s.refDeltaCache = make(map[objfmt.SHA1Hash]refDeltaCacheEntry[objfmt.SHA1Hash])
 	s.refDeltaMu.Unlock()
 
 	workers := max(runtime.GOMAXPROCS(0)*4, 32)
@@ -219,15 +219,15 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 	wg.Wait()
 }
 
-// snapshotRefs drains [Store.IterRefs] into a name -> OID map. Used
+// snapshotRefs drains [Store[objfmt.SHA1Hash].IterRefs] into a name -> OID map. Used
 // twice: once on the orchestrator to capture the expected set, and
 // once per worker iteration to compare against it. A map (rather than
-// the raw [RefEntry] slice) keeps the comparison order-independent so a
+// the raw [RefEntry[objfmt.SHA1Hash]] slice) keeps the comparison order-independent so a
 // future backend that yields refs in a different order does not flip
 // this test into a flake.
-func snapshotRefs(t *testing.T, s *Store) map[string]objfmt.Hash {
+func snapshotRefs(t *testing.T, s *Store[objfmt.SHA1Hash]) map[string]objfmt.SHA1Hash {
 	t.Helper()
-	out := make(map[string]objfmt.Hash)
+	out := make(map[string]objfmt.SHA1Hash)
 	for entry, err := range s.IterRefs() {
 		require.NoError(t, err)
 		out[entry.Name] = entry.OID
@@ -240,9 +240,9 @@ func snapshotRefs(t *testing.T, s *Store) map[string]objfmt.Hash {
 // the worker mid-flight with `require.NoError`, so a single corrupt
 // iteration leaves the rest of the goroutines running for the race
 // detector to keep inspecting.
-func drainRefs(t *testing.T, s *Store) map[string]objfmt.Hash {
+func drainRefs(t *testing.T, s *Store[objfmt.SHA1Hash]) map[string]objfmt.SHA1Hash {
 	t.Helper()
-	out := make(map[string]objfmt.Hash)
+	out := make(map[string]objfmt.SHA1Hash)
 	for entry, err := range s.IterRefs() {
 		if err != nil {
 			t.Errorf("IterRefs: %v", err)
@@ -253,7 +253,7 @@ func drainRefs(t *testing.T, s *Store) map[string]objfmt.Hash {
 	return out
 }
 
-// openConcurrencyFixture builds a self-contained Store rooted at a
+// openConcurrencyFixture builds a self-contained Store[objfmt.SHA1Hash] rooted at a
 // fresh `t.TempDir()`, layering together the bytes the per-method
 // concurrent tests would otherwise have to duplicate:
 //
@@ -277,7 +277,7 @@ func drainRefs(t *testing.T, s *Store) map[string]objfmt.Hash {
 // promoting it into a fixture directory would couple two unrelated
 // generators (`testdata/_gen/repos.sh` and `testdata/_gen/objfmt.sh`)
 // for one test's benefit.
-func openConcurrencyFixture(t *testing.T) *Store {
+func openConcurrencyFixture(t *testing.T) *Store[objfmt.SHA1Hash] {
 	t.Helper()
 
 	root := t.TempDir()
@@ -291,7 +291,7 @@ func openConcurrencyFixture(t *testing.T) *Store {
 
 	// Copy the four loose objects into their canonical fanout slots.
 	// The bytes are zlib-encoded loose objects committed to the repo;
-	// the `looseObjects` reader treats them as opaque, so a verbatim
+	// the `looseObjects[objfmt.SHA1Hash]` reader treats them as opaque, so a verbatim
 	// copy is sufficient.
 	wd, err := os.Getwd()
 	require.NoError(t, err)
@@ -330,7 +330,7 @@ func openConcurrencyFixture(t *testing.T) *Store {
 	// trait line keeps the fixture honest about the shape canonical
 	// Git would emit. Entries are sorted by ref name to honour the
 	// `sorted` trait.
-	packedRefs := "" +
+	packedRefsBody := "" +
 		"# pack-refs with: peeled fully-peeled sorted\n" +
 		looseFixtureCommitOID + " refs/heads/main\n" +
 		threeCommitOID + " refs/tags/three\n" +
@@ -338,9 +338,9 @@ func openConcurrencyFixture(t *testing.T) *Store {
 		"^" + looseFixtureCommitOID + "\n"
 	require.NoError(t, os.WriteFile(
 		filepath.Join(gitDir, "packed-refs"),
-		[]byte(packedRefs), 0o644))
+		[]byte(packedRefsBody), 0o644))
 
-	s, err := Open(gitDir)
+	s, err := Open[objfmt.SHA1Hash](gitDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	return s

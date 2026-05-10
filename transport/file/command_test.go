@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -22,7 +23,7 @@ import (
 // invoke [Conn.Command]. The advertisement shape is `version 2\n` plus
 // capability data lines plus a flush per
 // `serve.c::protocol_v2_advertise_capabilities`.
-func drainAdvertisement(t testing.TB, c *Conn) {
+func drainAdvertisement(t testing.TB, c *Conn[objfmt.SHA1Hash]) {
 	t.Helper()
 	rdr := c.Advertisement()
 	for {
@@ -64,7 +65,7 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 
 // materializeServeableFixture mirrors `transport/http`'s
 // `openFixtureStore` shape but stops short of opening an
-// [internal/objstore.Store]: it materialises the named fixture and
+// [internal/objstore.Store[objfmt.SHA1Hash]]: it materialises the named fixture and
 // ensures `objects/pack/` exists (some ref-only fixtures ship without
 // one). The transport opens the store itself; this helper only smooths
 // over the missing-pack-dir gap.
@@ -79,7 +80,7 @@ func materializeServeableFixture(t testing.TB, name string) string {
 // arranges for the [Conn] to close at test end. Centralising the
 // boilerplate keeps the per-test bodies focused on the round-trip
 // assertion.
-func openTestConn(t *testing.T, fixture string) *Conn {
+func openTestConn(t *testing.T, fixture string) *Conn[objfmt.SHA1Hash] {
 	t.Helper()
 	gitdir := materializeServeableFixture(t, fixture)
 	u, err := transport.ParseURL("file://" + gitdir)
@@ -90,7 +91,7 @@ func openTestConn(t *testing.T, fixture string) *Conn {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 	drainAdvertisement(t, c)
 	return c
@@ -214,7 +215,7 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 	drainAdvertisement(t, c)
 
@@ -240,7 +241,7 @@ func TestConn_Lifecycle_OpenDrainCommandsClose(t *testing.T) {
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 
 	drainAdvertisement(t, c)

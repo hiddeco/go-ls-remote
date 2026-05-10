@@ -29,7 +29,7 @@ func trailerPad(n int) []byte { return make([]byte, n) }
 
 func TestPack_OpenPack(t *testing.T) {
 	t.Run("empty SHA-1 pack reports zero objects", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "empty.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "empty.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -39,7 +39,7 @@ func TestPack_OpenPack(t *testing.T) {
 	})
 
 	t.Run("three-object SHA-1 pack reports three objects", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "three-objects.pack"), SHA1)
+		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -49,7 +49,7 @@ func TestPack_OpenPack(t *testing.T) {
 	})
 
 	t.Run("SHA-256 empty pack opens with the SHA256 algo", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "sha256-empty.pack"), SHA256)
+		p, err := OpenPack[SHA256Hash](packFixture(t, "sha256-empty.pack"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -58,7 +58,7 @@ func TestPack_OpenPack(t *testing.T) {
 	})
 
 	t.Run("three-object SHA-256 pack reports three objects", func(t *testing.T) {
-		p, err := OpenPack(packFixture(t, "sha256-three.pack"), SHA256)
+		p, err := OpenPack[SHA256Hash](packFixture(t, "sha256-three.pack"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -80,7 +80,7 @@ func TestPack_OpenPack(t *testing.T) {
 		binary.BigEndian.PutUint32(hdr[8:12], 0)
 		path := writeBytes(t, dir, "v3.pack", append(hdr, trailerPad(20)...))
 
-		p, err := OpenPack(path, SHA1)
+		p, err := OpenPack[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -94,7 +94,7 @@ func TestPack_OpenPack(t *testing.T) {
 		buf = append(buf, trailerPad(20)...)
 		path := writeBytes(t, dir, "junk.pack", buf)
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not a pack")
 	})
@@ -106,7 +106,7 @@ func TestPack_OpenPack(t *testing.T) {
 		binary.BigEndian.PutUint32(hdr[4:8], 1)
 		path := writeBytes(t, dir, "v1.pack", append(hdr, trailerPad(20)...))
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "version")
 	})
@@ -118,18 +118,18 @@ func TestPack_OpenPack(t *testing.T) {
 		binary.BigEndian.PutUint32(hdr[4:8], 99)
 		path := writeBytes(t, dir, "v99.pack", append(hdr, trailerPad(20)...))
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "version")
 	})
 
 	t.Run("rejects a nil algo", func(t *testing.T) {
-		_, err := OpenPack(packFixture(t, "empty.pack"), nil)
+		_, err := OpenPack[SHA1Hash](packFixture(t, "empty.pack"), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a missing file", func(t *testing.T) {
-		_, err := OpenPack(filepath.Join(t.TempDir(), "nope.pack"), SHA1)
+		_, err := OpenPack[SHA1Hash](filepath.Join(t.TempDir(), "nope.pack"), SHA1)
 		require.Error(t, err)
 	})
 }

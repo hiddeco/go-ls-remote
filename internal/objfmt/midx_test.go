@@ -37,7 +37,7 @@ func midxPackNames(t *testing.T, midxPath string) []string {
 func TestMidx_OpenMidx(t *testing.T) {
 	t.Run("SHA-1 fixture reports algo, version, count, packs", func(t *testing.T) {
 		path := idxFixture(t, "multi-pack-index")
-		m, err := OpenMidx(path, SHA1)
+		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
@@ -51,7 +51,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 	t.Run("SHA-256 fixture reports SHA256 and version 1", func(t *testing.T) {
 		path := idxFixture(t, "sha256-multi-pack-index")
-		m, err := OpenMidx(path, SHA256)
+		m, err := OpenMidx[SHA256Hash](path, SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
@@ -67,7 +67,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		copy(buf, "NOTM")
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
 
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "magic")
 	})
@@ -79,7 +79,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		buf[4] = 0
 		buf[5] = 1
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "version")
 	})
@@ -91,7 +91,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		buf[4] = 99
 		buf[5] = 1
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "version")
 	})
@@ -108,38 +108,38 @@ func TestMidx_OpenMidx(t *testing.T) {
 		buf[6] = 0 // num_chunks
 		buf[7] = 1 // reserved — must be 0
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "reserved")
 	})
 
 	t.Run("rejects an algo mismatch", func(t *testing.T) {
-		_, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA256)
+		_, err := OpenMidx[SHA256Hash](idxFixture(t, "multi-pack-index"), SHA256)
 		require.Error(t, err)
 
-		_, err = OpenMidx(idxFixture(t, "sha256-multi-pack-index"), SHA1)
+		_, err = OpenMidx[SHA1Hash](idxFixture(t, "sha256-multi-pack-index"), SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects truncated input", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "tiny.midx")
 		require.NoError(t, os.WriteFile(path, []byte("MIDX"), 0o600))
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a nil algo", func(t *testing.T) {
-		_, err := OpenMidx(idxFixture(t, "multi-pack-index"), nil)
+		_, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a missing file", func(t *testing.T) {
-		_, err := OpenMidx(filepath.Join(t.TempDir(), "nope.midx"), SHA1)
+		_, err := OpenMidx[SHA1Hash](filepath.Join(t.TempDir(), "nope.midx"), SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("Close is idempotent", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
+		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		assert.NoError(t, m.Close())
 		assert.NoError(t, m.Close())
@@ -149,7 +149,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// Build a clean midx, locate its OIDF chunk via the TOC, and
 		// patch fanout[5] above fanout[6]. Mirrors `midx.c:62-71`,
 		// which rejects "oid fanout out of order".
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -164,7 +164,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		binary.BigEndian.PutUint32(raw[oidfOff+5*4:oidfOff+6*4], 100)
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "fanout")
@@ -177,7 +177,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// layer; reject at parse time instead. Canonical Git's
 		// `midx.c::nth_midxed_pack_int_id` likewise validates the
 		// pack-int-id against `num_packs`.
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -185,7 +185,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 			objs:  []midxObj{{oid: oid, packIdx: 7, offset: 12}},
 		})
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack")
@@ -195,7 +195,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// Canonical Git rejects v1 midx files whose PNAM entries are
 		// not in strict-ascending lexicographic order. Mirrors
 		// `midx.c:213-218` ("multi-pack-index pack names out of order").
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -203,7 +203,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
 		})
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack name")
@@ -212,7 +212,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	t.Run("rejects v1 duplicate pack names", func(t *testing.T) {
 		// Canonical Git's check is `strcmp(...) <= 0`, which also
 		// rejects duplicate basenames. Mirrors `midx.c:213-218`.
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -220,7 +220,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 			objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
 		})
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack name")
@@ -230,7 +230,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// Canonical Git relaxes the ordering check for v2; only v1 is
 		// strict. Build a fixture with packs out of order, flip the
 		// version byte to 2, and confirm the parser accepts it.
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -242,7 +242,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		raw[4] = 2 // version 2 — relaxed pack-name ordering
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		m, err := OpenMidx(path, SHA1)
+		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 		assert.Equal(t, uint32(2), m.Version())
@@ -259,9 +259,9 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// `midx_read_oid_lookup` (`midx.c:76-84`) does not validate
 		// ordering at load — v0 adds this defense-in-depth check at
 		// parse time so a malformed file is rejected immediately.
-		oidLow, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oidLow, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		oidHigh, err := ParseHex("2222222222222222222222222222222222222222", SHA1)
+		oidHigh, err := ParseSHA1Hex("2222222222222222222222222222222222222222")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -283,7 +283,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		copy(raw[oidlOff+hashLen:oidlOff+2*hashLen], first)
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "OIDL")
@@ -294,9 +294,9 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// holds the same OID twice. The midx invariant requires
 		// unique OIDs (each object appears once); equal consecutive
 		// hashes are corruption just like an inversion.
-		oidLow, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oidLow, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		oidHigh, err := ParseHex("2222222222222222222222222222222222222222", SHA1)
+		oidHigh, err := ParseSHA1Hex("2222222222222222222222222222222222222222")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -317,7 +317,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 			raw[oidlOff:oidlOff+hashLen])
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "OIDL")
@@ -328,7 +328,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// offset (off by 1). Mirrors `chunk-format.c:127-130`, which
 		// rejects "chunk id ... not 4-byte aligned" with
 		// `MIDX_CHUNK_ALIGNMENT = 4` in `midx.h`.
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -358,7 +358,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		binary.BigEndian.PutUint64(raw[oidfTOC+4:oidfTOC+12], curOff+1)
 		require.NoError(t, os.WriteFile(path, raw, 0o600))
 
-		_, err = OpenMidx(path, SHA1)
+		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "align")
@@ -385,7 +385,7 @@ func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
 
 func TestMidx_PackNames(t *testing.T) {
 	t.Run("returned slice is a copy", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
+		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 

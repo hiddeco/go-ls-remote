@@ -14,10 +14,10 @@ import (
 func TestOpen_EmptyRepo(t *testing.T) {
 	// A brand-new sha1+files repo: no commits, no packs, no
 	// `packed-refs`. The opener must succeed, default to SHA-1, and
-	// surface a usable [Store].
+	// surface a usable [Store[objfmt.SHA1Hash]].
 	root := materializeFixture(t, "empty")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -29,10 +29,10 @@ func TestOpen_EmptyRepo(t *testing.T) {
 
 func TestOpen_SHA256Repo(t *testing.T) {
 	// `extensions.objectFormat = sha256` must propagate through
-	// `readGitConfig` into [Store.Algo].
+	// `readGitConfig` into [Store[objfmt.SHA256Hash].Algo].
 	root := materializeFixture(t, "sha256")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA256Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -49,11 +49,11 @@ func TestOpen_ReftableRepo(t *testing.T) {
 	// `reftable_backend_test.go`; this test only confirms wiring.
 	root := materializeFixture(t, "with-reftable-content")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, ok := s.refs.(*reftableBackend)
+	_, ok := s.refs.(*reftableBackend[objfmt.SHA1Hash])
 	assert.True(t, ok, "want reftable backend, got %T", s.refs)
 }
 
@@ -63,7 +63,7 @@ func TestOpen_MissingPathReturnsErrNotARepo(t *testing.T) {
 	// distinction the caller relies on.
 	missing := filepath.Join(t.TempDir(), "nope")
 
-	_, err := Open(missing)
+	_, err := Open[objfmt.SHA1Hash](missing)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
 }
@@ -79,7 +79,7 @@ func TestOpen_UnknownRefStorageReturnsErrUnsupportedFormat(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config"),
 		[]byte("[extensions]\n\trefStorage = packed\n"), 0o644))
 
-	_, err := Open(dir)
+	_, err := Open[objfmt.SHA1Hash](dir)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
 		"expected ErrUnsupportedFormat, got %v", err)
@@ -91,12 +91,12 @@ func TestWithoutCRCCheck_FlipsConfig(t *testing.T) {
 	// public surface so the test stays in lockstep with intent.
 	root := materializeFixture(t, "empty")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	assert.True(t, s.cfg.verifyCRC, "default must be true")
 
-	s2, err := Open(root, WithoutCRCCheck())
+	s2, err := Open[objfmt.SHA1Hash](root, WithoutCRCCheck())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s2.Close() })
 	assert.False(t, s2.cfg.verifyCRC, "WithoutCRCCheck must flip to false")
@@ -107,7 +107,7 @@ func TestStore_CloseIsIdempotent(t *testing.T) {
 	// the joined error (here, nil) without panicking.
 	root := materializeFixture(t, "empty")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 
 	assert.NoError(t, s.Close())
@@ -120,7 +120,7 @@ func TestStore_AlgoDelegatesToConfig(t *testing.T) {
 	// directly so a future refactor that drops the field is caught.
 	root := materializeFixture(t, "sha256")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA256Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -136,12 +136,12 @@ func TestOpen_SelectsMidxWhenPresent(t *testing.T) {
 	// to end.
 	root := materializeFixture(t, "midx-with-siblings")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, ok := s.packs.(*midxBackend)
-	assert.True(t, ok, "want midxBackend, got %T", s.packs)
+	_, ok := s.packs.(*midxBackend[objfmt.SHA1Hash])
+	assert.True(t, ok, "want midxBackend[objfmt.SHA1Hash], got %T", s.packs)
 }
 
 func TestOpen_SelectsIdxCatalogByDefault(t *testing.T) {
@@ -150,10 +150,10 @@ func TestOpen_SelectsIdxCatalogByDefault(t *testing.T) {
 	// selector logic on both branches.
 	root := materializeFixture(t, "empty")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, ok := s.packs.(*idxCatalog)
-	assert.True(t, ok, "want idxCatalog, got %T", s.packs)
+	_, ok := s.packs.(*idxCatalog[objfmt.SHA1Hash])
+	assert.True(t, ok, "want idxCatalog[objfmt.SHA1Hash], got %T", s.packs)
 }

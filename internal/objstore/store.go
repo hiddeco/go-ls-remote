@@ -16,6 +16,13 @@ import (
 // pack backends, the always-present loose-object reader, and the
 // transitive chain of alternates.
 //
+// The type parameter `H` carries the repository's object-id type —
+// either [objfmt.SHA1Hash] or [objfmt.SHA256Hash] — so ref values,
+// peel slots, and object lookups thread the typed value end-to-end
+// without re-keying through the [objfmt.Algo] interface. The match
+// between `H` and the on-disk `extensions.objectFormat` is verified
+// at [Open]; a mismatch surfaces an error before any backend opens.
+//
 // A Store is safe for concurrent reads from multiple goroutines once
 // [Open] has returned. Mutation of the underlying on-disk state is
 // out of scope; this library never writes commits, refs, or packs.
@@ -26,12 +33,12 @@ import (
 // presence of `objects/pack/multi-pack-index`. The chosen backends
 // are not switched at runtime; reopen the Store to pick up a layout
 // change.
-type Store struct {
+type Store[H objfmt.HashType] struct {
 	algo       objfmt.Algo
-	refs       refBackend
-	loose      *looseObjects
-	packs      packBackend
-	alternates []*Store
+	refs       refBackend[H]
+	loose      *looseObjects[H]
+	packs      packBackend[H]
+	alternates []*Store[H]
 	cfg        storeConfig
 
 	// peelCache memoises [Store.Peel] decisions keyed on the input OID.
@@ -41,7 +48,7 @@ type Store struct {
 	// expected to see a small steady working set with low reader/writer
 	// overlap, where the reader-side bookkeeping of [sync.RWMutex] is
 	// unlikely to pay off. Revisit if a real workload demands it.
-	peelCache map[objfmt.Hash]peelEntry
+	peelCache map[H]peelEntry[H]
 	peelMu    sync.Mutex
 
 	// refDeltaCache memoises cross-pack REF_DELTA base resolutions for
@@ -51,7 +58,7 @@ type Store struct {
 	// rationale as [peelCache] — plain [sync.Mutex] over [sync.RWMutex],
 	// untimed but justified by the small working set; revisit if a real
 	// workload demands it.
-	refDeltaCache map[objfmt.Hash]refDeltaCacheEntry
+	refDeltaCache map[H]refDeltaCacheEntry[H]
 	refDeltaMu    sync.Mutex
 
 	// closeOnce guards [Store.Close] so the cascade runs exactly once
@@ -92,11 +99,18 @@ func WithoutCRCCheck() Option {
 //     constructed, in that order. A failure at any step closes the
 //     already-opened backends before returning.
 //
+// The type parameter `H` must agree with the repository's
+// `extensions.objectFormat`. A mismatch (e.g. opening a SHA-256 repo
+// with `H` = [objfmt.SHA1Hash]) is detected before any backend opens
+// and surfaces as a wrapped [ErrAlgoMismatch]; this guards programmer
+// error at callsites that do not go through the transport-layer
+// dispatch in `transport/{file,http}`.
+//
 // Errors from each step wrap the originating sentinel
-// ([ErrNotARepo], [ErrUnsupportedFormat]) so callers can match with
-// [errors.Is].
-func Open(path string, opts ...Option) (*Store, error) {
-	return openWithSeen(path, opts, map[string]bool{})
+// ([ErrNotARepo], [ErrUnsupportedFormat], [ErrAlgoMismatch]) so
+// callers can match with [errors.Is].
+func Open[H objfmt.HashType](path string, opts ...Option) (*Store[H], error) {
+	return openWithSeen[H](path, opts, map[string]bool{})
 }
 
 // openWithSeen is the alternates-aware constructor [Open] delegates to.
@@ -105,7 +119,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 // recursing through transitive alternates. Public callers reach this
 // through [Open] with a fresh empty set; [openAlternates] forwards its
 // growing set into recursive opens of each child store.
-func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, error) {
+func openWithSeen[H objfmt.HashType](path string, opts []Option, seen map[string]bool) (*Store[H], error) {
 	gitDir, commonDir, err := resolveGitDir(path)
 	if err != nil {
 		return nil, err
@@ -119,6 +133,10 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 		opt(&cfg)
 	}
 
+	if err := checkHashTypeMatchesAlgo[H](cfg.algo); err != nil {
+		return nil, err
+	}
+
 	// Track every backend opened so a failure midway through tears down
 	// the partially-constructed Store rather than leaking file handles.
 	var opened []io.Closer
@@ -128,20 +146,20 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 		}
 	}
 
-	refs, err := openRefBackend(gitDir, commonDir, cfg)
+	refs, err := openRefBackend[H](gitDir, commonDir, cfg)
 	if err != nil {
 		return nil, err
 	}
 	opened = append(opened, refs)
 
-	loose, err := openLoose(commonDir, cfg.algo)
+	loose, err := openLoose[H](commonDir, cfg.algo)
 	if err != nil {
 		closeAll()
 		return nil, err
 	}
 	opened = append(opened, loose)
 
-	packs, err := openPackBackend(commonDir, cfg)
+	packs, err := openPackBackend[H](commonDir, cfg)
 	if err != nil {
 		closeAll()
 		return nil, err
@@ -160,34 +178,62 @@ func openWithSeen(path string, opts []Option, seen map[string]bool) (*Store, err
 	seen[canonical] = true
 	defer delete(seen, canonical)
 
-	alternates, err := openAlternates(commonDir, seen)
+	alternates, err := openAlternates[H](commonDir, seen)
 	if err != nil {
 		closeAll()
 		return nil, err
 	}
 
-	return &Store{
+	return &Store[H]{
 		algo:          cfg.algo,
 		refs:          refs,
 		loose:         loose,
 		packs:         packs,
 		alternates:    alternates,
 		cfg:           cfg,
-		peelCache:     make(map[objfmt.Hash]peelEntry),
-		refDeltaCache: make(map[objfmt.Hash]refDeltaCacheEntry),
+		peelCache:     make(map[H]peelEntry[H]),
+		refDeltaCache: make(map[H]refDeltaCacheEntry[H]),
 	}, nil
+}
+
+// checkHashTypeMatchesAlgo reports an error if the type parameter `H`
+// does not match the algo discovered from the on-disk config. This
+// guards programmer error at callsites that bypass the
+// transport-layer dispatch — every such callsite hard-codes `H` and
+// must match the repo it opens. Returns [ErrAlgoMismatch] wrapped
+// with the offending pair so `errors.Is` works.
+func checkHashTypeMatchesAlgo[H objfmt.HashType](algo objfmt.Algo) error {
+	var zero H
+	switch any(zero).(type) {
+	case objfmt.SHA1Hash:
+		if algo != objfmt.SHA1 {
+			return fmt.Errorf("objstore: store algo %v does not match H=SHA1Hash: %w",
+				algo, ErrAlgoMismatch)
+		}
+	case objfmt.SHA256Hash:
+		if algo != objfmt.SHA256 {
+			return fmt.Errorf("objstore: store algo %v does not match H=SHA256Hash: %w",
+				algo, ErrAlgoMismatch)
+		}
+	default:
+		// `objfmt.HashType` is sealed to the two concrete types above;
+		// the default arm cannot be reached at runtime but stays as
+		// defence in depth against a future widening of the type set.
+		return fmt.Errorf("objstore: unknown H type: %w", ErrAlgoMismatch)
+	}
+	return nil
 }
 
 // Algo reports the object hash algorithm in use, derived from the
 // repository's `extensions.objectFormat` config (defaulting to
 // [objfmt.SHA1] when absent).
-func (s *Store) Algo() objfmt.Algo { return s.algo }
+func (s *Store[H]) Algo() objfmt.Algo { return s.algo }
 
 // Close releases the backends and every alternate Store in the chain.
 // Errors from each step are joined via [errors.Join] so a single
 // failure does not mask the rest. Close is idempotent: subsequent
 // calls return the same error without re-running the cascade.
-func (s *Store) Close() error {
+func (s *Store[H]) Close() error {
 	s.closeOnce.Do(func() {
 		var errs []error
 		if s.refs != nil {
@@ -220,12 +266,12 @@ func (s *Store) Close() error {
 // [ErrUnsupportedFormat], so the default branch here is defence in
 // depth — it would only fire if the parser ever grew a new
 // recognised value the opener had not been taught about.
-func openRefBackend(gitDir, commonDir string, cfg storeConfig) (refBackend, error) {
+func openRefBackend[H objfmt.HashType](gitDir, commonDir string, cfg storeConfig) (refBackend[H], error) {
 	switch cfg.refStorage.format {
 	case "files":
-		return openLooseRefs(gitDir, commonDir, cfg.algo)
+		return openLooseRefs[H](gitDir, commonDir, cfg.algo)
 	case "reftable":
-		return openReftableBackend(gitDir, commonDir, cfg.refStorage.location)
+		return openReftableBackend[H](gitDir, commonDir, cfg.refStorage.location)
 	default:
 		return nil, fmt.Errorf("objstore: refStorage=%q: %w",
 			cfg.refStorage.format, ErrUnsupportedFormat)
@@ -237,12 +283,12 @@ func openRefBackend(gitDir, commonDir string, cfg storeConfig) (refBackend, erro
 // per-pack `.idx` files alongside the midx for compatibility, so this
 // is a one-way preference: midx wins whenever it exists, regardless of
 // how many `.idx` files sit beside it.
-func openPackBackend(commonDir string, cfg storeConfig) (packBackend, error) {
+func openPackBackend[H objfmt.HashType](commonDir string, cfg storeConfig) (packBackend[H], error) {
 	midx := filepath.Join(commonDir, "objects", "pack", "multi-pack-index")
 	if _, err := os.Stat(midx); err == nil {
-		return openMidxBackend(commonDir, cfg.algo)
+		return openMidxBackend[H](commonDir, cfg.algo)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("objstore: stat %s: %w", midx, err)
 	}
-	return openIdxCatalog(commonDir, cfg.algo)
+	return openIdxCatalog[H](commonDir, cfg.algo)
 }

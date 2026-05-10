@@ -44,4 +44,13 @@ var (
 	// with [errors.Is]; the wrapping `fmt.Errorf` carries the offending
 	// hash and pack location for diagnostics.
 	ErrCorruptObject = errors.New("objstore: object corrupt or unresolvable")
+
+	// ErrAlgoMismatch is returned by [Open] when the type-parameter
+	// `H` of the requested store does not match the on-disk
+	// `extensions.objectFormat`. This guards programmer error at
+	// callsites that hard-code `H` rather than dispatching on
+	// [DiscoverAlgo]; the transport layer in `transport/{file,http}`
+	// goes through that dispatch and so never produces the mismatch
+	// in production.
+	ErrAlgoMismatch = errors.New("objstore: hash type does not match repository format")
 )

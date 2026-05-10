@@ -74,8 +74,8 @@ import (
 // object corrupt or unresolvable: <wrapped>\n` data pkt-line followed
 // by a flush, then returns a wrapped [wire.ErrServerRefused] so the
 // dispatcher terminates the v2 session.
-func handleObjectInfo(r *argsReader, w *pktline.Writer,
-	store *objstore.Store, opts Options) error {
+func handleObjectInfo[H objfmt.HashType](r *argsReader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) error {
 	_ = opts
 
 	args, oids, err := parseObjectInfoArgs(r, w)
@@ -170,7 +170,7 @@ func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs,
 //
 // Per-OID emission delegates to [emitObjectInfoLine], which is also
 // where the parse-failure / miss / corrupt-object branches live.
-func writeObjectInfoResponse(w *pktline.Writer, store *objstore.Store,
+func writeObjectInfoResponse[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H],
 	args wire.ObjectInfoArgs, oids []string) error {
 	if len(oids) == 0 {
 		// `send_info:44-45`: no OIDs ⇒ no attrs line and no obj-info
@@ -182,9 +182,8 @@ func writeObjectInfoResponse(w *pktline.Writer, store *objstore.Store,
 			return fmt.Errorf("server: object-info: write attrs: %w", err)
 		}
 	}
-	algo := store.Algo()
 	for _, oid := range oids {
-		if err := emitObjectInfoLine(w, store, algo, oid, args.Size); err != nil {
+		if err := emitObjectInfoLine(w, store, oid, args.Size); err != nil {
 			return err
 		}
 	}
@@ -215,9 +214,9 @@ func writeObjectInfoResponse(w *pktline.Writer, store *objstore.Store,
 //     unresolvable: <wrapped>\n` + flush, return wrapping
 //     [wire.ErrServerRefused] so the dispatcher terminates the
 //     session.
-func emitObjectInfoLine(w *pktline.Writer, store *objstore.Store,
-	algo objfmt.Algo, oidHex string, wantSize bool) error {
-	hash, err := objfmt.ParseHex(oidHex, algo)
+func emitObjectInfoLine[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H],
+	oidHex string, wantSize bool) error {
+	hash, err := objfmt.ParseHexAs[H](oidHex)
 	if err != nil {
 		// `protocol-caps.c:55-61`: malformed hex ⇒ inline ERR + continue.
 		// The bad hex is echoed verbatim into the message so a client

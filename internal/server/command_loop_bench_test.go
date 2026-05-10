@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
 )
@@ -27,7 +28,7 @@ import (
 // budget for a worst-case echo flood — the value an attacker could
 // drive against a server that does not bound its accepted echoes.
 //
-// `nil` is passed for the [objstore.Store] argument: the
+// `nil` is passed for the [objstore.Store[objfmt.SHA1Hash]] argument: the
 // unknown-command path never dereferences it, and the alternative —
 // materialising an empty fixture — would dilute the measurement
 // with `t.TempDir`/copy cost the parse loop has nothing to do with.
@@ -56,7 +57,7 @@ func BenchmarkProcessV2Request(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				r := pktline.NewReader(bytes.NewReader(payload))
-				_, _ = processV2Request(r, w, nil, opts)
+				_, _ = processV2Request[objfmt.SHA1Hash](r, w, nil, opts)
 			}
 		})
 	}

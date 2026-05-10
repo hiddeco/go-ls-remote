@@ -33,11 +33,11 @@ const (
 // the idx-catalog backend rooted at its `.git/`. Mirrors the helpers
 // the loose-objects and reftable backend tests use so each test stays
 // focused on the assertion it is making.
-func openIdxCatalogFromFixture(t *testing.T, name string) *idxCatalog {
+func openIdxCatalogFromFixture(t *testing.T, name string) *idxCatalog[objfmt.SHA1Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	return c
@@ -72,7 +72,7 @@ func TestIdxCatalog_MissingPackDirectoryOpensCleanly(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
 
-	c, err := openIdxCatalog(dir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	assert.Empty(t, c.packs)
@@ -120,7 +120,7 @@ func TestIdxCatalog_LookupHitInSecondPack(t *testing.T) {
 		"ofs-delta.pack":     packMtimeAnchor,
 		"three-objects.pack": packMtimeAnchor,
 	})
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	require.Len(t, c.packs, 2)
@@ -149,18 +149,18 @@ func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 			"three-objects.pack": packMtimeAnchor,
 		})
 
-		c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+		c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = c.Close() })
 
 		// AllPacks order matches the internal slice order; capture both
 		// and assert they are byte-identical.
-		var fromIter []*objfmt.Pack
+		var fromIter []*objfmt.Pack[objfmt.SHA1Hash]
 		for p := range c.AllPacks() {
 			require.NotNil(t, p)
 			fromIter = append(fromIter, p)
 		}
-		var fromSlice []*objfmt.Pack
+		var fromSlice []*objfmt.Pack[objfmt.SHA1Hash]
 		var names []string
 		for _, e := range c.packs {
 			fromSlice = append(fromSlice, e.pack)
@@ -187,7 +187,7 @@ func TestIdxCatalog_AllPacksOrderedByMtimeDesc(t *testing.T) {
 		"three-objects.pack": packMtimeAnchor.Add(time.Hour),
 	})
 
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 
@@ -223,7 +223,7 @@ func TestIdxCatalog_LookupHitsYoungerPackFirst(t *testing.T) {
 		"younger.pack": packMtimeAnchor.Add(time.Hour),
 	})
 
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	require.Len(t, c.packs, 2)
@@ -258,7 +258,7 @@ func TestIdxCatalog_PackByChecksumMissReturnsNilFalse(t *testing.T) {
 	// so a (nil, false) shape is part of its contract.
 	c := openIdxCatalogFromFixture(t, "idx-multi")
 
-	pack, ok := c.packByChecksum(objfmt.Hash{})
+	pack, ok := c.packByChecksum(objfmt.SHA1Hash{})
 	assert.False(t, ok)
 	assert.Nil(t, pack)
 }
@@ -273,7 +273,7 @@ func TestIdxCatalog_CorruptIdxReturnsErrorWithoutLeak(t *testing.T) {
 	root := materializeFixture(t, "idx-corrupt")
 	gitDir := filepath.Join(root, ".git")
 
-	_, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	_, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.Error(t, err)
 	bogus := filepath.Join(gitDir, "objects", "pack", "bogus.idx")
 	assert.Contains(t, err.Error(), bogus,
@@ -289,7 +289,7 @@ func TestIdxCatalog_MissingPackSiblingReturnsError(t *testing.T) {
 	root := materializeFixture(t, "idx-missing-pack")
 	gitDir := filepath.Join(root, ".git")
 
-	_, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	_, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.Error(t, err)
 	idxPath := filepath.Join(gitDir, "objects", "pack", "three-objects.idx")
 	packPath := filepath.Join(gitDir, "objects", "pack", "three-objects.pack")
@@ -301,11 +301,11 @@ func TestIdxCatalog_MissingPackSiblingReturnsError(t *testing.T) {
 func TestIdxCatalog_CloseIsIdempotent(t *testing.T) {
 	// `Close` cascades to every wrapped idx and pack. Subsequent calls
 	// must return the same joined error (here, nil) without re-running
-	// the cascade — the Store-level idempotency guarantee assumes this.
+	// the cascade — the Store[objfmt.SHA1Hash]-level idempotency guarantee assumes this.
 	root := materializeFixture(t, "idx-multi")
 	gitDir := filepath.Join(root, ".git")
 
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 
 	first := c.Close()
@@ -321,15 +321,15 @@ func TestIdxCatalog_OpenStoreSelectsCatalogWithExpectedPacks(t *testing.T) {
 	// of opened packs.
 	root := materializeFixture(t, "idx-multi")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	cat, ok := s.packs.(*idxCatalog)
-	require.True(t, ok, "want *idxCatalog, got %T", s.packs)
+	cat, ok := s.packs.(*idxCatalog[objfmt.SHA1Hash])
+	require.True(t, ok, "want *idxCatalog[objfmt.SHA1Hash], got %T", s.packs)
 	assert.Len(t, cat.packs, 2)
 
-	// Spot-check: a known OID resolves end-to-end through the Store's
+	// Spot-check: a known OID resolves end-to-end through the Store[objfmt.SHA1Hash]'s
 	// pack backend.
 	pack, off, hit, err := cat.Lookup(hashFromHex(t, ofsBlobOID, objfmt.SHA1))
 	require.NoError(t, err)
@@ -350,12 +350,12 @@ func TestIdxCatalog_IgnoresNonIdxEntries(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(gitDir,
 		"objects", "pack", "noise.txt"), []byte("ignore me"), 0o644))
 
-	c, err := openIdxCatalog(gitDir, objfmt.SHA1)
+	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
 	assert.Len(t, c.packs, 1)
 }
 
-// Compile-time guard: the catalog satisfies the [packBackend] contract
-// the Store opener selects through.
-var _ packBackend = (*idxCatalog)(nil)
+// Compile-time guard: the catalog satisfies the [packBackend[objfmt.SHA1Hash]] contract
+// the Store[objfmt.SHA1Hash] opener selects through.
+var _ packBackend[objfmt.SHA1Hash] = (*idxCatalog[objfmt.SHA1Hash])(nil)

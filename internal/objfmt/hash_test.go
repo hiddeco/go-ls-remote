@@ -93,7 +93,7 @@ func TestHash_AppendHex(t *testing.T) {
 }
 
 func TestParseHex(t *testing.T) {
-	t.Run("SHA1 round-trips with Hex", func(t *testing.T) {
+	t.Run("SHA1 round-trips with the legacy Hash.Hex(Algo)", func(t *testing.T) {
 		in := "0123456789abcdef0123456789abcdef01234567"
 		h, err := ParseHex(in, SHA1)
 		require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestParseHex(t *testing.T) {
 			assert.Equal(t, byte(0), h[i])
 		}
 	})
-	t.Run("SHA256 round-trips with Hex", func(t *testing.T) {
+	t.Run("SHA256 round-trips with the legacy Hash.Hex(Algo)", func(t *testing.T) {
 		in := strings.Repeat("ab", 32)
 		h, err := ParseHex(in, SHA256)
 		require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestParseHex(t *testing.T) {
 }
 
 func TestHash_comparable(t *testing.T) {
-	t.Run("equal SHA-1 hashes are usable as map keys", func(t *testing.T) {
+	t.Run("equal legacy SHA-1 hashes are usable as map keys", func(t *testing.T) {
 		a, err := ParseHex(strings.Repeat("0a", 20), SHA1)
 		require.NoError(t, err)
 		b, err := ParseHex(strings.Repeat("0a", 20), SHA1)

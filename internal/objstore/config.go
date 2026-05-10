@@ -52,6 +52,27 @@ type refStorageSpec struct {
 	location string
 }
 
+// DiscoverAlgo reads `extensions.objectFormat` from the on-disk
+// config at path's repository (resolved through [resolveGitDir]) and
+// returns the matching [objfmt.Algo]. The transport-layer dispatch
+// in `transport/{file,http}` uses this to instantiate the right
+// `Store[H]` without opening the rest of the backends first.
+//
+// Errors propagate from the path resolution and the config parser.
+// A missing file or absent `extensions` section is not an error: the
+// canonical default of [objfmt.SHA1] is returned.
+func DiscoverAlgo(path string) (objfmt.Algo, error) {
+	_, commonDir, err := resolveGitDir(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := readGitConfig(commonDir)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.algo, nil
+}
+
 // readGitConfig reads <commonDir>/config and extracts the two keys
 // the object store cares about: `extensions.objectFormat` and
 // `extensions.refStorage`. It returns the populated [storeConfig] or

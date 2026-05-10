@@ -26,16 +26,16 @@ func TestParsePackedRefs(t *testing.T) {
 		hexC = "cccccccccccccccccccccccccccccccccccccccc"
 		hexD = "dddddddddddddddddddddddddddddddddddddddd"
 	)
-	mkOID := func(t *testing.T, hex string) objfmt.Hash {
+	mkOID := func(t *testing.T, hex string) objfmt.SHA1Hash {
 		t.Helper()
-		h, err := objfmt.ParseHex(hex, objfmt.SHA1)
+		h, err := objfmt.ParseSHA1Hex(hex)
 		require.NoError(t, err)
 		return h
 	}
 
 	type want struct {
 		traits  packedTraits
-		entries map[string]packedEntry
+		entries map[string]packedEntry[objfmt.SHA1Hash]
 	}
 
 	tests := []struct {
@@ -51,7 +51,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexA + " refs/heads/main\n",
 			want: want{
 				traits: packedTraits{peeled: true, fullyPeeled: true, sorted: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -62,7 +62,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexA + " refs/heads/main\n",
 			want: want{
 				traits: packedTraits{peeled: true, fullyPeeled: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -70,14 +70,14 @@ func TestParsePackedRefs(t *testing.T) {
 		{
 			name:  "header_missing_entirely_no_refs",
 			input: "",
-			want:  want{entries: map[string]packedEntry{}},
+			want:  want{entries: map[string]packedEntry[objfmt.SHA1Hash]{}},
 		},
 		{
 			name: "header_missing_with_refs_yields_zero_traits",
 			input: hexA + " refs/heads/main\n" +
 				hexB + " refs/heads/feature\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
 				},
@@ -96,7 +96,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexB + " refs/heads/feature\n",
 			want: want{
 				traits: packedTraits{},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
 				},
@@ -112,7 +112,7 @@ func TestParsePackedRefs(t *testing.T) {
 				"# pack-refs with: fully-peeled\n",
 			want: want{
 				traits: packedTraits{},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -121,7 +121,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "single_ref_with_trailing_newline",
 			input: hexA + " refs/heads/main\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -133,7 +133,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "single_ref_no_trailing_newline",
 			input: hexA + " refs/heads/main",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -143,7 +143,7 @@ func TestParsePackedRefs(t *testing.T) {
 			input: hexA + " refs/heads/main\n" +
 				hexB + " refs/heads/feature\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
 				},
@@ -160,7 +160,7 @@ func TestParsePackedRefs(t *testing.T) {
 				"^" + hexD + "\r\n",
 			want: want{
 				traits: packedTraits{peeled: true, fullyPeeled: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/tags/v1": {
 						oid:        mkOID(t, hexC),
@@ -176,7 +176,7 @@ func TestParsePackedRefs(t *testing.T) {
 			input: hexC + " refs/tags/v1\n" +
 				"^" + hexD + "\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/tags/v1": {
 						oid:        mkOID(t, hexC),
 						peeled:     mkOID(t, hexD),
@@ -257,7 +257,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexA + " refs/heads/main\n",
 			want: want{
 				traits: packedTraits{sorted: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/feature": {oid: mkOID(t, hexB), fromPacked: true},
 					"refs/heads/main":    {oid: mkOID(t, hexA), fromPacked: true},
 				},
@@ -275,7 +275,7 @@ func TestParsePackedRefs(t *testing.T) {
 				"\n",
 			want: want{
 				traits: packedTraits{peeled: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/main": {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/tags/v1": {
 						oid:        mkOID(t, hexC),
@@ -312,7 +312,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexB + " refs/heads/apple\n",
 			want: want{
 				traits: packedTraits{sorted: false},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/zebra": {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/apple": {oid: mkOID(t, hexB), fromPacked: true},
 				},
@@ -327,7 +327,7 @@ func TestParsePackedRefs(t *testing.T) {
 				hexB + " refs/heads/zebra\n",
 			want: want{
 				traits: packedTraits{sorted: true},
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/apple": {oid: mkOID(t, hexA), fromPacked: true},
 					"refs/heads/zebra": {oid: mkOID(t, hexB), fromPacked: true},
 				},
@@ -486,7 +486,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "refname_component_starting_with_dash_accepted",
 			input: hexA + " refs/heads/-foo\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/-foo": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -500,7 +500,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "refname_single_component_accepted",
 			input: hexA + " HEAD\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"HEAD": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -509,7 +509,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "refname_with_subdir_accepted",
 			input: hexA + " refs/heads/feature/sub-branch\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/heads/feature/sub-branch": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -518,7 +518,7 @@ func TestParsePackedRefs(t *testing.T) {
 			name:  "refname_remote_with_dots_accepted",
 			input: hexA + " refs/tags/v1.0.0\n",
 			want: want{
-				entries: map[string]packedEntry{
+				entries: map[string]packedEntry[objfmt.SHA1Hash]{
 					"refs/tags/v1.0.0": {oid: mkOID(t, hexA), fromPacked: true},
 				},
 			},
@@ -527,7 +527,7 @@ func TestParsePackedRefs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parsePackedRefs(strings.NewReader(tc.input), objfmt.SHA1)
+			got, err := parsePackedRefs[objfmt.SHA1Hash](strings.NewReader(tc.input))
 			if tc.wantErr {
 				require.Error(t, err)
 				if tc.wantErrIs != nil {

@@ -44,7 +44,7 @@ import (
 // effectively dead — the goroutine is gone or about to be — and
 // callers must invoke [Conn.Close] to release the pipes and the
 // underlying object store.
-func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error) {
+func (c *Conn[H]) Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error) {
 	// Honour cancellation up-front: the in-process server reads from a
 	// memory pipe so a `ctx` deadline cannot be plumbed through the
 	// write itself, but a caller who has already cancelled before
@@ -73,7 +73,7 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 // synchronisation-safe. If the goroutine is still running the closed
 // pipe is coming from elsewhere (e.g. a concurrent Close) and the
 // original write error is surfaced unchanged.
-func (c *Conn) wrapWriteError(err error) error {
+func (c *Conn[H]) wrapWriteError(err error) error {
 	if errors.Is(err, io.ErrClosedPipe) {
 		if srvErr := c.serverError(); srvErr != nil {
 			return &ProtocolError{Op: "command", Err: srvErr}

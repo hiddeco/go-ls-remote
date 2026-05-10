@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -130,7 +131,7 @@ func BenchmarkConn_Command(b *testing.B) {
 // equivalent uses `*testing.T`, this one accepts `*testing.B` so the
 // fixture-materialise step (which itself goes through `testing.TB`)
 // composes cleanly with the bench loop.
-func openBenchConn(b *testing.B, fixture string, opts []Option, tracer trace.Tracer) *Conn {
+func openBenchConn(b *testing.B, fixture string, opts []Option, tracer trace.Tracer) *Conn[objfmt.SHA1Hash] {
 	b.Helper()
 	gitdir := materializeServeableFixture(b, fixture)
 	u, err := transport.ParseURL("file://" + gitdir)
@@ -144,7 +145,7 @@ func openBenchConn(b *testing.B, fixture string, opts []Option, tracer trace.Tra
 	require.NoError(b, err)
 	b.Cleanup(func() { _ = conn.Close() })
 
-	c, ok := conn.(*Conn)
+	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(b, ok)
 	drainAdvertisement(b, c)
 	return c

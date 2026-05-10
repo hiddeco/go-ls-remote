@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
 )
@@ -32,7 +33,14 @@ import (
 // [github.com/hiddeco/go-ls-remote/internal/objstore.Store]. The two
 // independent `io.Pipe` pairs (one per direction) ensure neither side
 // can deadlock by writing into a closed peer.
-type Conn struct {
+//
+// The type parameter `H` matches the algo discovered by
+// [Transport.open] via [objstore.DiscoverAlgo]; the in-process
+// `server.Serve` goroutine is instantiated with the same `H`. The
+// public [transport.Conn] interface stays non-generic because its
+// methods ([Conn.Advertisement], [Conn.Close], [Conn.Command]) do
+// not reference `H`.
+type Conn[H objfmt.HashType] struct {
 	// reader decodes pkt-lines coming back from the server goroutine.
 	// Its underlying source is the client-side end of the
 	// server-to-client pipe; the goroutine writes its advertisement
@@ -48,7 +56,7 @@ type Conn struct {
 	// store is the on-disk object store the goroutine serves.
 	// Ownership transfers from `Open` to the [Conn]; `Close` releases
 	// it as part of the lifecycle cascade.
-	store *objstore.Store
+	store *objstore.Store[H]
 
 	// cancel cancels the context the goroutine runs under. `Close`
 	// invokes it before closing the pipe ends so the goroutine has a
@@ -101,7 +109,7 @@ type Conn struct {
 // advertisement and every command response onto one pkt-line pipe
 // pair, so callers see one persistent stream for the lifetime of the
 // [Conn]. [Conn.Close] releases it.
-func (c *Conn) Advertisement() *pktline.Reader {
+func (c *Conn[H]) Advertisement() *pktline.Reader {
 	return c.reader
 }
 
@@ -122,7 +130,7 @@ func (c *Conn) Advertisement() *pktline.Reader {
 // (or, post-close, `io.EOF`). Closing pipes first would race the
 // goroutine's pkt-line writes against the close, surfacing pipe
 // errors that are not actionable from the caller's perspective.
-func (c *Conn) Close() error {
+func (c *Conn[H]) Close() error {
 	first := false
 	c.closeOnce.Do(func() {
 		first = true
@@ -182,7 +190,7 @@ func (c *Conn) Close() error {
 // to distinguish "goroutine finished cleanly" from "goroutine still
 // running" must select on `c.done` themselves; [Conn.Close] is the
 // canonical waiter.
-func (c *Conn) serverError() error {
+func (c *Conn[H]) serverError() error {
 	select {
 	case <-c.done:
 		return c.serverErr

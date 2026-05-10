@@ -19,7 +19,7 @@ func TestSentinelErrors(t *testing.T) {
 		buf = append(buf, trailerPad(20)...)
 		path := writeBytes(t, dir, "junk.pack", buf)
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrBadMagic)
 	})
@@ -28,7 +28,7 @@ func TestSentinelErrors(t *testing.T) {
 		dir := t.TempDir()
 		path := writeBytes(t, dir, "tiny.pack", []byte{0x00, 0x01, 0x02})
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrShortFile)
 	})
@@ -40,13 +40,13 @@ func TestSentinelErrors(t *testing.T) {
 		binary.BigEndian.PutUint32(hdr[4:8], 99)
 		path := writeBytes(t, dir, "v99.pack", append(hdr, trailerPad(20)...))
 
-		_, err := OpenPack(path, SHA1)
+		_, err := OpenPack[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedVersion)
 	})
 
 	t.Run("OpenPack with a nil algo wraps ErrUnsupportedAlgo", func(t *testing.T) {
-		_, err := OpenPack(packFixture(t, "empty.pack"), nil)
+		_, err := OpenPack[SHA1Hash](packFixture(t, "empty.pack"), nil)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedAlgo)
 	})
@@ -58,7 +58,7 @@ func TestSentinelErrors(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "tiny.idx")
 		require.NoError(t, os.WriteFile(path, []byte{0xff, 't'}, 0o600))
 
-		_, err := OpenIdx(path, SHA1)
+		_, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrTruncated)
 	})
@@ -69,7 +69,7 @@ func TestSentinelErrors(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "v99.idx")
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
 
-		_, err := OpenIdx(path, SHA1)
+		_, err := OpenIdx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedVersion)
 	})
@@ -80,7 +80,7 @@ func TestSentinelErrors(t *testing.T) {
 		copy(buf, "JUNK")
 		path := writeBytes(t, dir, "junk.midx", buf)
 
-		_, err := OpenMidx(path, SHA1)
+		_, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrBadMagic)
 	})
@@ -93,7 +93,7 @@ func TestSentinelErrors(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "multi-pack-index")
 		require.NoError(t, os.WriteFile(path, data, 0o600))
 
-		_, err = OpenMidx(path, SHA256)
+		_, err = OpenMidx[SHA256Hash](path, SHA256)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrAlgoMismatch)
 	})
@@ -114,7 +114,7 @@ func TestSentinelErrors(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		p, err := OpenPack(dst, SHA1)
+		p, err := OpenPack[SHA1Hash](dst, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
 
@@ -147,7 +147,7 @@ func TestSentinelErrors(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, f.Close())
 
-		idx, err := OpenIdx(dst, SHA1)
+		idx, err := OpenIdx[SHA1Hash](dst, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
 

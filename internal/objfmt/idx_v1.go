@@ -18,7 +18,7 @@ const idxV1RecordSize = 4 + 20
 // object in a pack file always sits past the 12-byte pack header, so
 // 0 is never a valid match anyway, but `-1` makes the intent explicit
 // in conditional chains.
-func (i *Idx) FindOffset(h Hash) (int64, bool) {
+func (i *Idx[H]) FindOffset(h H) (int64, bool) {
 	switch i.ver {
 	case 1:
 		return i.findOffsetV1(h)
@@ -32,10 +32,10 @@ func (i *Idx) FindOffset(h Hash) (int64, bool) {
 // findOffsetV1 binary-searches the v1 main table within the slice
 // bounded by the fan-out.
 //
-// v1 only ever stored SHA-1 ids, so an [Idx] opened with [SHA256]
-// against a v1 file will fall through this function and return a miss
-// for every lookup.
-func (i *Idx) findOffsetV1(h Hash) (int64, bool) {
+// v1 only ever stored SHA-1 ids, so an [Idx] opened with `H` =
+// [SHA256Hash] against a v1 file will fall through this function and
+// return a miss for every lookup.
+func (i *Idx[H]) findOffsetV1(h H) (int64, bool) {
 	if i.algo != SHA1 || i.count == 0 || len(i.data) < 256*4 {
 		return -1, false
 	}
@@ -56,7 +56,7 @@ func (i *Idx) findOffsetV1(h Hash) (int64, bool) {
 	}
 
 	tableStart := 256 * 4
-	want := h[:20]
+	want := hashBytes(&h)
 	for lo < hi {
 		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
 		// summands set bit 31; `lo + (hi-lo)/2` does not.

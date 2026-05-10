@@ -112,7 +112,7 @@ func TestObjectInfo_CrossPackRefDelta(t *testing.T) {
 	dir := t.TempDir()
 	makeCrossPackRefDeltaRepo(t, dir)
 
-	s, err := Open(dir)
+	s, err := Open[objfmt.SHA1Hash](dir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -132,7 +132,7 @@ func TestObjectInfo_RefDeltaPositiveCacheSurvivesPackRemoval(t *testing.T) {
 	dir := t.TempDir()
 	makeCrossPackRefDeltaRepo(t, dir)
 
-	s, err := Open(dir)
+	s, err := Open[objfmt.SHA1Hash](dir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -159,7 +159,7 @@ func TestObjectInfo_RefDeltaNegativeCacheReusesError(t *testing.T) {
 	dir := t.TempDir()
 	deltaOID := makeOrphanRefDeltaRepo(t, dir)
 
-	s, err := Open(dir)
+	s, err := Open[objfmt.SHA1Hash](dir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -214,7 +214,7 @@ func TestObjectInfo_CorruptDeltaPayloadWrapsErrCorruptObject(t *testing.T) {
 	// Open with CRC verification disabled so the walk reaches the
 	// delta-header read path; a CRC mismatch would short-circuit before
 	// the zlib decoder is invoked.
-	s, err := Open(filepath.Join(dir, ".git"), WithoutCRCCheck())
+	s, err := Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"), WithoutCRCCheck())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -236,7 +236,7 @@ func TestObjectInfo_CRC32MismatchWrapsErrCorruptObject(t *testing.T) {
 	packPath := filepath.Join(dir, ".git", "objects", "pack", "three-objects.pack")
 	corruptByte(t, packPath, 64)
 
-	s, err := Open(filepath.Join(dir, ".git"))
+	s, err := Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -252,7 +252,7 @@ func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
 	// Construct a three-pack catalog by cloning the canonical
 	// `three-objects.{pack,idx}` to three distinct basenames. Every pack
 	// in the resulting store must round-trip through
-	// `packBackend.IdxFor` to its own paired idx — never a miss, never
+	// `packBackend[objfmt.SHA1Hash].IdxFor` to its own paired idx — never a miss, never
 	// another pack's idx. Pins the (Pack -> Idx) lookup's correctness
 	// independent of the underlying map vs. linear-scan implementation,
 	// so the same assertion guards future re-shuffles of the backend's
@@ -270,11 +270,11 @@ func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
 		clonePackPair(t, srcDir, "three-objects", dstDir, base)
 	}
 
-	s, err := Open(gitDir)
+	s, err := Open[objfmt.SHA1Hash](gitDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	cat, ok := s.packs.(*idxCatalog)
+	cat, ok := s.packs.(*idxCatalog[objfmt.SHA1Hash])
 	require.True(t, ok, "fixture must select the idx-catalog backend")
 	require.Len(t, cat.packs, 3,
 		"three cloned pairs must surface as three catalog entries")
@@ -290,7 +290,7 @@ func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
 
 func TestObjectInfo_MultiPackCRC32MismatchTripsRightPack(t *testing.T) {
 	// Three-pack catalog where one pack's commit body has been flipped:
-	// `Store.ObjectInfo` for the OID present in every pack must walk to
+	// `Store[objfmt.SHA1Hash].ObjectInfo` for the OID present in every pack must walk to
 	// the youngest pack first (the corrupted one) and trip its CRC. A
 	// regression where `IdxFor` returned the wrong pair would either
 	// surface a clean answer (verifying against the wrong idx) or skip
@@ -318,7 +318,7 @@ func TestObjectInfo_MultiPackCRC32MismatchTripsRightPack(t *testing.T) {
 	// verification consults.
 	corruptByte(t, filepath.Join(dstDir, "youngest.pack"), 64)
 
-	s, err := Open(gitDir)
+	s, err := Open[objfmt.SHA1Hash](gitDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -342,7 +342,7 @@ func TestObjectInfo_WithoutCRCCheckBypassesVerification(t *testing.T) {
 	packPath := filepath.Join(dir, ".git", "objects", "pack", "three-objects.pack")
 	corruptByte(t, packPath, 64)
 
-	s, err := Open(filepath.Join(dir, ".git"), WithoutCRCCheck())
+	s, err := Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"), WithoutCRCCheck())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -365,7 +365,7 @@ func TestObjectInfo_DeepOfsDeltaChainResolvesBelowBound(t *testing.T) {
 	dir := t.TempDir()
 	headOID := makeDeepOfsDeltaChain(t, dir, chainDepth)
 
-	s, err := Open(dir, WithoutCRCCheck())
+	s, err := Open[objfmt.SHA1Hash](dir, WithoutCRCCheck())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -385,7 +385,7 @@ func TestObjectInfo_ChainDepthExceededWrapsErrCorruptObject(t *testing.T) {
 	dir := t.TempDir()
 	headOID := makeDeepOfsDeltaChain(t, dir, maxChainDepth+1)
 
-	s, err := Open(dir, WithoutCRCCheck())
+	s, err := Open[objfmt.SHA1Hash](dir, WithoutCRCCheck())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -406,11 +406,11 @@ func TestObjectInfo_AlternatesFallThrough(t *testing.T) {
 	root := materializeFixture(t, "pack-with-alternates")
 	main := filepath.Join(root, "main")
 
-	s, err := Open(main)
+	s, err := Open[objfmt.SHA1Hash](main)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	require.NotEmpty(t, s.alternates,
-		"alternates fixture must surface at least one alternate Store")
+		"alternates fixture must surface at least one alternate Store[objfmt.SHA1Hash]")
 
 	got, err := s.ObjectInfo(hashFromHex(t, threeCommitOID, objfmt.SHA1))
 	require.NoError(t, err)
@@ -426,7 +426,7 @@ func TestObjectInfo_ConcurrentSameOIDConverges(t *testing.T) {
 	dir := t.TempDir()
 	makeCrossPackRefDeltaRepo(t, dir)
 
-	s, err := Open(dir)
+	s, err := Open[objfmt.SHA1Hash](dir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -515,7 +515,7 @@ func corruptByte(t *testing.T, path string, off int64) {
 //     sibling pack.
 //
 // Both packs are paired with hand-rolled v2 idx files so the
-// `idxCatalog` backend can resolve OIDs across them. The resulting
+// `idxCatalog[objfmt.SHA1Hash]` backend can resolve OIDs across them. The resulting
 // layout exercises the cross-pack REF_DELTA fall-through that a
 // single-pack fixture cannot reach.
 func makeCrossPackRefDeltaRepo(t *testing.T, root string) {
@@ -545,9 +545,9 @@ func makeCrossPackRefDeltaRepo(t *testing.T, root string) {
 	baseBytes := src[baseOffset:baseEnd]
 	deltaBytes := src[deltaOffset:deltaEnd]
 
-	baseOID, err := objfmt.ParseHex(refBaseBlobOID, objfmt.SHA1)
+	baseOID, err := objfmt.ParseSHA1Hex(refBaseBlobOID)
 	require.NoError(t, err)
-	deltaOID, err := objfmt.ParseHex(refDeltaTargetBlobOID, objfmt.SHA1)
+	deltaOID, err := objfmt.ParseSHA1Hex(refDeltaTargetBlobOID)
 	require.NoError(t, err)
 
 	basePack, baseIdx := buildSinglePackAndIdx(t,
@@ -573,7 +573,7 @@ func makeCrossPackRefDeltaRepo(t *testing.T, root string) {
 // pack: a REF_DELTA entry whose base OID is unreachable from any
 // pack in the store (the base blob is *not* shipped). Returns the
 // REF_DELTA's own OID for the test to feed into `ObjectInfo`.
-func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.Hash {
+func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.SHA1Hash {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "HEAD"),
@@ -591,7 +591,7 @@ func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.Hash {
 		trailerLength = int64(20)
 	)
 	deltaBytes := src[deltaOffset : int64(len(src))-trailerLength]
-	deltaOID, err := objfmt.ParseHex(refDeltaTargetBlobOID, objfmt.SHA1)
+	deltaOID, err := objfmt.ParseSHA1Hex(refDeltaTargetBlobOID)
 	require.NoError(t, err)
 
 	pack, idx := buildSinglePackAndIdx(t,
@@ -609,7 +609,7 @@ func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.Hash {
 // one terminal blob followed by depth OFS_DELTA entries, each pointing
 // back at its immediate predecessor. The returned OID identifies the
 // chain *head* — the deepest delta — and is the OID a depth-bound test
-// asks `Store.ObjectInfo` to resolve.
+// asks `Store[objfmt.SHA1Hash].ObjectInfo` to resolve.
 //
 // Every OFS_DELTA carries the same hand-rolled body: a 1-byte
 // type/size header (type=6, encoded size=2), a 1-byte OFS varint
@@ -623,7 +623,7 @@ func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.Hash {
 // last hop lands on a non-delta header. The chain is laid out with
 // the base at the lowest offset and each delta at a higher offset, so
 // `at -= ofsBase` walks from head to base in the canonical direction.
-func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.Hash {
+func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.SHA1Hash {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "HEAD"),
@@ -648,7 +648,7 @@ func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.Hash {
 	_ = binary.Write(pack, binary.BigEndian, uint32(depth+1))
 
 	type entryRecord struct {
-		oid    objfmt.Hash
+		oid    objfmt.SHA1Hash
 		offset uint32
 		crc    uint32
 	}
@@ -755,7 +755,7 @@ func buildBlobEntry(t *testing.T, body []byte) []byte {
 // the canonical delta-payload prologue: source size = target size = 2,
 // followed by a single no-op insert opcode. The walker only inflates
 // the leading varints via [objfmt.Pack.ReadDeltaHeader]; the trailing
-// opcode is never executed by `Store.ObjectInfo`.
+// opcode is never executed by `Store[objfmt.SHA1Hash].ObjectInfo`.
 func buildSyntheticDeltaBody(t *testing.T) []byte {
 	t.Helper()
 	// Two single-byte varints (each value 2; high bit clear) plus one
@@ -763,12 +763,12 @@ func buildSyntheticDeltaBody(t *testing.T) []byte {
 	return zlibCompress(t, []byte{0x02, 0x02, 0x00})
 }
 
-// syntheticOID fabricates a deterministic [objfmt.Hash] keyed on a
+// syntheticOID fabricates a deterministic [objfmt.SHA1Hash] keyed on a
 // 1-byte tag. The hashes are not real SHA-1s of any object; they are
 // only needed to populate the idx so the walker can resolve the
 // chain head by OID. Distinct tags yield distinct OIDs.
-func syntheticOID(tag uint8) objfmt.Hash {
-	var h objfmt.Hash
+func syntheticOID(tag uint8) objfmt.SHA1Hash {
+	var h objfmt.SHA1Hash
 	for i := range 20 {
 		h[i] = tag
 	}
@@ -798,7 +798,7 @@ func zlibCompress(t *testing.T, body []byte) []byte {
 // copied verbatim so the resulting pack records the same delta encoding
 // the source pack used.
 type packEntryWire struct {
-	oid  objfmt.Hash
+	oid  objfmt.SHA1Hash
 	body []byte
 }
 
@@ -824,7 +824,7 @@ func buildSinglePackAndIdx(t *testing.T, entries []packEntryWire) (packBytes, id
 	_ = binary.Write(pack, binary.BigEndian, uint32(len(entries)))
 
 	type recorded struct {
-		oid    objfmt.Hash
+		oid    objfmt.SHA1Hash
 		offset uint32
 		crc    uint32
 	}

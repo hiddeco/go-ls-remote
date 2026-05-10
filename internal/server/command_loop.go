@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -66,8 +67,8 @@ func (a *argsReader) ReadPacket() (pktline.Packet, error) {
 // returns a wrapped [wire.ErrServerRefused] when an unknown command is
 // dispatched after emitting the structured ERR pkt-line on the wire.
 // All other errors propagate from the handler or the underlying I/O.
-func runV2CommandLoop(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store, opts Options) error {
+func runV2CommandLoop[H objfmt.HashType](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) error {
 	for {
 		// Cancellation point between commands: the bytes for the
 		// previous request have been fully serviced and the next
@@ -113,8 +114,8 @@ func runV2CommandLoop(ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 //     section follows. The terminating flush of the args section is
 //     read by the handler, not by this function — matching the
 //     canonical comment at `serve.c:323-329`.
-func processV2Request(r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store, opts Options) (bool, error) {
+func processV2Request[H objfmt.HashType](r *pktline.Reader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) (bool, error) {
 	var (
 		commandName  string
 		seenCmdOrCap bool
@@ -209,7 +210,7 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 // refusal and a CommandEvent for `fetch` (or any other unimplemented
 // name) would advertise behaviour the emulator does not actually
 // implement.
-func dispatchV2(r *argsReader, w *pktline.Writer, store *objstore.Store,
+func dispatchV2[H objfmt.HashType](r *argsReader, w *pktline.Writer, store *objstore.Store[H],
 	opts Options, commandName string) error {
 	switch commandName {
 	case "":

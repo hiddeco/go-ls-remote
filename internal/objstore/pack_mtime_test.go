@@ -34,11 +34,11 @@ func stampPackMtimes(t *testing.T, gitDir string, mtimes map[string]time.Time) {
 	}
 }
 
-// idxForPackInCatalog returns the `*objfmt.Idx` paired with pack
-// inside c. The catalog's `*objfmt.Pack` instances do not carry a
+// idxForPackInCatalog returns the `*objfmt.Idx[objfmt.SHA1Hash]` paired with pack
+// inside c. The catalog's `*objfmt.Pack[objfmt.SHA1Hash]` instances do not carry a
 // path of their own, so tests reach for the basename through the
 // paired idx — every (idx, pack) pair shares a basename.
-func idxForPackInCatalog(t *testing.T, c *idxCatalog, pack *objfmt.Pack) *objfmt.Idx {
+func idxForPackInCatalog(t *testing.T, c *idxCatalog[objfmt.SHA1Hash], pack *objfmt.Pack[objfmt.SHA1Hash]) *objfmt.Idx[objfmt.SHA1Hash] {
 	t.Helper()
 	for _, e := range c.packs {
 		if e.pack == pack {
@@ -49,10 +49,10 @@ func idxForPackInCatalog(t *testing.T, c *idxCatalog, pack *objfmt.Pack) *objfmt
 	return nil
 }
 
-// idxForPackInMidx returns the `*objfmt.Idx` paired with pack inside
+// idxForPackInMidx returns the `*objfmt.Idx[objfmt.SHA1Hash]` paired with pack inside
 // b, scanning both the midx-covered and sibling slots. Same rationale
 // as [idxForPackInCatalog].
-func idxForPackInMidx(t *testing.T, b *midxBackend, pack *objfmt.Pack) *objfmt.Idx {
+func idxForPackInMidx(t *testing.T, b *midxBackend[objfmt.SHA1Hash], pack *objfmt.Pack[objfmt.SHA1Hash]) *objfmt.Idx[objfmt.SHA1Hash] {
 	t.Helper()
 	for i, p := range b.coveredByMidxIndex {
 		if p == pack {

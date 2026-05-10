@@ -25,8 +25,9 @@ const midxOOFFRecordSize = 8
 // (`midx.c`) and `nth_midxed_offset` (`midx.c::561-582`): a 256-entry
 // fanout bounds a binary search across `OIDL`, then OOFF gives the
 // pack id and either a direct 31-bit offset or an LOFF index.
-func (m *Midx) Find(h Hash) (packIndex uint32, offset int64, ok bool) {
-	hashLen := m.algo.Size()
+func (m *Midx[H]) Find(h H) (packIndex uint32, offset int64, ok bool) {
+	var zero H
+	hashLen := len(zero)
 	if m.count == 0 || hashLen == 0 || len(m.data) == 0 {
 		return 0, 0, false
 	}
@@ -67,8 +68,9 @@ func (m *Midx) Find(h Hash) (packIndex uint32, offset int64, ok bool) {
 // The fanout entry at index N is the cumulative count of OIDs whose
 // first byte is ≤ N, so OIDs whose first byte equals `prefix` occupy
 // [fanout[prefix-1], fanout[prefix]) within OIDL.
-func (m *Midx) searchOID(h Hash) (uint32, bool) {
-	hashLen := m.algo.Size()
+func (m *Midx[H]) searchOID(h H) (uint32, bool) {
+	var zero H
+	hashLen := len(zero)
 	oidf := m.chunks[chunkOIDF]
 	oidl := m.chunks[chunkOIDL]
 	if oidf.len != 256*4 || oidl.len != int64(m.count)*int64(hashLen) {
@@ -87,7 +89,7 @@ func (m *Midx) searchOID(h Hash) (uint32, bool) {
 		return 0, false
 	}
 
-	want := h[:hashLen]
+	want := hashBytes(&h)
 	for lo < hi {
 		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
 		// summands set bit 31; `lo + (hi-lo)/2` does not.

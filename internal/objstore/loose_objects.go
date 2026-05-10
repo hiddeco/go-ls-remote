@@ -20,19 +20,20 @@ import (
 // by multiple goroutines without synchronisation; each call performs an
 // independent `os.Open` and returns its own [io.ReadCloser] over the
 // resulting file handle.
-type looseObjects struct {
+type looseObjects[H objfmt.HashType] struct {
 	commonDir string
 	algo      objfmt.Algo
 }
 
 // openLoose constructs a [looseObjects] backed by commonDir. algo is
-// the hash algorithm bound to the store; it controls the hex-fanout
-// width used by [looseObjects.Find] (40 chars for SHA-1, 64 for
-// SHA-256). The constructor performs no I/O — `objects/` may be
-// missing entirely on a brand-new repo, and per-object errors surface
-// from [looseObjects.Find] when callers actually request a hash.
-func openLoose(commonDir string, algo objfmt.Algo) (*looseObjects, error) {
-	return &looseObjects{commonDir: commonDir, algo: algo}, nil
+// the hash algorithm bound to the store; it is stored alongside `H` so
+// diagnostics can surface the canonical name without round-tripping
+// through the type parameter. The constructor performs no I/O —
+// `objects/` may be missing entirely on a brand-new repo, and per-object
+// errors surface from [looseObjects.Find] when callers actually request
+// a hash.
+func openLoose[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*looseObjects[H], error) {
+	return &looseObjects[H]{commonDir: commonDir, algo: algo}, nil
 }
 
 // Find looks up the loose object identified by h. The first two hex
@@ -56,8 +57,8 @@ func openLoose(commonDir string, algo objfmt.Algo) (*looseObjects, error) {
 // wrapped as `objstore: read <path>: %w` and chained through
 // [ErrCorruptObject] so callers can match with
 // `errors.Is(err, ErrCorruptObject)`.
-func (l *looseObjects) Find(h objfmt.Hash) (typ objfmt.ObjectType, size int64, body io.ReadCloser, ok bool, err error) {
-	hex := h.Hex(l.algo)
+func (l *looseObjects[H]) Find(h H) (typ objfmt.ObjectType, size int64, body io.ReadCloser, ok bool, err error) {
+	hex := h.Hex()
 	if len(hex) < 3 {
 		// Defence in depth: an unknown algo yields an empty hex string,
 		// and constructing a path from `objects//` would silently match
@@ -97,7 +98,7 @@ func (l *looseObjects) Find(h objfmt.Hash) (typ objfmt.ObjectType, size int64, b
 // Close releases the backend. The eager-load constructor holds no file
 // handles or memory mappings; the per-call body returned to callers is
 // owned by them.
-func (l *looseObjects) Close() error { return nil }
+func (l *looseObjects[H]) Close() error { return nil }
 
 // looseFileBody adapts the [io.ReadCloser] returned by
 // [objfmt.ReadLooseHeader] (which closes only the zlib decoder) and
@@ -105,6 +106,9 @@ func (l *looseObjects) Close() error { return nil }
 // releases both. The decoder is closed first so any trailer-corruption
 // error it surfaces is not masked by a subsequent file-close failure;
 // errors from both are joined.
+//
+// The struct is not generic — the zlib + file pair is independent of
+// the OID type, so there is no value in carrying `H` through.
 type looseFileBody struct {
 	inner io.ReadCloser
 	file  *os.File

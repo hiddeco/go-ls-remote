@@ -14,11 +14,14 @@ import (
 // 10 MiB even for large repositories — and every lookup is then pure
 // arithmetic over the in-memory slice.
 //
-// The hash algorithm is supplied by the caller and asserted against
-// the file's layout where possible. Idx v1 only ever stored SHA-1; an
-// idx opened as v1 with [SHA256] will load successfully but
-// [Idx.FindOffset] will report misses for every lookup.
-type Idx struct {
+// The type parameter `H` selects the OID width — [SHA1Hash] for v1
+// and SHA-1 v2 idxs, [SHA256Hash] for SHA-256 v2 idxs. The `algo`
+// argument to [OpenIdx] echoes that choice and is used by
+// [Idx.VerifyChecksum] to pick the right `crypto/hash` implementation.
+// Idx v1 only ever stored SHA-1; an idx opened as v1 with `H` =
+// [SHA256Hash] will load successfully but [Idx.FindOffset] will
+// report misses for every lookup.
+type Idx[H HashType] struct {
 	path  string
 	algo  Algo
 	ver   uint32
@@ -53,11 +56,13 @@ var idxV2Magic = [4]byte{0xff, 't', 'O', 'c'}
 // OpenIdx reads path into memory, identifies it as pack-index v1 or v2,
 // and returns an [Idx] ready for offset lookups.
 //
-// The hash algorithm is supplied by the caller — idx files do not
-// carry an algorithm byte — and must match the algo used to write the
-// paired `.pack`. Idx v1 only stored SHA-1 ids: opening a v1 file with
-// [SHA256] succeeds but every lookup will miss.
-func OpenIdx(path string, algo Algo) (*Idx, error) {
+// The hash algorithm is supplied by the caller through the type
+// parameter `H` (with `algo` echoing the choice for the [Idx.Algo]
+// getter and for trailer hashing). Idx files do not carry an algorithm
+// byte, so the caller is responsible for the pairing. Idx v1 only
+// stored SHA-1 ids: opening a v1 file with `H` = [SHA256Hash] succeeds
+// but every lookup will miss.
+func OpenIdx[H HashType](path string, algo Algo) (*Idx[H], error) {
 	if algo == nil {
 		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
@@ -65,7 +70,7 @@ func OpenIdx(path string, algo Algo) (*Idx, error) {
 	if err != nil {
 		return nil, err
 	}
-	idx := &Idx{path: path, algo: algo, data: data}
+	idx := &Idx[H]{path: path, algo: algo, data: data}
 	if hasIdxV2MagicPrefix(data) {
 		if len(data) < idxV2HeaderLen {
 			return nil, fmt.Errorf("objfmt: idx truncated before version field: %w", ErrTruncated)
@@ -100,8 +105,9 @@ func hasIdxV2MagicPrefix(data []byte) bool {
 // validates that the file is long enough to hold the rest of the
 // expected layout. Lookups can then index into [Idx.data] without
 // re-checking bounds on every call.
-func (i *Idx) parseHeader() error {
-	hashLen := i.algo.Size()
+func (i *Idx[H]) parseHeader() error {
+	var zero H
+	hashLen := len(zero)
 	switch i.ver {
 	case 1:
 		// fan-out: 256 × uint32, then N × (uint32 offset + hashLen oid),
@@ -164,26 +170,26 @@ func validateIdxFanout(fanout []byte) error {
 // Close releases the in-memory body for garbage collection. Subsequent
 // lookup calls observe an empty body and report misses; Close is safe
 // to call more than once.
-func (i *Idx) Close() error {
+func (i *Idx[H]) Close() error {
 	i.data = nil
 	i.count = 0
 	return nil
 }
 
 // Algo returns the hash algorithm asserted by the caller at
-// [OpenIdx] time.
-func (i *Idx) Algo() Algo { return i.algo }
+// [OpenIdx] time, as the [Algo] interface value.
+func (i *Idx[H]) Algo() Algo { return i.algo }
 
 // Version returns the pack-index format version recorded in the file:
 // 1 or 2.
-func (i *Idx) Version() uint32 { return i.ver }
+func (i *Idx[H]) Version() uint32 { return i.ver }
 
 // Count returns the number of object entries in the index, read from
 // the last fan-out slot (`fanout[255]`).
-func (i *Idx) Count() uint32 { return i.count }
+func (i *Idx[H]) Count() uint32 { return i.count }
 
 // Path returns the filesystem path passed to [OpenIdx].
-func (i *Idx) Path() string { return i.path }
+func (i *Idx[H]) Path() string { return i.path }
 
 // OffsetAfter returns the smallest pack offset strictly greater than
 // off recorded in this idx, or `(0, false)` if no such offset exists
@@ -198,7 +204,7 @@ func (i *Idx) Path() string { return i.path }
 // every Idx and is not warranted by the access pattern. Callers
 // that need the fast path should cache the (offset, next-offset)
 // pair themselves.
-func (i *Idx) OffsetAfter(off int64) (int64, bool) {
+func (i *Idx[H]) OffsetAfter(off int64) (int64, bool) {
 	switch i.ver {
 	case 1:
 		return i.offsetAfterV1(off)
@@ -211,7 +217,7 @@ func (i *Idx) OffsetAfter(off int64) (int64, bool) {
 
 // offsetAfterV1 walks the v1 main table's offset slot in every record
 // and returns the smallest value strictly greater than off.
-func (i *Idx) offsetAfterV1(off int64) (int64, bool) {
+func (i *Idx[H]) offsetAfterV1(off int64) (int64, bool) {
 	if i.algo != SHA1 || i.count == 0 || len(i.data) < 256*4 {
 		return 0, false
 	}
@@ -233,8 +239,9 @@ func (i *Idx) offsetAfterV1(off int64) (int64, bool) {
 // offsetAfterV2 walks the v2 offset table and returns the smallest
 // offset strictly greater than off, resolving large-offset overflow
 // slots through the trailing 64-bit table where the MSB is set.
-func (i *Idx) offsetAfterV2(off int64) (int64, bool) {
-	hashLen := i.algo.Size()
+func (i *Idx[H]) offsetAfterV2(off int64) (int64, bool) {
+	var zero H
+	hashLen := len(zero)
 	if i.count == 0 || hashLen == 0 {
 		return 0, false
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +34,7 @@ func TestOpenAlternates_NoFile(t *testing.T) {
 	root := materializeFixture(t, "empty")
 	commonDir := filepath.Join(root, ".git")
 
-	got, err := openAlternates(commonDir, map[string]bool{})
+	got, err := openAlternates[objfmt.SHA1Hash](commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -50,7 +51,7 @@ func TestOpenAlternates_EmptyFile(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(commonDir, map[string]bool{})
+	got, err := openAlternates[objfmt.SHA1Hash](commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -67,7 +68,7 @@ func TestOpenAlternates_CommentsOnly(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(commonDir, map[string]bool{})
+	got, err := openAlternates[objfmt.SHA1Hash](commonDir, map[string]bool{})
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -75,7 +76,7 @@ func TestOpenAlternates_CommentsOnly(t *testing.T) {
 func TestOpenAlternates_SingleAbsolutePath(t *testing.T) {
 	// Absolute alternate path: the host-specific tempdir cannot be
 	// committed as a fixture, so build the parent + alternate inline.
-	// The resolved alternate must show up as a *Store in the returned
+	// The resolved alternate must show up as a *Store[objfmt.SHA1Hash] in the returned
 	// slice and its commonDir must match the alternate's gitdir.
 	tmp := t.TempDir()
 	parent := filepath.Join(tmp, "parent")
@@ -88,13 +89,13 @@ func TestOpenAlternates_SingleAbsolutePath(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent,
+	got, err := openAlternates[objfmt.SHA1Hash](parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	t.Cleanup(func() { _ = got[0].Close() })
 
-	// Confirm the alternate opened against the right gitdir. `Store`
+	// Confirm the alternate opened against the right gitdir. `Store[objfmt.SHA1Hash]`
 	// does not surface its commonDir directly, but the loose-objects
 	// backend does — verify via its commonDir field.
 	assert.Equal(t, canonicalRepoDir(alt), canonicalRepoDir(got[0].loose.commonDir))
@@ -109,7 +110,7 @@ func TestOpenAlternates_SingleRelativePath(t *testing.T) {
 	mainCommonDir := filepath.Join(root, "main", ".git")
 	altGitDir := filepath.Join(root, "alt", ".git")
 
-	got, err := openAlternates(mainCommonDir,
+	got, err := openAlternates[objfmt.SHA1Hash](mainCommonDir,
 		map[string]bool{canonicalRepoDir(mainCommonDir): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -134,7 +135,7 @@ func TestOpenAlternates_QuotedPath(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent,
+	got, err := openAlternates[objfmt.SHA1Hash](parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
@@ -217,7 +218,7 @@ func TestOpenAlternates_MultipleEntriesPreserveOrder(t *testing.T) {
 		0o644,
 	))
 
-	got, err := openAlternates(parent,
+	got, err := openAlternates[objfmt.SHA1Hash](parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.NoError(t, err)
 	require.Len(t, got, 3)
@@ -238,11 +239,11 @@ func TestOpenAlternates_MultipleEntriesPreserveOrder(t *testing.T) {
 func TestOpenAlternates_TransitiveChain(t *testing.T) {
 	// `with-alternates-chain/a` -> b -> c. Opening A surfaces B as its
 	// sole alternate; B's own `s.alternates` carries C. The chain is
-	// per-Store rather than flattened into a single slice.
+	// per-Store[objfmt.SHA1Hash] rather than flattened into a single slice.
 	root := materializeFixture(t, "with-alternates-chain")
 	a := filepath.Join(root, "a")
 
-	s, err := Open(a)
+	s, err := Open[objfmt.SHA1Hash](a)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -267,7 +268,7 @@ func TestOpenAlternates_SelfCycle(t *testing.T) {
 	// `seen` set and surfaces ErrCorruptObject naming that gitdir.
 	root := materializeFixture(t, "with-alternates-cycle")
 
-	_, err := Open(root)
+	_, err := Open[objfmt.SHA1Hash](root)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"expected ErrCorruptObject, got %v", err)
@@ -282,7 +283,7 @@ func TestOpenAlternates_ChainCycle(t *testing.T) {
 	root := materializeFixture(t, "with-alternates-cycle-chain")
 	a := filepath.Join(root, "a")
 
-	_, err := Open(a)
+	_, err := Open[objfmt.SHA1Hash](a)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
 		"expected ErrCorruptObject, got %v", err)
@@ -300,7 +301,7 @@ func TestOpenAlternates_PopulatedOnOpen(t *testing.T) {
 	root := materializeFixture(t, "with-alternates-relative")
 	mainPath := filepath.Join(root, "main")
 
-	s, err := Open(mainPath)
+	s, err := Open[objfmt.SHA1Hash](mainPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -317,7 +318,7 @@ func TestOpenAlternates_DiamondDAG(t *testing.T) {
 	// must trip the cycle check, because by the time C's
 	// `openAlternates` considers D, B's recursion has already finished
 	// and popped D from the in-flight `seen` set. Each chain opens its
-	// own `*Store` for D — no sharing — but neither errors.
+	// own `*Store[objfmt.SHA1Hash]` for D — no sharing — but neither errors.
 	tmp := t.TempDir()
 	a := filepath.Join(tmp, "a")
 	b := filepath.Join(tmp, "b")
@@ -340,7 +341,7 @@ func TestOpenAlternates_DiamondDAG(t *testing.T) {
 		))
 	}
 
-	s, err := Open(a)
+	s, err := Open[objfmt.SHA1Hash](a)
 	require.NoError(t, err, "diamond DAG must not be mistaken for a cycle")
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -373,7 +374,7 @@ func TestOpenAlternates_NonExistentTargetReturnsError(t *testing.T) {
 		0o644,
 	))
 
-	_, err := openAlternates(parent,
+	_, err := openAlternates[objfmt.SHA1Hash](parent,
 		map[string]bool{canonicalRepoDir(parent): true})
 	require.Error(t, err)
 	// The recursive `openWithSeen` surfaces ErrNotARepo for a missing

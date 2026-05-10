@@ -69,11 +69,16 @@ func TestFixtureMatrix(t *testing.T) {
 }
 
 // openMatrixConn opens a `file://` Conn against gitdir, drains its v2
-// advertisement, and returns both the [Conn] and the capability bytes
-// observed during the drain. Tests that need to assert on the advertised
-// capabilities (e.g. `object-format=<algo>`) read them off the second
-// return value.
-func openMatrixConn(t *testing.T, gitdir string) (*Conn, []string) {
+// advertisement, and returns both the [transport.Conn] and the
+// capability bytes observed during the drain. Tests that need to
+// assert on the advertised capabilities (e.g. `object-format=<algo>`)
+// read them off the second return value.
+//
+// The returned value is the public [transport.Conn] interface rather
+// than the algo-specialised `*Conn[H]` so the helper works for both
+// SHA-1 and SHA-256 fixtures; tests that need command access call
+// the interface methods.
+func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 	t.Helper()
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
@@ -85,14 +90,11 @@ func openMatrixConn(t *testing.T, gitdir string) (*Conn, []string) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	c, ok := conn.(*Conn)
-	require.True(t, ok)
-
 	// Drain the advertisement, capturing the data lines so callers can
 	// assert on advertised capabilities. The v2 advertisement begins
 	// with `version 2\n`, then one cap per line, then a flush
 	// (`serve.c::protocol_v2_advertise_capabilities`).
-	rdr := c.Advertisement()
+	rdr := conn.Advertisement()
 	var caps []string
 	for {
 		p, err := rdr.ReadPacket()
@@ -104,7 +106,7 @@ func openMatrixConn(t *testing.T, gitdir string) (*Conn, []string) {
 			caps = append(caps, strings.TrimRight(string(p.Data), "\n"))
 		}
 	}
-	return c, caps
+	return conn, caps
 }
 
 func testMatrixEmpty(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
@@ -30,7 +31,7 @@ func pktLine(payload string) string {
 // 314-321 — so the v2 command loop exits cleanly. The v0 path returns
 // before reading any client byte, so the preloaded flush is harmless
 // there too.
-func runAdvertise(t *testing.T, store *objstore.Store, opts Options) []byte {
+func runAdvertise[H objfmt.HashType](t *testing.T, store *objstore.Store[H], opts Options) []byte {
 	t.Helper()
 
 	src := bytes.NewReader([]byte("0000"))
@@ -88,7 +89,7 @@ func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 // `the_hash_algo->name`).
 func TestServe_V2AdvertisementSHA256(t *testing.T) {
 	gitdir := testfixture.MaterializeRepo(t, "sha256")
-	store, err := objstore.Open(gitdir)
+	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 

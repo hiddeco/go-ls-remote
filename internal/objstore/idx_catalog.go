@@ -25,7 +25,7 @@ import (
 // and [idxCatalog.packByChecksum] are likewise safe for concurrent use
 // from multiple goroutines without further synchronisation. [Close]
 // is guarded by a [sync.Once] so the cascade runs exactly once.
-type idxCatalog struct {
+type idxCatalog[H objfmt.HashType] struct {
 	commonDir string
 	algo      objfmt.Algo
 
@@ -39,19 +39,19 @@ type idxCatalog struct {
 	// when two packs land on the same mtime second (e.g. two packs
 	// freshly written by the same `WriteFile` loop) across
 	// filesystems with coarse mtime resolution.
-	packs []packEntry
+	packs []packEntry[H]
 
 	// byChecksum maps each pack's trailer hash (as recorded by the
 	// paired idx; see [objfmt.Idx.PackChecksum]) to the open pack. Used
 	// by the cross-pack REF_DELTA resolver in a follow-up; intentionally
 	// unused today.
-	byChecksum map[objfmt.Hash]*objfmt.Pack
+	byChecksum map[H]*objfmt.Pack[H]
 
 	// idxByPack maps each open pack to its paired idx. The CRC
 	// verification path on [Store.ObjectInfo] reaches for an idx by pack
 	// pointer, and a map lookup keeps that hot path O(1) regardless of
 	// how many packs the catalog tracks.
-	idxByPack map[*objfmt.Pack]*objfmt.Idx
+	idxByPack map[*objfmt.Pack[H]]*objfmt.Idx[H]
 
 	closeOnce sync.Once
 	closeErr  error
@@ -64,9 +64,9 @@ type idxCatalog struct {
 // open-time sort that matches canonical Git's `packfile.c::sort_pack`
 // heuristic (younger first); lookups themselves never re-stat the
 // file.
-type packEntry struct {
-	idx   *objfmt.Idx
-	pack  *objfmt.Pack
+type packEntry[H objfmt.HashType] struct {
+	idx   *objfmt.Idx[H]
+	pack  *objfmt.Pack[H]
 	mtime time.Time
 }
 
@@ -83,7 +83,7 @@ type packEntry struct {
 // sibling) every already-opened idx and pack is closed before the
 // error is returned, so a partially-constructed catalog never leaks
 // file handles.
-func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
+func openIdxCatalog[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*idxCatalog[H], error) {
 	packDir := filepath.Join(commonDir, "objects", "pack")
 
 	entries, err := os.ReadDir(packDir)
@@ -91,21 +91,21 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			// Brand-new repos may not have materialised `objects/pack/`
 			// yet. Surface a usable empty catalog rather than refusing.
-			return &idxCatalog{
+			return &idxCatalog[H]{
 				commonDir:  commonDir,
 				algo:       algo,
-				byChecksum: map[objfmt.Hash]*objfmt.Pack{},
-				idxByPack:  map[*objfmt.Pack]*objfmt.Idx{},
+				byChecksum: map[H]*objfmt.Pack[H]{},
+				idxByPack:  map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 			}, nil
 		}
 		return nil, fmt.Errorf("objstore: stat %s: %w", packDir, err)
 	}
 
-	c := &idxCatalog{
+	c := &idxCatalog[H]{
 		commonDir:  commonDir,
 		algo:       algo,
-		byChecksum: map[objfmt.Hash]*objfmt.Pack{},
-		idxByPack:  map[*objfmt.Pack]*objfmt.Idx{},
+		byChecksum: map[H]*objfmt.Pack[H]{},
+		idxByPack:  map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 	}
 
 	// closeOpened tears down everything established so far. Used on
@@ -134,7 +134,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 		}
 
 		idxPath := filepath.Join(packDir, name)
-		idx, err := objfmt.OpenIdx(idxPath, algo)
+		idx, err := objfmt.OpenIdx[H](idxPath, algo)
 		if err != nil {
 			closeOpened()
 			return nil, fmt.Errorf("objstore: open idx %s: %w", idxPath, err)
@@ -142,7 +142,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 
 		// Paired pack lives next to the idx with the same basename.
 		packPath := strings.TrimSuffix(idxPath, ".idx") + ".pack"
-		pack, err := objfmt.OpenPack(packPath, algo)
+		pack, err := objfmt.OpenPack[H](packPath, algo)
 		if err != nil {
 			_ = idx.Close()
 			closeOpened()
@@ -163,7 +163,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 			return nil, fmt.Errorf("objstore: stat pack %s: %w", packPath, err)
 		}
 
-		c.packs = append(c.packs, packEntry{
+		c.packs = append(c.packs, packEntry[H]{
 			idx:   idx,
 			pack:  pack,
 			mtime: st.ModTime(),
@@ -178,7 +178,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 	// more recent objects and to satisfy the next lookup, and the
 	// basename tiebreaker keeps the order deterministic when two
 	// packs share an mtime second (or finer).
-	slices.SortFunc(c.packs, func(a, b packEntry) int {
+	slices.SortFunc(c.packs, func(a, b packEntry[H]) int {
 		if c := b.mtime.Compare(a.mtime); c != 0 {
 			return c
 		}
@@ -201,7 +201,7 @@ func openIdxCatalog(commonDir string, algo objfmt.Algo) (*idxCatalog, error) {
 // [objfmt.Idx.FindOffset] reports only a boolean today; the error slot
 // here is preserved for forward compatibility with a future shape that
 // may surface per-idx failures (e.g. a lazily-mapped read error).
-func (c *idxCatalog) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
+func (c *idxCatalog[H]) Lookup(h H) (*objfmt.Pack[H], int64, bool, error) {
 	for _, e := range c.packs {
 		if off, ok := e.idx.FindOffset(h); ok {
 			return e.pack, off, true, nil
@@ -214,8 +214,8 @@ func (c *idxCatalog) Lookup(h objfmt.Hash) (*objfmt.Pack, int64, bool, error) {
 // mtime-desc / basename-tiebreaker order — see [packBackend.AllPacks]
 // for the contract. Used by the cross-pack REF_DELTA scan and any
 // external integrity walk that needs to see each pack exactly once.
-func (c *idxCatalog) AllPacks() iter.Seq[*objfmt.Pack] {
-	return func(yield func(*objfmt.Pack) bool) {
+func (c *idxCatalog[H]) AllPacks() iter.Seq[*objfmt.Pack[H]] {
+	return func(yield func(*objfmt.Pack[H]) bool) {
 		for _, e := range c.packs {
 			if !yield(e.pack) {
 				return
@@ -232,7 +232,7 @@ func (c *idxCatalog) AllPacks() iter.Seq[*objfmt.Pack] {
 // OID without naming the pack the base lives in, so resolving across
 // packs needs an OID-keyed scan; this accessor exists so that scan can
 // short-circuit when the base's pack-checksum hint is known up front.
-func (c *idxCatalog) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
+func (c *idxCatalog[H]) packByChecksum(h H) (*objfmt.Pack[H], bool) {
 	p, ok := c.byChecksum[h]
 	return p, ok
 }
@@ -240,7 +240,7 @@ func (c *idxCatalog) packByChecksum(h objfmt.Hash) (*objfmt.Pack, bool) {
 // IdxFor returns the [objfmt.Idx] paired with pack via the open-time
 // [idxCatalog.idxByPack] map — see [packBackend.IdxFor] for the
 // contract. ok=false signals that pack is not one this catalog opened.
-func (c *idxCatalog) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
+func (c *idxCatalog[H]) IdxFor(pack *objfmt.Pack[H]) (*objfmt.Idx[H], bool) {
 	idx, ok := c.idxByPack[pack]
 	return idx, ok
 }
@@ -249,7 +249,7 @@ func (c *idxCatalog) IdxFor(pack *objfmt.Pack) (*objfmt.Idx, bool) {
 // via [errors.Join] so a single failure does not mask the rest. Close
 // is idempotent: subsequent calls return the same joined error without
 // re-running the cascade.
-func (c *idxCatalog) Close() error {
+func (c *idxCatalog[H]) Close() error {
 	c.closeOnce.Do(func() {
 		var errs []error
 		for _, e := range c.packs {

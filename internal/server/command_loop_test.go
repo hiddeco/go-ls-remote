@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -27,7 +28,7 @@ import (
 // There is no need for an [io.Pipe] — the request is fully known up
 // front and the server reads packets one at a time, so a buffered
 // reader serialises identically to the live wire.
-func runV2Session(t *testing.T, store *objstore.Store, request []byte) (response []byte, err error) {
+func runV2Session[H objfmt.HashType](t *testing.T, store *objstore.Store[H], request []byte) (response []byte, err error) {
 	t.Helper()
 
 	src := bytes.NewReader(request)
@@ -51,7 +52,7 @@ func runV2Session(t *testing.T, store *objstore.Store, request []byte) (response
 // the server emits for the given store and agent. The number is
 // deterministic from the fixture and the cap set in
 // [writeV2Advertisement].
-func lenV2Advertisement(t *testing.T, store *objstore.Store, agent string) int {
+func lenV2Advertisement[H objfmt.HashType](t *testing.T, store *objstore.Store[H], agent string) int {
 	t.Helper()
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)

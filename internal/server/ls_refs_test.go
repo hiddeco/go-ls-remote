@@ -270,7 +270,7 @@ func TestLSRefs_Mixed_LooseOverridesPacked(t *testing.T) {
 // flowing through the handler. The fixture has no refs, just a
 // symbolic HEAD pointing at refs/heads/main.
 func TestLSRefs_SHA256_Empty(t *testing.T) {
-	store := openStoreFromFixture(t, "sha256")
+	store := openStoreFromFixture256(t, "sha256")
 
 	req := buildLSRefsRequest([]string{"unborn\n", "symrefs\n"})
 	resp, err := runV2Session(t, store, req)

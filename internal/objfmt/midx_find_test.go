@@ -21,18 +21,18 @@ import (
 func TestMidx_Find(t *testing.T) {
 	t.Run("cross-checks every OID against the paired idx", func(t *testing.T) {
 		midxPath := idxFixture(t, "multi-pack-index")
-		m, err := OpenMidx(midxPath, SHA1)
+		m, err := OpenMidx[SHA1Hash](midxPath, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
 		for _, stem := range []string{"midx-pack-1", "midx-pack-2"} {
-			idx, err := OpenIdx(idxFixture(t, stem+".idx"), SHA1)
+			idx, err := OpenIdx[SHA1Hash](idxFixture(t, stem+".idx"), SHA1)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = idx.Close() })
 
 			entries := readOffsets(t, idxFixture(t, stem+".offsets.txt"))
 			for _, e := range entries {
-				oid, err := ParseHex(e.oid, SHA1)
+				oid, err := ParseSHA1Hex(e.oid)
 				require.NoError(t, err)
 
 				packIdx, off, ok := m.Find(oid)
@@ -59,18 +59,18 @@ func TestMidx_Find(t *testing.T) {
 		// fixture, exercising the 32-byte OID stride through
 		// `OIDF`, `OIDL`, and `OOFF`.
 		midxPath := idxFixture(t, "sha256-multi-pack-index")
-		m, err := OpenMidx(midxPath, SHA256)
+		m, err := OpenMidx[SHA256Hash](midxPath, SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
 		for _, stem := range []string{"sha256-midx-pack-1", "sha256-midx-pack-2"} {
-			idx, err := OpenIdx(idxFixture(t, stem+".idx"), SHA256)
+			idx, err := OpenIdx[SHA256Hash](idxFixture(t, stem+".idx"), SHA256)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = idx.Close() })
 
 			entries := readOffsets(t, idxFixture(t, stem+".offsets.txt"))
 			for _, e := range entries {
-				oid, err := ParseHex(e.oid, SHA256)
+				oid, err := ParseSHA256Hex(e.oid)
 				require.NoError(t, err)
 
 				packIdx, off, ok := m.Find(oid)
@@ -91,20 +91,20 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
-		m, err := OpenMidx(idxFixture(t, "multi-pack-index"), SHA1)
+		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
-		absent, err := ParseHex("ffffffffffffffffffffffffffffffffffffffff", SHA1)
+		absent, err := ParseSHA1Hex("ffffffffffffffffffffffffffffffffffffffff")
 		require.NoError(t, err)
 		_, _, ok := m.Find(absent)
 		assert.False(t, ok)
 	})
 
 	t.Run("offset > 2 GiB resolves via LOFF", func(t *testing.T) {
-		small, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
-		big, err := ParseHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SHA1)
+		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.NoError(t, err)
 
 		const bigOffset uint64 = (1 << 31) + 12345
@@ -117,7 +117,7 @@ func TestMidx_Find(t *testing.T) {
 			},
 		})
 
-		m, err := OpenMidx(path, SHA1)
+		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
@@ -133,7 +133,7 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("LOFF bit set without LOFF chunk is treated as a miss", func(t *testing.T) {
-		oid, err := ParseHex("1111111111111111111111111111111111111111", SHA1)
+		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
 			algo:  SHA1,
@@ -149,7 +149,7 @@ func TestMidx_Find(t *testing.T) {
 			suppressLOFF: true,
 		})
 
-		m, err := OpenMidx(path, SHA1)
+		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
 
@@ -169,9 +169,12 @@ type midxFixture struct {
 	suppressLOFF bool
 }
 
-// midxObj is one logical OID record in a synthetic midx.
+// midxObj is one logical OID record in a synthetic midx. The synthetic
+// fixtures the helper produces are SHA-1 only; the [SHA256Hash] form
+// is unnecessary because every LOFF / corrupt-flag edge case the tests
+// exercise is hash-stride independent.
 type midxObj struct {
-	oid     Hash
+	oid     SHA1Hash
 	packIdx uint32
 	offset  uint64
 }
@@ -190,13 +193,12 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	t.Helper()
 	require.Equal(t, SHA1, fix.algo,
 		"writeMidx only supports SHA-1 fixtures")
-	hashLen := fix.algo.Size()
 
 	// Sort objects by OID to satisfy the binary-search invariant in
 	// the OIDL chunk; a real midx produced by canonical Git is sorted
 	// the same way.
 	slices.SortFunc(fix.objs, func(a, b midxObj) int {
-		return bytes.Compare(a.oid[:hashLen], b.oid[:hashLen])
+		return bytes.Compare(a.oid[:], b.oid[:])
 	})
 
 	// Build PNAM with NUL-terminated entries, padded to a 4-byte
@@ -227,7 +229,7 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 
 	var oidl bytes.Buffer
 	for _, o := range fix.objs {
-		oidl.Write(o.oid[:hashLen])
+		oidl.Write(o.oid[:])
 	}
 
 	var ooff bytes.Buffer

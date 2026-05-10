@@ -28,11 +28,11 @@ const reftableDetachedFixtureHead = "735d9012eb4e10ac1ab1d19e680281a6edc54ec2"
 // openReftableFromFixture materializes the named reftable-backed
 // fixture and opens the reftable backend on it. Centralises the
 // gitDir/commonDir plumbing every reftable-backend test repeats.
-func openReftableFromFixture(t *testing.T, name string) *reftableBackend {
+func openReftableFromFixture(t *testing.T, name string) *reftableBackend[objfmt.SHA1Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
-	b, err := openReftableBackend(gitDir, gitDir, "")
+	b, err := openReftableBackend[objfmt.SHA1Hash](gitDir, gitDir, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 	return b
@@ -41,9 +41,9 @@ func openReftableFromFixture(t *testing.T, name string) *reftableBackend {
 // collectReftableRefs drains the iterator into a slice. The reftable
 // stack already yields refs in lexical order, so the slice is compared
 // directly: a reordering regression surfaces as a diff.
-func collectReftableRefs(t *testing.T, b *reftableBackend) []RefEntry {
+func collectReftableRefs(t *testing.T, b *reftableBackend[objfmt.SHA1Hash]) []RefEntry[objfmt.SHA1Hash] {
 	t.Helper()
-	var out []RefEntry
+	var out []RefEntry[objfmt.SHA1Hash]
 	for entry, err := range b.IterRefs() {
 		require.NoError(t, err)
 		out = append(out, entry)
@@ -55,11 +55,11 @@ func TestReftableBackend_IterRefs_YieldsContentExcludingHEAD(t *testing.T) {
 	// The `with-reftable-content` fixture carries HEAD (a symref) plus
 	// refs/heads/main as the only value record. IterRefs surfaces only
 	// the latter — HEAD belongs to Head(), and symrefs other than HEAD
-	// are intentionally hidden (same precedent as looseRefs).
+	// are intentionally hidden (same precedent as looseRefs[objfmt.SHA1Hash]).
 	b := openReftableFromFixture(t, "with-reftable-content")
 	got := collectReftableRefs(t, b)
 
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
@@ -92,13 +92,13 @@ func TestReftableBackend_Head_SymrefToMissingTargetIsUnborn(t *testing.T) {
 	// `git init --ref-format=reftable` writes a HEAD record bound to
 	// refs/heads/main even when no commit has landed yet. Head() must
 	// report Symref set, OID zero, Unborn true — the reftable analogue
-	// of looseRefs' unborn-branch shape.
+	// of looseRefs[objfmt.SHA1Hash]' unborn-branch shape.
 	b := openReftableFromFixture(t, "with-reftable-unborn")
 
 	head, err := b.Head()
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", head.Symref)
-	assert.Equal(t, objfmt.Hash{}, head.OID)
+	assert.Equal(t, objfmt.SHA1Hash{}, head.OID)
 	assert.True(t, head.Unborn)
 }
 
@@ -124,7 +124,7 @@ func TestReftableBackend_Head_MissingRecordIsCorrupt(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "reftable"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "reftable", "tables.list"), nil, 0o644))
 
-	b, err := openReftableBackend(dir, dir, "")
+	b, err := openReftableBackend[objfmt.SHA1Hash](dir, dir, "")
 	require.Error(t, err)
 	assert.Nil(t, b)
 	assert.True(t, errors.Is(err, ErrCorruptObject),
@@ -144,12 +144,12 @@ func TestReftableBackend_CustomLocation_RelativeToGitDir(t *testing.T) {
 	dst := filepath.Join(gitDir, "alt-reftable")
 	require.NoError(t, copyDirContents(src, dst))
 
-	b, err := openReftableBackend(gitDir, gitDir, "./alt-reftable")
+	b, err := openReftableBackend[objfmt.SHA1Hash](gitDir, gitDir, "./alt-reftable")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
 	got := collectReftableRefs(t, b)
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
@@ -168,12 +168,12 @@ func TestReftableBackend_CustomLocation_AbsoluteIsVerbatim(t *testing.T) {
 	abs := t.TempDir()
 	require.NoError(t, copyDirContents(filepath.Join(gitDir, "reftable"), abs))
 
-	b, err := openReftableBackend(gitDir, gitDir, abs)
+	b, err := openReftableBackend[objfmt.SHA1Hash](gitDir, gitDir, abs)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
 	got := collectReftableRefs(t, b)
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
@@ -198,12 +198,12 @@ func TestReftableBackend_CommonDirVsGitDir_DefaultLocationUsesCommonDir(t *testi
 	require.NoError(t, os.MkdirAll(gitDir, 0o755))
 	require.NoError(t, copyDirContents(filepath.Join(srcGit, "reftable"), filepath.Join(commonDir, "reftable")))
 
-	b, err := openReftableBackend(gitDir, commonDir, "")
+	b, err := openReftableBackend[objfmt.SHA1Hash](gitDir, commonDir, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
 	got := collectReftableRefs(t, b)
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
@@ -217,30 +217,30 @@ func TestReftableBackend_OpenMissingDirReturnsError(t *testing.T) {
 	// A non-existent reftable directory must surface as an error
 	// (canonical Git refuses to operate on a missing stack); the
 	// constructor must wrap rather than silently succeed.
-	b, err := openReftableBackend(t.TempDir(), t.TempDir(), "")
+	b, err := openReftableBackend[objfmt.SHA1Hash](t.TempDir(), t.TempDir(), "")
 	require.Error(t, err)
 	assert.Nil(t, b)
 }
 
 func TestReftableBackend_OpenViaStore_YieldsPopulatedRefs(t *testing.T) {
 	// End-to-end: `Open` on the populated fixture selects the reftable
-	// backend, and `Store.IterRefs` surfaces the same refs as the direct
+	// backend, and `Store[objfmt.SHA1Hash].IterRefs` surfaces the same refs as the direct
 	// backend test. Locks in the wiring through `openRefBackend`.
 	root := materializeFixture(t, "with-reftable-content")
 
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, ok := s.refs.(*reftableBackend)
+	_, ok := s.refs.(*reftableBackend[objfmt.SHA1Hash])
 	require.True(t, ok, "want reftable backend, got %T", s.refs)
 
-	var got []RefEntry
+	var got []RefEntry[objfmt.SHA1Hash]
 	for entry, err := range s.IterRefs() {
 		require.NoError(t, err)
 		got = append(got, entry)
 	}
-	want := []RefEntry{
+	want := []RefEntry[objfmt.SHA1Hash]{
 		{
 			Name:      "refs/heads/main",
 			OID:       hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1),
@@ -267,7 +267,7 @@ func TestReftableBackend_IterRefs_PeelKnownAlwaysTrue(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.True(t, got[0].PeelKnown,
 		"reftable entry must surface PeelKnown=true")
-	assert.Equal(t, objfmt.Hash{}, got[0].Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, got[0].Peeled)
 }
 
 func TestReftableBackend_Lookup_KnownRef(t *testing.T) {
@@ -282,7 +282,7 @@ func TestReftableBackend_Lookup_KnownRef(t *testing.T) {
 	assert.Equal(t,
 		hashFromHex(t, reftableContentFixtureMain, objfmt.SHA1), entry.OID)
 	assert.True(t, entry.PeelKnown)
-	assert.Equal(t, objfmt.Hash{}, entry.Peeled)
+	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
 
 func TestReftableBackend_Lookup_MissingRef(t *testing.T) {
@@ -291,7 +291,7 @@ func TestReftableBackend_Lookup_MissingRef(t *testing.T) {
 	entry, found, err := b.Lookup("refs/heads/does-not-exist")
 	require.NoError(t, err)
 	assert.False(t, found)
-	assert.Equal(t, RefEntry{}, entry)
+	assert.Equal(t, RefEntry[objfmt.SHA1Hash]{}, entry)
 }
 
 func TestReftableBackend_Lookup_HEADHidden(t *testing.T) {

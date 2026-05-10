@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // openAlternates resolves the chain of alternate object stores reachable
@@ -43,7 +45,7 @@ import (
 // (the path no longer points at a usable repository, or the cycle
 // check trips) closes every alternate already opened on this call so
 // the caller never sees a partially-constructed chain.
-func openAlternates(commonDir string, seen map[string]bool) ([]*Store, error) {
+func openAlternates[H objfmt.HashType](commonDir string, seen map[string]bool) ([]*Store[H], error) {
 	path := filepath.Join(commonDir, "objects", "info", "alternates")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -64,7 +66,7 @@ func openAlternates(commonDir string, seen map[string]bool) ([]*Store, error) {
 	}
 
 	var (
-		opened   []*Store
+		opened   []*Store[H]
 		closeAll = func() {
 			for _, s := range opened {
 				_ = s.Close()
@@ -99,7 +101,7 @@ func openAlternates(commonDir string, seen map[string]bool) ([]*Store, error) {
 		// recursive [openWithSeen] marks `canonical` in [seen] and pops
 		// on return, so this loop never has to manage the cycle barrier
 		// itself.
-		alt, err := openWithSeen(altGitDir, nil, seen)
+		alt, err := openWithSeen[H](altGitDir, nil, seen)
 		if err != nil {
 			closeAll()
 			return nil, fmt.Errorf("objstore: alternate %s: %w", altGitDir, err)

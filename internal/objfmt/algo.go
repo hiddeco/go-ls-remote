@@ -118,3 +118,27 @@ func ParseSHA1Hex(s string) (SHA1Hash, error) { return sha1Algo{}.ParseHex(s) }
 
 // ParseSHA256Hex is the [SHA256Hash] sibling of [ParseSHA1Hex].
 func ParseSHA256Hex(s string) (SHA256Hash, error) { return sha256Algo{}.ParseHex(s) }
+
+// ParseHexAs parses s as a hex-encoded object id of the type parameter
+// `H`, returning the typed value. Generic callers that only know `H`
+// abstractly use this helper to dispatch to the correct concrete
+// parser without a per-callsite type switch.
+//
+// The dispatch is bounded by the [HashType] type set: H is statically
+// one of [SHA1Hash] or [SHA256Hash], so the switch covers every
+// possible instantiation. The default arm exists only as defence in
+// depth — it cannot be reached at runtime — and returns an error
+// rather than panicking so a future widening of the type set surfaces
+// at a callsite boundary instead of mid-loop.
+func ParseHexAs[H HashType](s string) (H, error) {
+	var zero H
+	switch any(zero).(type) {
+	case SHA1Hash:
+		h, err := ParseSHA1Hex(s)
+		return any(h).(H), err
+	case SHA256Hash:
+		h, err := ParseSHA256Hex(s)
+		return any(h).(H), err
+	}
+	return zero, fmt.Errorf("objfmt: unreachable: H is sealed to SHA1Hash or SHA256Hash")
+}

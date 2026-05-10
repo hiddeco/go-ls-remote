@@ -36,14 +36,27 @@ const (
 const loose256FixtureBlobOID = "c60061d62336c6b760e2c4ec860873a193c61662e4f2a6aa5cb3cbaf9339cd10"
 
 // openLooseObjectsFromFixture materializes the named fixture and
-// returns the [looseObjects] backend rooted at its `.git/`. Mirrors
-// the loose-refs helper so each test stays focused on the assertion
-// it is making.
-func openLooseObjectsFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseObjects {
+// returns the SHA-1 `looseObjects` backend rooted at its `.git/`.
+// SHA-256 tests use [openLooseObjectsFromFixture256].
+func openLooseObjectsFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseObjects[objfmt.SHA1Hash] {
+	t.Helper()
+	require.Equal(t, objfmt.SHA1, algo,
+		"openLooseObjectsFromFixture only supports SHA-1; use openLooseObjectsFromFixture256")
+	root := materializeFixture(t, name)
+	gitDir := filepath.Join(root, ".git")
+	l, err := openLoose[objfmt.SHA1Hash](gitDir, algo)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	return l
+}
+
+// openLooseObjectsFromFixture256 is the SHA-256 sibling. Kept split
+// rather than parameterised so each callsite reads at a glance.
+func openLooseObjectsFromFixture256(t *testing.T, name string) *looseObjects[objfmt.SHA256Hash] {
 	t.Helper()
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
-	l, err := openLoose(gitDir, algo)
+	l, err := openLoose[objfmt.SHA256Hash](gitDir, objfmt.SHA256)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 	return l
@@ -94,7 +107,7 @@ func TestLooseObjects_FindMissingFanoutDirectory(t *testing.T) {
 	// clean miss.
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
-	l, err := openLoose(dir, objfmt.SHA1)
+	l, err := openLoose[objfmt.SHA1Hash](dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 
@@ -127,7 +140,7 @@ func TestLooseObjects_FindPermissionError(t *testing.T) {
 	require.NoError(t, os.Chmod(target, 0o000))
 	t.Cleanup(func() { _ = os.Chmod(target, 0o644) })
 
-	l, err := openLoose(dir, objfmt.SHA1)
+	l, err := openLoose[objfmt.SHA1Hash](dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 
@@ -156,7 +169,7 @@ func TestLooseObjects_FindCorruptObjectWrapsErrCorruptObject(t *testing.T) {
 		"abababababababababababababababababababab"[2:])
 	require.NoError(t, os.WriteFile(target, []byte("this is not a zlib stream"), 0o644))
 
-	l, err := openLoose(dir, objfmt.SHA1)
+	l, err := openLoose[objfmt.SHA1Hash](dir, objfmt.SHA1)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 
@@ -173,10 +186,10 @@ func TestLooseObjects_FindSHA256Lookup(t *testing.T) {
 	// SHA-256 fanout: the first two of 64 hex chars select the
 	// directory; the remaining 62 form the file name. The blob payload
 	// matches the SHA-1 fixture so the assertion has a stable baseline.
-	l := openLooseObjectsFromFixture(t, "loose-objects-sha256", objfmt.SHA256)
+	l := openLooseObjectsFromFixture256(t, "loose-objects-sha256")
 
 	typ, size, body, ok, err := l.Find(
-		hashFromHex(t, loose256FixtureBlobOID, objfmt.SHA256))
+		hashFromHex256(t, loose256FixtureBlobOID))
 	require.NoError(t, err)
 	require.True(t, ok)
 	t.Cleanup(func() { _ = body.Close() })
@@ -243,11 +256,11 @@ func TestLooseObjects_BodyCloseReleasesHandles(t *testing.T) {
 
 func TestLooseObjects_FindThroughOpen(t *testing.T) {
 	// End-to-end: `Open` must thread `cfg.algo` into `openLoose` so
-	// `s.loose.Find` resolves OIDs through the resulting Store. The
+	// `s.loose.Find` resolves OIDs through the resulting Store[objfmt.SHA1Hash]. The
 	// assertion mirrors the hit case on a fixture that is wired through
 	// the full opener path, not just the backend constructor.
 	root := materializeFixture(t, "loose-objects")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
@@ -263,13 +276,13 @@ func TestLooseObjects_FindThroughOpenSHA256(t *testing.T) {
 	// propagates from `extensions.objectFormat = sha256` all the way
 	// into the loose-object path computation.
 	root := materializeFixture(t, "loose-objects-sha256")
-	s, err := Open(root)
+	s, err := Open[objfmt.SHA256Hash](root)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
 	require.Equal(t, objfmt.SHA256, s.Algo())
 
-	typ, _, body, ok, err := s.loose.Find(hashFromHex(t, loose256FixtureBlobOID, objfmt.SHA256))
+	typ, _, body, ok, err := s.loose.Find(hashFromHex256(t, loose256FixtureBlobOID))
 	require.NoError(t, err)
 	require.True(t, ok)
 	t.Cleanup(func() { _ = body.Close() })

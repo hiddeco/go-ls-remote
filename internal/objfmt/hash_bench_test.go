@@ -5,21 +5,24 @@ import (
 	"testing"
 )
 
-// benchHashSink defeats DCE on ParseHex micro-benchmarks: without it
-// the compiler can erase the loop body once it sees the result is
-// unused.
-var benchHashSink Hash
+// benchSHA1Sink and benchSHA256Sink defeat DCE on the typed-parser
+// micro-benchmarks: without them the compiler can erase the loop body
+// once it sees the result is unused.
+var (
+	benchSHA1Sink   SHA1Hash
+	benchSHA256Sink SHA256Hash
+)
 
 func BenchmarkParseHex_SHA1(b *testing.B) {
 	in := strings.Repeat("a", 40)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		h, err := ParseHex(in, SHA1)
+		h, err := ParseSHA1Hex(in)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchHashSink = h
+		benchSHA1Sink = h
 	}
 }
 
@@ -28,11 +31,11 @@ func BenchmarkParseHex_SHA256(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		h, err := ParseHex(in, SHA256)
+		h, err := ParseSHA256Hex(in)
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchHashSink = h
+		benchSHA256Sink = h
 	}
 }
 

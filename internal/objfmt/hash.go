@@ -3,6 +3,7 @@ package objfmt
 import (
 	"encoding/hex"
 	"fmt"
+	"unsafe"
 )
 
 // Hash is a 32-byte buffer holding a Git object id.
@@ -109,6 +110,11 @@ type SHA256Hash [32]byte
 // Go map key — a type set of comparable types does not auto-satisfy
 // `comparable` in Go's generics, so the bound must be explicit.
 //
+// The method set ([Hex], [AppendHex], [IsZero], [Bytes]) is declared
+// alongside the type union so generic callers can invoke the typed
+// hex / zero-check methods on `H` without a per-callsite type switch.
+// Both [SHA1Hash] and [SHA256Hash] satisfy this method set.
+//
 // HashType is a temporary placeholder name. The legacy [Hash] array
 // type still occupies the `Hash` identifier; once every consumer has
 // migrated to [SHA1Hash] and [SHA256Hash] and the legacy array is
@@ -116,6 +122,11 @@ type SHA256Hash [32]byte
 type HashType interface {
 	comparable
 	SHA1Hash | SHA256Hash
+
+	Hex() string
+	AppendHex(dst []byte) []byte
+	IsZero() bool
+	Bytes() []byte
 }
 
 // Hex returns the lowercase 40-character hex encoding of h.
@@ -161,3 +172,20 @@ func (h SHA256Hash) IsZero() bool { return h == SHA256Hash{} }
 // The returned slice has length and capacity 32. See [SHA1Hash.Bytes]
 // for the copy contract.
 func (h SHA256Hash) Bytes() []byte { return h[:] }
+
+// hashBytes returns a slice over the in-place storage of h. Used by
+// generic readers ([Idx.searchV2], [Midx.searchOID], etc.) that need a
+// `[]byte` view of the OID without per-call allocation. The
+// type-parameter `H` cannot be sliced directly with `h[:]` because
+// the union of [SHA1Hash] and [SHA256Hash] does not have a single core
+// type — Go's generic slicing rules require one. The
+// [unsafe.Slice] form is the minimum-surface workaround; the slice
+// references the local-copy `h`, so callers must not retain it past
+// the end of `h`'s scope.
+//
+// For the typed-public APIs ([SHA1Hash.Bytes], [SHA256Hash.Bytes])
+// continue to use the by-copy form: their `[:]` form is inherently
+// safer because the copy lives on the caller's stack.
+func hashBytes[H HashType](h *H) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(h)), len(*h))
+}

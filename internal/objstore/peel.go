@@ -32,11 +32,11 @@ const maxPeelDepth = 16
 // — "this OID is a tag whose terminal target is `peeled`" and "this
 // OID is not a peelable tag" — are cached so the second call on the
 // same OID short-circuits the object-body read in either direction.
-type peelEntry struct {
+type peelEntry[H objfmt.HashType] struct {
 	// peeled is the dereferenced non-tag OID when ok is true. The zero
 	// hash when ok is false (and intentionally so: a zero peeled hash
 	// alongside ok=false is the canonical "not peelable" shape).
-	peeled objfmt.Hash
+	peeled H
 
 	// ok is true when the input OID resolved cleanly to a non-tag
 	// terminal target; false when the input was not a tag, the chain
@@ -95,7 +95,7 @@ type peelEntry struct {
 // Peel. The OID-based API here cannot perform that short-circuit
 // because the peel hint belongs to the source ref, not to the value
 // the ref carries.
-func (s *Store) Peel(oid objfmt.Hash) (peeled objfmt.Hash, ok bool, err error) {
+func (s *Store[H]) Peel(oid H) (peeled H, ok bool, err error) {
 	// Fast path: a previous call on this OID has already decided.
 	s.peelMu.Lock()
 	if entry, hit := s.peelCache[oid]; hit {
@@ -111,16 +111,18 @@ func (s *Store) Peel(oid objfmt.Hash) (peeled objfmt.Hash, ok bool, err error) {
 		// NULL), but is intentionally NOT cached: a future bump of
 		// [maxPeelDepth] should make a previously-overrunning chain
 		// resolvable on the next call without a Store restart.
-		return objfmt.Hash{}, false, nil
+		var zero H
+		return zero, false, nil
 	}
 	if err != nil {
 		// Genuine failure: do not poison the cache with a transient
 		// I/O error. The next caller retries the read.
-		return objfmt.Hash{}, false, err
+		var zero H
+		return zero, false, err
 	}
 
 	s.peelMu.Lock()
-	s.peelCache[oid] = peelEntry{peeled: peeled, ok: ok}
+	s.peelCache[oid] = peelEntry[H]{peeled: peeled, ok: ok}
 	s.peelMu.Unlock()
 	return peeled, ok, nil
 }
@@ -138,30 +140,31 @@ func (s *Store) Peel(oid objfmt.Hash) (peeled objfmt.Hash, ok bool, err error) {
 // caller does not learn each link's terminal target until after the
 // chain finishes), and the cost is amortised by the cache on the
 // chain's head.
-func (s *Store) peelChain(oid objfmt.Hash, depth int) (objfmt.Hash, bool, error) {
+func (s *Store[H]) peelChain(oid H, depth int) (H, bool, error) {
+	var zero H
 	cur := oid
 	for d := depth; d < maxPeelDepth; d++ {
 		typ, body, ok, err := s.readLooseTag(cur)
 		if err != nil {
-			return objfmt.Hash{}, false, err
+			return zero, false, err
 		}
 		if !ok {
 			// Either the OID is not in the loose-object backend at all
 			// (packed-only tag, unknown OID) or it is something other
 			// than a tag. Both shapes are "not peelable" per the doc
 			// contract.
-			return objfmt.Hash{}, false, nil
+			return zero, false, nil
 		}
 		if typ != objfmt.TypeTag {
 			// Defence in depth: readLooseTag only returns ok=true for
 			// tag types, but if that ever changes, treat anything else
 			// as "not peelable" rather than mis-identify the body.
-			return objfmt.Hash{}, false, nil
+			return zero, false, nil
 		}
 
-		next, nextType, err := parseTagBody(body, s.algo)
+		next, nextType, err := parseTagBody[H](body)
 		if err != nil {
-			return objfmt.Hash{}, false, err
+			return zero, false, err
 		}
 		if nextType != "tag" {
 			// Terminal: dereferenced to a commit/tree/blob.
@@ -174,7 +177,7 @@ func (s *Store) peelChain(oid objfmt.Hash, depth int) (objfmt.Hash, bool, error)
 	// [Store.Peel] cache write; the public surface still sees the
 	// "not peelable" shape (matching canonical Git's `peel_to_object`
 	// returning NULL).
-	return objfmt.Hash{}, false, errPeelDepthExceeded
+	return zero, false, errPeelDepthExceeded
 }
 
 // readLooseTag is a thin wrapper over [looseObjects.Find] that
@@ -188,7 +191,7 @@ func (s *Store) peelChain(oid objfmt.Hash, depth int) (objfmt.Hash, bool, error)
 // On ok=false the body is nil and the typ is the zero value; the
 // caller treats both "no such object" and "object is not a tag" as
 // "not peelable".
-func (s *Store) readLooseTag(oid objfmt.Hash) (objfmt.ObjectType, []byte, bool, error) {
+func (s *Store[H]) readLooseTag(oid H) (objfmt.ObjectType, []byte, bool, error) {
 	typ, _, body, ok, err := s.loose.Find(oid)
 	if err != nil {
 		return 0, nil, false, err
@@ -208,7 +211,7 @@ func (s *Store) readLooseTag(oid objfmt.Hash) (objfmt.ObjectType, []byte, bool, 
 	raw, err := io.ReadAll(body)
 	if err != nil {
 		return 0, nil, false, fmt.Errorf("objstore: read tag body for %s: %w: %w",
-			oid.Hex(s.algo), err, ErrCorruptObject)
+			oid.Hex(), err, ErrCorruptObject)
 	}
 	return typ, raw, true, nil
 }
@@ -230,7 +233,8 @@ func (s *Store) readLooseTag(oid objfmt.Hash) (objfmt.ObjectType, []byte, bool, 
 // is ignored. A missing `object` or `type` line, or a malformed OID,
 // surfaces as an error wrapping [ErrCorruptObject] so callers can
 // distinguish "this tag is broken" from "this is not a tag".
-func parseTagBody(body []byte, algo objfmt.Algo) (objfmt.Hash, string, error) {
+func parseTagBody[H objfmt.HashType](body []byte) (H, string, error) {
+	var zero H
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	// Tag header lines are short; the default 64 KiB buffer is
 	// already generous, but pin it explicitly so a future change to
@@ -239,35 +243,35 @@ func parseTagBody(body []byte, algo objfmt.Algo) (objfmt.Hash, string, error) {
 
 	if !scanner.Scan() {
 		if err := scanner.Err(); err != nil {
-			return objfmt.Hash{}, "", fmt.Errorf(
+			return zero, "", fmt.Errorf(
 				"objstore: read tag object line: %w: %w", err, ErrCorruptObject)
 		}
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body missing object line: %w", ErrCorruptObject)
 	}
 	objHex, ok := strings.CutPrefix(scanner.Text(), "object ")
 	if !ok {
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body first line %q lacks `object ` prefix: %w",
 			scanner.Text(), ErrCorruptObject)
 	}
-	target, err := objfmt.ParseHex(objHex, algo)
+	target, err := objfmt.ParseHexAs[H](objHex)
 	if err != nil {
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body object hex %q: %w: %w", objHex, err, ErrCorruptObject)
 	}
 
 	if !scanner.Scan() {
 		if err := scanner.Err(); err != nil {
-			return objfmt.Hash{}, "", fmt.Errorf(
+			return zero, "", fmt.Errorf(
 				"objstore: read tag type line: %w: %w", err, ErrCorruptObject)
 		}
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body missing type line: %w", ErrCorruptObject)
 	}
 	typeName, ok := strings.CutPrefix(scanner.Text(), "type ")
 	if !ok {
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body second line %q lacks `type ` prefix: %w",
 			scanner.Text(), ErrCorruptObject)
 	}
@@ -275,7 +279,7 @@ func parseTagBody(body []byte, algo objfmt.Algo) (objfmt.Hash, string, error) {
 	case "commit", "tree", "blob", "tag":
 		// known
 	default:
-		return objfmt.Hash{}, "", fmt.Errorf(
+		return zero, "", fmt.Errorf(
 			"objstore: tag body has unknown type %q: %w", typeName, ErrCorruptObject)
 	}
 	return target, typeName, nil
@@ -295,16 +299,17 @@ func parseTagBody(body []byte, algo objfmt.Algo) (objfmt.Hash, string, error) {
 // reftable record with its peel slot populated — PeelRef returns the
 // recorded peel without touching the object store. Otherwise it falls
 // through to [Store.Peel] on the resolved OID.
-func (s *Store) PeelRef(name string) (peeled objfmt.Hash, ok bool, err error) {
+func (s *Store[H]) PeelRef(name string) (peeled H, ok bool, err error) {
+	var zero H
 	entry, found, err := s.refs.Lookup(name)
 	if err != nil {
-		return objfmt.Hash{}, false, err
+		return zero, false, err
 	}
 	if !found {
-		return objfmt.Hash{}, false, nil
+		return zero, false, nil
 	}
 	if entry.PeelKnown {
-		return entry.Peeled, !entry.Peeled.IsZero(), nil
+		return entry.Peeled, entry.Peeled != zero, nil
 	}
 	return s.Peel(entry.OID)
 }
