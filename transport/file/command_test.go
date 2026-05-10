@@ -22,7 +22,7 @@ import (
 // invoke [Conn.Command]. The advertisement shape is `version 2\n` plus
 // capability data lines plus a flush per
 // `serve.c::protocol_v2_advertise_capabilities`.
-func drainAdvertisement(t *testing.T, c *Conn) {
+func drainAdvertisement(t testing.TB, c *Conn) {
 	t.Helper()
 	rdr := c.Advertisement()
 	for {
@@ -68,7 +68,7 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // ensures `objects/pack/` exists (some ref-only fixtures ship without
 // one). The transport opens the store itself; this helper only smooths
 // over the missing-pack-dir gap.
-func materializeServeableFixture(t *testing.T, name string) string {
+func materializeServeableFixture(t testing.TB, name string) string {
 	t.Helper()
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))

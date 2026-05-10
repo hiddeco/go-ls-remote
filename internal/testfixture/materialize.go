@@ -26,7 +26,7 @@ import (
 // identically; the prior duplicates each assumed a two-levels-deep
 // caller package and computed `..`/`..` against the working
 // directory.
-func fixturesRoot(t *testing.T) string {
+func fixturesRoot(t testing.TB) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed; package layout changed?")
@@ -43,7 +43,7 @@ func fixturesRoot(t *testing.T) string {
 // — for example `with-alternates-chain` ships sibling repos under
 // `a/`, `b/`, `c/` with no top-level `dotgit/`. For the common
 // single-repo case, prefer [MaterializeRepo].
-func MaterializeRepoTree(t *testing.T, name string) string {
+func MaterializeRepoTree(t testing.TB, name string) string {
 	t.Helper()
 
 	src := filepath.Join(fixturesRoot(t), name)
@@ -89,7 +89,7 @@ func MaterializeRepoTree(t *testing.T, name string) string {
 // The function fails the test if `<dst>/.git` does not exist after
 // materialisation — that condition signals a multi-repo layout that
 // should use [MaterializeRepoTree] instead.
-func MaterializeRepo(t *testing.T, name string) string {
+func MaterializeRepo(t testing.TB, name string) string {
 	t.Helper()
 	dst := MaterializeRepoTree(t, name)
 	gitdir := filepath.Join(dst, ".git")
