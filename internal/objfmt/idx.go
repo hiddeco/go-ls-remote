@@ -150,7 +150,7 @@ func (i *Idx) parseHeader() error {
 // nr = n; }`).
 func validateIdxFanout(fanout []byte) error {
 	var prev uint32
-	for k := 0; k < 256; k++ {
+	for k := range 256 {
 		n := binary.BigEndian.Uint32(fanout[k*4 : (k+1)*4])
 		if n < prev {
 			return fmt.Errorf("objfmt: idx non-monotonic fanout at %d: %d < %d: %w",

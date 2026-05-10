@@ -345,7 +345,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 		numChunks := int(raw[6])
 		var oidfTOC int
 		found := false
-		for i := 0; i < numChunks; i++ {
+		for i := range numChunks {
 			base := tocStart + i*12
 			if string(raw[base:base+4]) == "OIDF" {
 				oidfTOC = base
@@ -373,7 +373,7 @@ func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
 	require.Equal(t, 4, len(id))
 	tocStart := 12
 	numChunks := int(raw[6])
-	for i := 0; i < numChunks; i++ {
+	for i := range numChunks {
 		base := tocStart + i*12
 		if string(raw[base:base+4]) == id {
 			return int64(binary.BigEndian.Uint64(raw[base+4 : base+12]))

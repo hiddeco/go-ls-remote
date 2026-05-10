@@ -218,7 +218,7 @@ func (m *Midx) parseChunkTable(numChunks int) error {
 		return fmt.Errorf("objfmt: midx chunk table overruns body (offset %d > %d): %w",
 			last.off, bodyEnd, ErrTruncated)
 	}
-	for i := 0; i < numChunks; i++ {
+	for i := range numChunks {
 		e := entries[i]
 		if e.id == (chunkID{}) {
 			return fmt.Errorf("objfmt: premature midx chunk terminator at index %d: %w", i, ErrCorrupt)
@@ -302,7 +302,7 @@ func (m *Midx) parseFanout() error {
 	}
 	fanout := m.data[ext.off : ext.off+256*4]
 	var prev uint32
-	for k := 0; k < 256; k++ {
+	for k := range 256 {
 		n := binary.BigEndian.Uint32(fanout[k*4 : (k+1)*4])
 		if n < prev {
 			return fmt.Errorf("objfmt: midx non-monotonic fanout at %d: %d < %d: %w",

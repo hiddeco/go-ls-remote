@@ -44,7 +44,7 @@ func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 
 	buf := new(bytes.Buffer)
 	// Fan-out: cumulative count of entries with first byte ≤ N.
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, e := range entries {
 			if e.oid[0] <= byte(n) {

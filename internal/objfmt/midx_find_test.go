@@ -215,7 +215,7 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	// whose top bit is set, or any offset ≥ 1<<31, spills into LOFF
 	// (8 bytes BE per overflow entry).
 	var oidf bytes.Buffer
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, o := range fix.objs {
 			if o.oid[0] <= byte(n) {
