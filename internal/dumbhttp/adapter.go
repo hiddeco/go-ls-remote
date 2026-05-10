@@ -249,6 +249,14 @@ func (s *synth) nextRefLine() (string, bool, error) {
 		return raw, true, nil
 	}
 	if err := s.src.Err(); err != nil {
+		// `bufio.Scanner`'s default 64 KiB token cap fires before the
+		// explicit `maxRefLineBytes` check on lines that exceed it.
+		// Both refusal paths describe the same condition, so wrap the
+		// scanner's surface error with the package sentinel callers can
+		// match on with `errors.Is`.
+		if errors.Is(err, bufio.ErrTooLong) {
+			err = fmt.Errorf("dumbhttp: ref line exceeds scanner buffer: %w", ErrRefLineTooLarge)
+		}
 		s.firstErr = err
 		return "", false, err
 	}

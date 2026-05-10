@@ -155,6 +155,33 @@ func TestNewAdapter_OverlongRefLine(t *testing.T) {
 		"expected error wrapping ErrRefLineTooLarge, got %v", sawErr)
 }
 
+func TestNewAdapter_RefLineExceedsBufioCap(t *testing.T) {
+	// `bufio.Scanner`'s default `MaxScanTokenSize` is 64 KiB; a single
+	// line longer than that surfaces as `bufio.ErrTooLong` from the
+	// scanner before the adapter's `maxRefLineBytes` check fires.
+	// Callers should not have to know which component refused the
+	// oversized line: the documented sentinel for "ref line too large"
+	// is [ErrRefLineTooLarge], and that is what they must observe
+	// through `errors.Is` regardless of the band the line falls into.
+	const refnameLen = 70000
+	overlong := strings.Repeat("a", refnameLen)
+	body := oidMaint + "\t" + overlong + "\n"
+
+	pr := dumbhttp.NewAdapter(strings.NewReader(body))
+
+	var sawErr error
+	for range 16 {
+		_, err := pr.ReadPacket()
+		if err != nil {
+			sawErr = err
+			break
+		}
+	}
+	require.Error(t, sawErr)
+	assert.True(t, errors.Is(sawErr, dumbhttp.ErrRefLineTooLarge),
+		"a line above the scanner cap must still wrap ErrRefLineTooLarge; got %v", sawErr)
+}
+
 func TestNewAdapter_BlankAndCommentLines(t *testing.T) {
 	body := "" +
 		"\n" +
