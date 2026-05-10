@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -68,7 +69,7 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	if c.dumb {
 		return nil, ErrUnsupportedProtocol
 	}
-	if err := validateCommandPayloads(name, args, caps); err != nil {
+	if err := wire.ValidateV2CommandPayloads(name, args, caps); err != nil {
 		return nil, err
 	}
 
@@ -119,34 +120,6 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	return rdr, nil
 }
 
-// validateCommandPayloads rejects command-name, capability, and arg
-// inputs whose pkt-line framing would exceed [pktline.MaxPayload].
-// Each pkt-line carries the input value plus a trailing LF (and the
-// `command=` prefix for the command name); a value above the cap
-// cannot be framed as a single packet, so refuse before constructing
-// the body. Returns an error wrapping [pktline.ErrPayloadTooLarge]
-// so callers can match with [errors.Is].
-func validateCommandPayloads(name string, args, caps []string) error {
-	const commandPrefix = "command="
-	if n := len(commandPrefix) + len(name) + 1; n > pktline.MaxPayload {
-		return fmt.Errorf("transport/http: command %q payload %d bytes: %w",
-			name, n, pktline.ErrPayloadTooLarge)
-	}
-	for _, c := range caps {
-		if n := len(c) + 1; n > pktline.MaxPayload {
-			return fmt.Errorf("transport/http: capability payload %d bytes: %w",
-				n, pktline.ErrPayloadTooLarge)
-		}
-	}
-	for _, a := range args {
-		if n := len(a) + 1; n > pktline.MaxPayload {
-			return fmt.Errorf("transport/http: argument payload %d bytes: %w",
-				n, pktline.ErrPayloadTooLarge)
-		}
-	}
-	return nil
-}
-
 // commandPostURL derives the v2 command POST URL from the probe's
 // final URL by rewriting the trailing `/info/refs` to
 // `/git-upload-pack` and discarding the query string. Canonical Git
@@ -182,10 +155,10 @@ func commandPostURL(base *url.URL) (*url.URL, error) {
 }
 
 // encodeCommandBody serialises a v2 command-request to a byte buffer
-// using [pktline.Writer]. Layering: the v2 request body is built with
-// `pktline.Writer` directly so this package keeps to its documented
-// import set. Writing to a [bytes.Buffer] never fails, so the writer's
-// error returns are intentionally swallowed.
+// by driving [wire.EncodeV2CommandRequest] over a fresh
+// [pktline.Writer] backed by a [bytes.Buffer]. The buffer never fails
+// a write, so the encoder's error return is intentionally discarded —
+// `bytes.Buffer.Write` is documented to always return `(len(p), nil)`.
 //
 // When tracer is non-nil the writer carries the redacted POST URL so
 // each pkt-line written emits a [trace.PacketEvent] with
@@ -197,15 +170,7 @@ func commandPostURL(base *url.URL) (*url.URL, error) {
 func encodeCommandBody(name string, args, caps []string, tracer trace.Tracer, redactedURL string) []byte {
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf, outboundWriterOpts(tracer, redactedURL)...)
-	_ = w.WritePacket([]byte("command=" + name + "\n"))
-	for _, cap := range caps {
-		_ = w.WritePacket([]byte(cap + "\n"))
-	}
-	_ = w.WriteDelim()
-	for _, a := range args {
-		_ = w.WritePacket([]byte(a + "\n"))
-	}
-	_ = w.WriteFlush()
+	_ = wire.EncodeV2CommandRequest(w, name, args, caps)
 	return buf.Bytes()
 }
 
