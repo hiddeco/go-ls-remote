@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -195,9 +195,8 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	// Sort objects by OID to satisfy the binary-search invariant in
 	// the OIDL chunk; a real midx produced by canonical Git is sorted
 	// the same way.
-	sort.Slice(fix.objs, func(i, j int) bool {
-		return bytes.Compare(fix.objs[i].oid[:hashLen],
-			fix.objs[j].oid[:hashLen]) < 0
+	slices.SortFunc(fix.objs, func(a, b midxObj) int {
+		return bytes.Compare(a.oid[:hashLen], b.oid[:hashLen])
 	})
 
 	// Build PNAM with NUL-terminated entries, padded to a 4-byte

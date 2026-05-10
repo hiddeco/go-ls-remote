@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,8 +38,8 @@ func idxFixture(t *testing.T, name string) string {
 func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	t.Helper()
 	// Sort by SHA so the binary search invariant holds.
-	sort.Slice(entries, func(i, j int) bool {
-		return bytes.Compare(entries[i].oid[:20], entries[j].oid[:20]) < 0
+	slices.SortFunc(entries, func(a, b v1Entry) int {
+		return bytes.Compare(a.oid[:20], b.oid[:20])
 	})
 
 	buf := new(bytes.Buffer)
