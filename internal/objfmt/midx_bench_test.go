@@ -12,7 +12,7 @@ import (
 func makeMidxBenchObjs(n, packCount int, baseOffset uint64) []midxObj {
 	out := make([]midxObj, n)
 	var k [8]byte
-	for i := 0; i < n; i++ {
+	for i := range n {
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 		sum := sha1.Sum(k[:])
 		var h Hash
@@ -51,7 +51,7 @@ func BenchmarkMidx_Find_hit(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_, off, ok := m.Find(probes[i%len(probes)])
 		if !ok {
 			b.Fatalf("miss at probe %d", i%len(probes))
@@ -89,7 +89,7 @@ func BenchmarkMidx_Find_miss(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_, _, ok := m.Find(probes[i%len(probes)])
 		if ok {
 			b.Fatalf("unexpected hit at probe %d", i%len(probes))
@@ -124,7 +124,7 @@ func BenchmarkMidx_Find_loff(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_, off, ok := m.Find(probes[i%len(probes)])
 		if !ok {
 			b.Fatalf("miss at probe %d", i%len(probes))

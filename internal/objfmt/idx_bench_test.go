@@ -12,7 +12,7 @@ import (
 func makeIdxBenchEntries(n int) []v2Entry {
 	out := make([]v2Entry, n)
 	var k [8]byte
-	for i := 0; i < n; i++ {
+	for i := range n {
 		binary.BigEndian.PutUint64(k[:], uint64(i))
 		sum := sha1.Sum(k[:])
 		var h Hash
@@ -42,7 +42,7 @@ func BenchmarkIdx_FindOffset_v2_hit(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		off, ok := idx.FindOffset(probes[i%len(probes)])
 		if !ok {
 			b.Fatalf("miss at probe %d", i%len(probes))
@@ -75,7 +75,7 @@ func BenchmarkIdx_FindOffset_v2_miss(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		_, ok := idx.FindOffset(probes[i%len(probes)])
 		if ok {
 			b.Fatalf("unexpected hit at probe %d", i%len(probes))
