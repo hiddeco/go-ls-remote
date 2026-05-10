@@ -382,10 +382,10 @@ func TestDecodeObjectInfo(t *testing.T) {
 		// with an empty `OID`. `send_info` never emits an empty OID, so
 		// such lines are malformed and must be dropped.
 		buf := buildObjectInfoStream(t,
-			"\n",     // attrs absent
-			"\n",     // empty per-OID line
-			" 42\n",  // leading space, no OID, tail "42"
-			" \n",    // leading space only
+			"\n",    // attrs absent
+			"\n",    // empty per-OID line
+			" 42\n", // leading space, no OID, tail "42"
+			" \n",   // leading space only
 			oid1+"\n",
 		)
 
