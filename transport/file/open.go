@@ -123,6 +123,13 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		// stores the error so the matching `clientReader.Read`
 		// returns it directly, matching how a real transport would
 		// propagate a server-side fault.
+		//
+		// Any client request bytes still buffered in `serverReader`
+		// at this point — i.e. a request frame the client wrote but
+		// `Serve` had not yet read before returning (e.g. on context
+		// cancellation) — are dropped on the floor. The server has
+		// already returned; there is no dispatch path left to
+		// receive them.
 		srvErr := server.Serve(derivedCtx,
 			pktline.NewReader(serverReader, inboundReaderOpts(serverTracer, redacted)...),
 			pktline.NewWriter(serverWriter, outboundWriterOpts(serverTracer, redacted)...),
