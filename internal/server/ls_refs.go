@@ -1,10 +1,11 @@
 package server
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
@@ -269,7 +270,9 @@ func collectLSRefsRefs(store *objstore.Store) ([]objstore.RefEntry, error) {
 		}
 		refs = append(refs, entry)
 	}
-	sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
+	slices.SortFunc(refs, func(a, b objstore.RefEntry) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 	return refs, nil
 }
 
