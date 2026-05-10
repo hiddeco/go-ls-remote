@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/trace"
 )
 
 // commandPrefix is the literal that marks a v2 `command=<name>`
@@ -149,21 +151,70 @@ func processV2Request(r *pktline.Reader, w *pktline.Writer,
 // The empty `commandName` case mirrors `serve.c:343` (`die("no command
 // requested")`): the request had at least one capability echo but no
 // `command=` line, which is malformed.
+//
+// Real command dispatches (`ls-refs`, `object-info`) are wrapped in
+// [trace.CommandEvent] start/end emissions via [runCommand] so a
+// configured [Options.Tracer] observes the handler's lifecycle and
+// duration. The unknown-command path skips the tracer: the
+// caller-visible wrapped [wire.ErrServerRefused] already encodes the
+// refusal and a CommandEvent for `fetch` (or any other unimplemented
+// name) would advertise behaviour the emulator does not actually
+// implement.
 func dispatchV2(r *pktline.Reader, w *pktline.Writer, store *objstore.Store,
 	opts Options, commandName string) error {
 	switch commandName {
 	case "":
 		return errors.New("server: v2 request had no command line")
 	case "ls-refs":
-		return handleLSRefs(r, w, store, opts)
+		return runCommand(opts, commandName, func() error {
+			return handleLSRefs(r, w, store, opts)
+		})
 	case "object-info":
-		return handleObjectInfo(r, w, store, opts)
+		return runCommand(opts, commandName, func() error {
+			return handleObjectInfo(r, w, store, opts)
+		})
 	default:
 		if err := writeERRPacket(w, "command not supported"); err != nil {
 			return err
 		}
 		return fmt.Errorf("%w: command not supported", wire.ErrServerRefused)
 	}
+}
+
+// runCommand wraps a v2 command-handler invocation in
+// [trace.CommandEvent] start/end emissions so a configured
+// [Options.Tracer] sees the dispatcher's lifecycle around `fn`. The
+// `Time` on the start event records the wall-clock instant the
+// handler is about to be invoked; the `Time` on the end event records
+// the instant it returned, and `Duration` is `time.Since(start)`. The
+// handler's return value is propagated unchanged through `Err` on the
+// end event and as the function's own return value.
+//
+// `URL` is left empty on both events: the in-process emulator has no
+// remote URL to populate it with. The contract is documented on
+// [Options.Tracer] so consumers know to expect the empty value rather
+// than treating it as missing data.
+//
+// A nil [Options.Tracer] makes both [trace.Emit] calls no-ops via the
+// helper's nil-receiver check at `trace/emit.go:24`. The two
+// `time.Now` calls are unconditional but cheap; the cold-path
+// command-dispatch boundary is not hot enough to justify gating them.
+func runCommand(opts Options, name string, fn func() error) error {
+	start := time.Now()
+	trace.Emit(opts.Tracer, trace.CommandEvent{
+		Time:  start,
+		Name:  name,
+		Phase: trace.CommandStart,
+	})
+	err := fn()
+	trace.Emit(opts.Tracer, trace.CommandEvent{
+		Time:     time.Now(),
+		Name:     name,
+		Phase:    trace.CommandEnd,
+		Duration: time.Since(start),
+		Err:      err,
+	})
+	return err
 }
 
 // writeERRPacket emits a single `ERR <msg>\n` data pkt-line followed
