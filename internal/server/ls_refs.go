@@ -198,12 +198,11 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 
 	switch {
 	case !head.Unborn && !head.OID.IsZero():
-		var b strings.Builder
-		b.WriteString(head.OID.Hex(algo))
-		b.WriteString(" HEAD")
+		line := head.OID.AppendHex(nil, algo)
+		line = append(line, " HEAD"...)
 		if args.Symrefs && head.Symref != "" {
-			b.WriteString(" symref-target:")
-			b.WriteString(head.Symref)
+			line = append(line, " symref-target:"...)
+			line = append(line, head.Symref...)
 		}
 		if args.Peel {
 			peeled, ok, err := store.Peel(head.OID)
@@ -211,12 +210,12 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 				return fmt.Errorf("server: ls-refs: peel HEAD: %w", err)
 			}
 			if ok && !peeled.IsZero() {
-				b.WriteString(" peeled:")
-				b.WriteString(peeled.Hex(algo))
+				line = append(line, " peeled:"...)
+				line = peeled.AppendHex(line, algo)
 			}
 		}
-		b.WriteByte('\n')
-		if err := w.WritePacket([]byte(b.String())); err != nil {
+		line = append(line, '\n')
+		if err := w.WritePacket(line); err != nil {
 			return fmt.Errorf("server: ls-refs: write HEAD: %w", err)
 		}
 	case head.Unborn && args.Unborn && args.Symrefs:
@@ -249,10 +248,11 @@ func emitHead(w *pktline.Writer, store *objstore.Store, algo objfmt.Algo,
 // handing it straight to [pktline.Writer.WritePacket] saves the
 // per-iteration `strings.Builder` growth and the
 // `[]byte(line.String())` conversion that the previous shape
-// allocated. Only the unavoidable `OID.Hex` strings are left.
+// allocated. OID hex is appended directly into the scratch via
+// [objfmt.Hash.AppendHex] so no per-ref string allocates either.
 func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
 	ref objstore.RefEntry, args wire.RefsArgs) ([]byte, error) {
-	dst = append(dst, ref.OID.Hex(algo)...)
+	dst = ref.OID.AppendHex(dst, algo)
 	dst = append(dst, ' ')
 	dst = append(dst, ref.Name...)
 	if args.Peel {
@@ -262,7 +262,7 @@ func formatRefLine(dst []byte, store *objstore.Store, algo objfmt.Algo,
 		}
 		if ok && !peeled.IsZero() {
 			dst = append(dst, " peeled:"...)
-			dst = append(dst, peeled.Hex(algo)...)
+			dst = peeled.AppendHex(dst, algo)
 		}
 	}
 	dst = append(dst, '\n')
