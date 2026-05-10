@@ -98,14 +98,6 @@ func (c *Conn) Advertisement() *pktline.Reader {
 	return c.reader
 }
 
-// Command issues a v2 command and returns a reader over its response.
-// The local-filesystem transport's command path lands in a follow-up
-// commit; until then Command returns a not-implemented sentinel so
-// callers fail loudly rather than reading partial output.
-func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error) {
-	return nil, errors.New("transport/file: Command not implemented")
-}
-
 // Close cancels the derived context, closes every pipe end so the
 // goroutine cannot block on a peer that no longer reads, waits for
 // the goroutine to return, and then closes the underlying object
