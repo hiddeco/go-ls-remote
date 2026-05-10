@@ -2,7 +2,6 @@ package httpt
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -68,7 +67,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		}
 		creds, rerr := t.creds.Resolve(ctx, infoRefsForResolver(u))
 		if rerr != nil {
-			return nil, fmt.Errorf("transport/http: resolve credentials: %w", rerr)
+			return nil, fmt.Errorf("transport/http: resolve credentials for %s: %w", redacted, rerr)
 		}
 		if creds == nil {
 			return nil, ErrAuthRequired
@@ -86,7 +85,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return handleOK(resp, redacted)
+		return handleOK(resp, redacted, client)
 	case http.StatusForbidden:
 		drainAndClose(resp.Body)
 		return nil, ErrAuthFailed
@@ -122,17 +121,16 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 // per `gitprotocol-http.adoc:274-286` and hands the post-preamble
 // reader to a [Conn]. The dumb branch is left as a placeholder until
 // the dumb-HTTP adapter lands.
-func handleOK(resp *http.Response, redacted string) (transport.Conn, error) {
+func handleOK(resp *http.Response, redacted string, client *http.Client) (transport.Conn, error) {
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
-		mediaType = strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+		mediaType = strings.TrimSpace(resp.Header.Get("Content-Type"))
 	}
 	if !strings.EqualFold(mediaType, smartAdvContentType) {
-		// Dumb-HTTP branch. The adapter that maps `info/refs` plus
-		// the loose/packed object endpoints into a Conn lands in a
-		// follow-up change.
+		// Dumb-HTTP branch — replaced wholesale by the dumb adapter
+		// in a follow-up change.
 		drainAndClose(resp.Body)
-		return nil, errors.New("transport/http: dumb HTTP detected; adapter wires up in a follow-up change")
+		return nil, errDumbNotImplemented
 	}
 
 	rdr := pktline.NewReader(resp.Body)
@@ -148,6 +146,7 @@ func handleOK(resp *http.Response, redacted string) (transport.Conn, error) {
 	return &Conn{
 		body:   resp.Body,
 		reader: rdr,
+		client: client,
 		url:    redacted,
 	}, nil
 }
@@ -203,19 +202,10 @@ func doProbe(ctx context.Context, client *http.Client, probeURL, ua, gitProto st
 // canonical Git separates `transport_anonymize_url` (used for
 // display) from the auth path (used for headers).
 func buildInfoRefsURL(u *transport.URL) string {
-	host := u.Host
-	if strings.Contains(host, ":") {
-		// IPv6 literal: bracket so the optional port disambiguates.
-		host = "[" + host + "]"
-	}
-	if u.Port != "" {
-		host = host + ":" + u.Port
-	}
-	path := strings.TrimSuffix(u.Path, "/") + "/info/refs"
 	out := &url.URL{
 		Scheme:   u.Scheme,
-		Host:     host,
-		Path:     path,
+		Host:     joinHostPort(u),
+		Path:     strings.TrimSuffix(u.Path, "/") + "/info/refs",
 		RawQuery: "service=git-upload-pack",
 	}
 	return out.String()
@@ -226,18 +216,25 @@ func buildInfoRefsURL(u *transport.URL) string {
 // resolver typically keys on `Host`, but Path/Scheme are populated
 // for resolvers that want a finer key.
 func infoRefsForResolver(u *transport.URL) *url.URL {
+	return &url.URL{
+		Scheme: u.Scheme,
+		Host:   joinHostPort(u),
+		Path:   strings.TrimSuffix(u.Path, "/") + "/info/refs",
+	}
+}
+
+// joinHostPort renders u.Host (bracketing IPv6 literals) and appends
+// u.Port when set, producing the `host` field expected by [url.URL].
+func joinHostPort(u *transport.URL) string {
 	host := u.Host
 	if strings.Contains(host, ":") {
+		// IPv6 literal: bracket so the optional port disambiguates.
 		host = "[" + host + "]"
 	}
 	if u.Port != "" {
 		host = host + ":" + u.Port
 	}
-	return &url.URL{
-		Scheme: u.Scheme,
-		Host:   host,
-		Path:   strings.TrimSuffix(u.Path, "/") + "/info/refs",
-	}
+	return host
 }
 
 // resolveUserAgent picks the User-Agent header value per the
@@ -268,7 +265,9 @@ func drainAndClose(body io.ReadCloser) {
 
 // readServerExcerpt reads up to 1 KiB from body and returns it as a
 // string. If more than 1 KiB was available, the returned string ends
-// in `"..."` so callers can spot truncation.
+// in `"..."` so callers can spot truncation. A partial read followed
+// by an I/O error returns whatever bytes were captured before the
+// error rather than discarding them.
 //
 // The 1 KiB cap matches what canonical Git's `show_http_message`
 // surfaces from a 5xx body: enough text to triage from a log line

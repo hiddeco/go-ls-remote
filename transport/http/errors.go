@@ -21,9 +21,10 @@ var (
 	// to plug in credentials and retry.
 	ErrAuthRequired = errors.New("transport/http: authentication required")
 
-	// ErrAuthFailed is returned when credentials were applied but the
-	// server rejected them — either a `401` after the auth retry or a
-	// `403` on any request. The credential is not retried again.
+	// ErrAuthFailed is returned when the server rejected an
+	// authenticated request: a `401` after the [CredentialResolver]
+	// was consulted (no further retry happens), or any `403` (no
+	// retry attempted).
 	ErrAuthFailed = errors.New("transport/http: authentication failed")
 
 	// ErrNotFound is returned when the server reports `404 Not Found`
@@ -33,6 +34,15 @@ var (
 	ErrNotFound = errors.New("transport/http: repository not found")
 )
 
+// errDumbNotImplemented is returned when the probe sees a `200 OK`
+// whose Content-Type is not the smart advertisement, signalling a
+// dumb-HTTP server. The dumb-HTTP adapter lands in a follow-up
+// change and replaces this branch entirely; until then this
+// package-internal sentinel lets callers (tests included) match
+// the placeholder via [errors.Is]. Lower-case on purpose: external
+// callers should not pin behaviour on it.
+var errDumbNotImplemented = errors.New("transport/http: dumb HTTP adapter not yet wired")
+
 // ProtocolError reports an HTTP-layer protocol failure that does not
 // fit one of the [errors.Is]-matched sentinels above — for example a
 // `5xx` status, a malformed smart-HTTP preamble, or an unexpected
@@ -41,11 +51,11 @@ var (
 // The root `lsremote` package re-wraps this into its own public
 // `*ProtocolError` shape; inside this package callers may match the
 // wrapped [ProtocolError.Err] with [errors.Is].
-//
-// Field order clusters the 16-byte string headers ahead of the
-// pointer-shaped Err and the int Status so the struct packs without
-// padding on 64-bit platforms.
 type ProtocolError struct {
+	// Field order clusters the 16-byte string headers ahead of the
+	// pointer-shaped Err and the int Status so the struct packs
+	// without padding on 64-bit platforms.
+
 	// URL is the request URL with credentials redacted via
 	// [transport.RedactURL]. It is included so log lines and error
 	// strings are diagnostic without leaking userinfo.

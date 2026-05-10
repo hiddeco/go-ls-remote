@@ -231,8 +231,8 @@ func TestOpen_Dumb200_NotYetWired(t *testing.T) {
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dumb HTTP",
-		"dumb-path branch must surface a clearly-labelled placeholder error")
+	assert.True(t, errors.Is(err, errDumbNotImplemented),
+		"dumb-path branch must surface errDumbNotImplemented; got %v", err)
 }
 
 func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
@@ -446,6 +446,37 @@ func TestOpen_UnexpectedStatus_418(t *testing.T) {
 	require.True(t, errors.As(err, &pe),
 		"unexpected status maps to *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, http.StatusTeapot, pe.Status)
+}
+
+func TestBuildInfoRefsURL_IPv6_WithPort(t *testing.T) {
+	u := &transport.URL{
+		Scheme: "https",
+		Host:   "fe80::1",
+		Port:   "8443",
+		Path:   "/repo.git",
+	}
+	got := buildInfoRefsURL(u)
+	assert.Equal(t,
+		"https://[fe80::1]:8443/repo.git/info/refs?service=git-upload-pack",
+		got,
+		"IPv6 literal with an explicit port must be bracketed before the colon-port suffix")
+}
+
+func TestBuildInfoRefsURL_IPv6_NoPort(t *testing.T) {
+	u := &transport.URL{
+		Scheme: "https",
+		Host:   "fe80::1",
+		Path:   "/repo.git",
+	}
+	got := buildInfoRefsURL(u)
+	// `(&url.URL{Host: "[fe80::1]"}).String()` preserves the brackets,
+	// so an IPv6 literal in u.Host comes out bracketed in the rendered
+	// URL even when no port disambiguates it. The bracket is harmless
+	// for a host-only URL and matches what the function emits today.
+	assert.Equal(t,
+		"https://[fe80::1]/repo.git/info/refs?service=git-upload-pack",
+		got,
+		"a port-less IPv6 host renders as `[fe80::1]` per net/url's host handling")
 }
 
 func TestOpen_URL_StripsTrailingSlash(t *testing.T) {
