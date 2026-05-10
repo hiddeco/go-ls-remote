@@ -31,7 +31,7 @@ func pktLine(payload string) string {
 // 314-321 — so the v2 command loop exits cleanly. The v0 path returns
 // before reading any client byte, so the preloaded flush is harmless
 // there too.
-func runAdvertise[H objfmt.HashType](t *testing.T, store *objstore.Store[H], opts Options) []byte {
+func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Options) []byte {
 	t.Helper()
 
 	src := bytes.NewReader([]byte("0000"))
@@ -109,7 +109,7 @@ func TestServe_V2AdvertisementSHA256(t *testing.T) {
 
 // TestWriteV0Advertisement_AllocsPerRef pins the per-ref allocation
 // budget for `writeV0Advertisement`'s ref-emission loop. After the
-// scratch-buffer reuse and `objfmt.Hash.AppendHex` migration the loop
+// scratch-buffer reuse and typed-`AppendHex` migration the loop
 // body has no per-ref hex-string allocation and writes OID hex
 // directly into the reused `[]byte` scratch. The budget is set loose
 // enough not to flake on an off-by-one ref-count rounding (a small

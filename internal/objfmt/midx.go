@@ -30,7 +30,7 @@ import (
 // then arithmetic over the in-memory slice; midx files for typical
 // multi-gigabyte repositories are well under 10 MiB so the simpler
 // model wins over mmap.
-type Midx[H HashType] struct {
+type Midx[H Hash] struct {
 	path      string
 	algo      Algo
 	ver       uint32
@@ -115,7 +115,7 @@ var (
 // `num_base` byte — are out of scope and rejected here. Bitmap-related
 // chunks (`BTMP`, `RIDX`) are tolerated when present but never
 // consulted.
-func OpenMidx[H HashType](path string, algo Algo) (*Midx[H], error) {
+func OpenMidx[H Hash](path string, algo Algo) (*Midx[H], error) {
 	if algo == nil {
 		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}

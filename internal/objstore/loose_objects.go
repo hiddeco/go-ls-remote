@@ -20,7 +20,7 @@ import (
 // by multiple goroutines without synchronisation; each call performs an
 // independent `os.Open` and returns its own [io.ReadCloser] over the
 // resulting file handle.
-type looseObjects[H objfmt.HashType] struct {
+type looseObjects[H objfmt.Hash] struct {
 	commonDir string
 	algo      objfmt.Algo
 }
@@ -32,7 +32,7 @@ type looseObjects[H objfmt.HashType] struct {
 // `objects/` may be missing entirely on a brand-new repo, and per-object
 // errors surface from [looseObjects.Find] when callers actually request
 // a hash.
-func openLoose[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*looseObjects[H], error) {
+func openLoose[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*looseObjects[H], error) {
 	return &looseObjects[H]{commonDir: commonDir, algo: algo}, nil
 }
 

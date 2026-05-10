@@ -315,7 +315,7 @@ func TestLSRefs_UnknownArg(t *testing.T) {
 
 // TestWriteLSRefsResponse_AllocsPerRef pins the per-ref allocation
 // budget for `writeLSRefsResponse`'s ref-emission loop. After the
-// scratch-buffer reuse and `objfmt.Hash.AppendHex` migration the loop
+// scratch-buffer reuse and typed-`AppendHex` migration the loop
 // body has no per-ref hex-string allocation and writes OID hex
 // directly into the reused `[]byte` scratch. The budget is set loose
 // enough not to flake on an off-by-one ref-count rounding (a small

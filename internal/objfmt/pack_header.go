@@ -31,7 +31,7 @@ const packHeaderPeek = 32
 // The type parameter `H` carries the OID type of the parent [Pack];
 // the [DeltaRef.RefBase] field is typed per algo so REF_DELTA bases
 // flow back to the caller without an [Algo]-keyed reinterpretation.
-type ObjectHeader[H HashType] struct {
+type ObjectHeader[H Hash] struct {
 	// Type is the 3-bit pack object type.
 	Type ObjectType
 
@@ -57,7 +57,7 @@ type ObjectHeader[H HashType] struct {
 //
 // `H` is the OID type of the carrying [Pack]; [DeltaRef.RefBase]
 // holds the typed value directly.
-type DeltaRef[H HashType] struct {
+type DeltaRef[H Hash] struct {
 	// OfsBase is the absolute offset of the base object in the
 	// same pack. Set when the delta type is [TypeOfsDelta].
 	OfsBase int64

@@ -21,7 +21,7 @@ import (
 // Idx v1 only ever stored SHA-1; an idx opened as v1 with `H` =
 // [SHA256Hash] will load successfully but [Idx.FindOffset] will
 // report misses for every lookup.
-type Idx[H HashType] struct {
+type Idx[H Hash] struct {
 	path  string
 	algo  Algo
 	ver   uint32
@@ -62,7 +62,7 @@ var idxV2Magic = [4]byte{0xff, 't', 'O', 'c'}
 // byte, so the caller is responsible for the pairing. Idx v1 only
 // stored SHA-1 ids: opening a v1 file with `H` = [SHA256Hash] succeeds
 // but every lookup will miss.
-func OpenIdx[H HashType](path string, algo Algo) (*Idx[H], error) {
+func OpenIdx[H Hash](path string, algo Algo) (*Idx[H], error) {
 	if algo == nil {
 		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}

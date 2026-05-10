@@ -77,7 +77,7 @@ func FuzzOpenReader(f *testing.F) {
 // fuzzExerciseReader walks IterRefs and FindRef on an opened reader so
 // block-level decoding panics (out-of-bounds slices, varint overflows)
 // surface even when the header and trailer are well-formed.
-func fuzzExerciseReader[H objfmt.HashType](r *Reader[H]) {
+func fuzzExerciseReader[H objfmt.Hash](r *Reader[H]) {
 	for rec, iterErr := range r.IterRefs() {
 		if iterErr != nil {
 			return

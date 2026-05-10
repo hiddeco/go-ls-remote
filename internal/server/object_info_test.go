@@ -39,7 +39,7 @@ func buildObjectInfoRequest(argLines []string) []byte {
 // store. Used by byte-pinned tests so the fixture's objects drive the
 // expected wire bytes without the test having to hard-code sizes that
 // would drift if the fixture were ever regenerated.
-func querySize[H objfmt.HashType](t *testing.T, store *objstore.Store[H], oidHex string) int64 {
+func querySize[H objfmt.Hash](t *testing.T, store *objstore.Store[H], oidHex string) int64 {
 	t.Helper()
 	hash, err := objfmt.ParseHexAs[H](oidHex)
 	require.NoError(t, err)

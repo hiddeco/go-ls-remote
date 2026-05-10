@@ -18,7 +18,7 @@ import (
 // adds context (offending line, mismatching algos) for diagnostics.
 var (
 	// ErrMixedHashAlgo is returned when the on-disk hash algorithm of a
-	// reftable file does not match the [objfmt.HashType] the reader was
+	// reftable file does not match the [objfmt.Hash] the reader was
 	// instantiated for. A reftable stack is, by construction, single-
 	// algorithm: a SHA-1 repository's reftables are all SHA-1, a SHA-256
 	// repository's all SHA-256. Mixed bytes on disk indicate either
@@ -61,7 +61,7 @@ var (
 // with itself; callers must drain in-flight reads before closing and
 // serialize Close calls. Once drained, Close is idempotent — a second
 // call returns nil without touching the OS.
-type Stack[H objfmt.HashType] struct {
+type Stack[H objfmt.Hash] struct {
 	readers []*Reader[H]            // [0] = oldest table, [n-1] = newest
 	merged  map[string]RefRecord[H] // pre-computed merged view
 	sorted  []string                // ref names sorted lexicographically; cached for IterRefs
@@ -87,7 +87,7 @@ type Stack[H objfmt.HashType] struct {
 //
 // On successful return the caller owns the [Stack] and must release it
 // with [Stack.Close].
-func OpenStack[H objfmt.HashType](reftableDir string) (*Stack[H], error) {
+func OpenStack[H objfmt.Hash](reftableDir string) (*Stack[H], error) {
 	manifest := filepath.Join(reftableDir, "tables.list")
 	raw, err := os.ReadFile(manifest)
 	if err != nil {

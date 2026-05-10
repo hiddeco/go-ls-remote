@@ -40,7 +40,7 @@ import (
 // public [transport.Conn] interface stays non-generic because its
 // methods ([Conn.Advertisement], [Conn.Close], [Conn.Command]) do
 // not reference `H`.
-type Conn[H objfmt.HashType] struct {
+type Conn[H objfmt.Hash] struct {
 	// reader decodes pkt-lines coming back from the server goroutine.
 	// Its underlying source is the client-side end of the
 	// server-to-client pipe; the goroutine writes its advertisement

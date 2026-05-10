@@ -39,7 +39,7 @@ const maxChainDepth = 64
 // in pack P" (found=true) and "this base is unreachable in any open
 // pack" (found=false) — are cached so a missing base never re-scans
 // every pack on the next call.
-type refDeltaCacheEntry[H objfmt.HashType] struct {
+type refDeltaCacheEntry[H objfmt.Hash] struct {
 	pack   *objfmt.Pack[H]
 	offset int64
 	found  bool
@@ -311,7 +311,7 @@ func (s *Store[H]) verifyPackCRC(pack *objfmt.Pack[H], oid H, at int64) error {
 // that even a multi-megabyte delta payload reads in a handful of
 // `ReadAt` calls; pack mappings are usually mmap-backed so the
 // underlying `ReadAt` is a memory copy rather than a syscall.
-func crc32Range[H objfmt.HashType](pack *objfmt.Pack[H], start, end int64) (uint32, error) {
+func crc32Range[H objfmt.Hash](pack *objfmt.Pack[H], start, end int64) (uint32, error) {
 	const chunk = 1 << 16
 	h := crc32.NewIEEE()
 	buf := make([]byte, chunk)

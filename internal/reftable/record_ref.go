@@ -47,7 +47,7 @@ var (
 // `refRecord[objfmt.SHA256Hash]`. Mixed-algorithm inputs surface at
 // [OpenReader] / [OpenStack] time as [ErrMixedHashAlgo] before any
 // record bytes reach the decoder.
-type refRecord[H objfmt.HashType] struct {
+type refRecord[H objfmt.Hash] struct {
 	Name        string
 	UpdateIndex uint64
 	ValueType   uint8
@@ -94,7 +94,7 @@ const (
 //
 // See `reftable/record.c::reftable_ref_record_decode` for the
 // canonical implementation.
-func decodeRefRecord[H objfmt.HashType](buf, prevKey []byte, minUpdateIndex uint64) (refRecord[H], []byte, int, error) {
+func decodeRefRecord[H objfmt.Hash](buf, prevKey []byte, minUpdateIndex uint64) (refRecord[H], []byte, int, error) {
 	var zero refRecord[H]
 	hashSize := len(zero.Value)
 
@@ -173,6 +173,6 @@ func decodeRefRecord[H objfmt.HashType](buf, prevKey []byte, minUpdateIndex uint
 // The sibling helper in `internal/objfmt` (`objfmt.hashBytes`) is
 // unexported, so this duplicate keeps the dependency direction one-way
 // and avoids exporting an unsafe primitive across package boundaries.
-func hashBytes[H objfmt.HashType](h *H) []byte {
+func hashBytes[H objfmt.Hash](h *H) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(h)), len(*h))
 }

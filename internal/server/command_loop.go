@@ -67,7 +67,7 @@ func (a *argsReader) ReadPacket() (pktline.Packet, error) {
 // returns a wrapped [wire.ErrServerRefused] when an unknown command is
 // dispatched after emitting the structured ERR pkt-line on the wire.
 // All other errors propagate from the handler or the underlying I/O.
-func runV2CommandLoop[H objfmt.HashType](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
+func runV2CommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	for {
 		// Cancellation point between commands: the bytes for the
@@ -114,7 +114,7 @@ func runV2CommandLoop[H objfmt.HashType](ctx context.Context, r *pktline.Reader,
 //     section follows. The terminating flush of the args section is
 //     read by the handler, not by this function — matching the
 //     canonical comment at `serve.c:323-329`.
-func processV2Request[H objfmt.HashType](r *pktline.Reader, w *pktline.Writer,
+func processV2Request[H objfmt.Hash](r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) (bool, error) {
 	var (
 		commandName  string
@@ -210,7 +210,7 @@ func processV2Request[H objfmt.HashType](r *pktline.Reader, w *pktline.Writer,
 // refusal and a CommandEvent for `fetch` (or any other unimplemented
 // name) would advertise behaviour the emulator does not actually
 // implement.
-func dispatchV2[H objfmt.HashType](r *argsReader, w *pktline.Writer, store *objstore.Store[H],
+func dispatchV2[H objfmt.Hash](r *argsReader, w *pktline.Writer, store *objstore.Store[H],
 	opts Options, commandName string) error {
 	switch commandName {
 	case "":

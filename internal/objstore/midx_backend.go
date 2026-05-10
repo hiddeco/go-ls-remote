@@ -36,7 +36,7 @@ import (
 // safe for concurrent use from multiple goroutines without further
 // synchronisation. [Close] is guarded by a [sync.Once] so the cascade
 // runs exactly once.
-type midxBackend[H objfmt.HashType] struct {
+type midxBackend[H objfmt.Hash] struct {
 	commonDir string
 
 	// midx is the parsed `multi-pack-index`. The midx reader owns the
@@ -123,7 +123,7 @@ type midxBackend[H objfmt.HashType] struct {
 // resource — the midx and every (idx, pack) pair — is closed before
 // the error is returned, so a partially-constructed backend never
 // leaks file handles.
-func openMidxBackend[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*midxBackend[H], error) {
+func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBackend[H], error) {
 	packDir := filepath.Join(commonDir, "objects", "pack")
 	midxPath := filepath.Join(packDir, "multi-pack-index")
 

@@ -13,14 +13,14 @@ import (
 // store opener picks one based on the presence of `multi-pack-index`
 // and treats the rest of the lookup pipeline as backend-agnostic.
 //
-// The interface is parameterised on `H` — the [objfmt.HashType] of the
+// The interface is parameterised on `H` — the [objfmt.Hash] of the
 // owning [Store] — so [packBackend.Lookup] takes typed OIDs and the
 // returned `*objfmt.Pack[H]` and `*objfmt.Idx[H]` carry the same type
 // without the caller threading an [objfmt.Algo] through.
 //
 // All methods are safe for concurrent use by multiple goroutines once
 // the backend has been constructed.
-type packBackend[H objfmt.HashType] interface {
+type packBackend[H objfmt.Hash] interface {
 	// Lookup returns the pack and offset for h, if any. ok=false with
 	// nil err signals "not in this backend"; the caller is responsible
 	// for falling through to loose objects, alternates, or

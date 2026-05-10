@@ -54,7 +54,7 @@ func TestStorePeel_AnnotatedTagResolvesToCommit(t *testing.T) {
 
 func TestStorePeel_NonTagInputReturnsNotPeelable(t *testing.T) {
 	// Blobs, trees, and commits are not peelable; the contract is
-	// (Hash{}, false, nil) — never an error. The three-way table
+	// (zero, false, nil) — never an error. The three-way table
 	// covers each non-tag [objfmt.ObjectType] so a mis-classification
 	// in the fast path (e.g. peeling a commit) shows up as a single
 	// failing subtest rather than masking the whole sweep.
@@ -154,7 +154,7 @@ func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 	// repeated peel attempts on a non-tag OID stay O(1). The
 	// observable proof: chmod the underlying loose object unreadable
 	// after the first call; the second call still reports
-	// (Hash{}, false, nil) because it never re-reads.
+	// (zero, false, nil) because it never re-reads.
 	if os.Geteuid() == 0 {
 		t.Skip("running as root; chmod-0000 cannot block reads")
 	}
@@ -187,7 +187,7 @@ func TestStorePeel_DepthBoundCollapsesToNotPeelable(t *testing.T) {
 	// `Peel(v17)` must walk only 16 links and then surface the "not
 	// peelable" shape rather than recurse forever (or wrap an
 	// error). Per the doc, depth overrun is a non-error: callers see
-	// the same (Hash{}, false, nil) shape they get for any other
+	// the same (zero, false, nil) shape they get for any other
 	// non-peelable input.
 	s := openStoreFromFixture(t, "loose-tag-deep")
 
@@ -207,7 +207,7 @@ func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 	// "not peelable" answer was never written to the cache. Probe the
 	// invariant by removing the chain head between two `Peel` calls.
 	// If the overrun result was cached the second call returns the
-	// cached `(Hash{}, false, nil)` cleanly; if it was NOT cached the
+	// cached `(zero, false, nil)` cleanly; if it was NOT cached the
 	// second call retries `loose.Find` against the now-missing object
 	// and reports the underlying I/O failure. Confirming the second
 	// shape pins the no-cache behaviour.
@@ -221,7 +221,7 @@ func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 
 	// Delete the chain-head loose object so any uncached re-read fails
 	// loudly. If the overrun was cached the second call would return
-	// (Hash{}, false, nil) silently from the cache.
+	// (zero, false, nil) silently from the cache.
 	objPath := filepath.Join(s.loose.commonDir, "objects",
 		v17.Hex()[:2], v17.Hex()[2:])
 	require.NoError(t, os.Remove(objPath))
@@ -270,7 +270,7 @@ func TestStorePeel_DepthBoundShortChainStillResolves(t *testing.T) {
 
 func TestStorePeel_UnknownOIDIsNotAnError(t *testing.T) {
 	// Canonical Git's `peel_to_object` returns NULL for an OID it
-	// cannot find; the API mirrors that with (Hash{}, false, nil)
+	// cannot find; the API mirrors that with (zero, false, nil)
 	// rather than wrapping `os.ErrNotExist`. Callers that want a
 	// "does this OID exist" probe build it on top of `Lookup` /
 	// `Find`, not on top of Peel.

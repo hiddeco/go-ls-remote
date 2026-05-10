@@ -25,7 +25,7 @@ import (
 // and [idxCatalog.packByChecksum] are likewise safe for concurrent use
 // from multiple goroutines without further synchronisation. [Close]
 // is guarded by a [sync.Once] so the cascade runs exactly once.
-type idxCatalog[H objfmt.HashType] struct {
+type idxCatalog[H objfmt.Hash] struct {
 	commonDir string
 	algo      objfmt.Algo
 
@@ -64,7 +64,7 @@ type idxCatalog[H objfmt.HashType] struct {
 // open-time sort that matches canonical Git's `packfile.c::sort_pack`
 // heuristic (younger first); lookups themselves never re-stat the
 // file.
-type packEntry[H objfmt.HashType] struct {
+type packEntry[H objfmt.Hash] struct {
 	idx   *objfmt.Idx[H]
 	pack  *objfmt.Pack[H]
 	mtime time.Time
@@ -83,7 +83,7 @@ type packEntry[H objfmt.HashType] struct {
 // sibling) every already-opened idx and pack is closed before the
 // error is returned, so a partially-constructed catalog never leaks
 // file handles.
-func openIdxCatalog[H objfmt.HashType](commonDir string, algo objfmt.Algo) (*idxCatalog[H], error) {
+func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCatalog[H], error) {
 	packDir := filepath.Join(commonDir, "objects", "pack")
 
 	entries, err := os.ReadDir(packDir)

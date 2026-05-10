@@ -32,7 +32,7 @@ import (
 // hint from `packed-refs` is intentionally dropped on override because
 // loose ref files do not encode peel state and we have no way to verify
 // the packed peel still matches the loose OID.
-type looseRefs[H objfmt.HashType] struct {
+type looseRefs[H objfmt.Hash] struct {
 	gitDir    string                    // for HEAD reading
 	commonDir string                    // for refs/ + packed-refs reading
 	algo      objfmt.Algo               // hash algorithm bound to the store
@@ -52,7 +52,7 @@ type looseRefs[H objfmt.HashType] struct {
 // algo selects the hex width for ref OIDs (40 chars for SHA-1, 64 for
 // SHA-256) and is propagated to the packed-refs parser. The returned
 // `*looseRefs` satisfies [refBackend].
-func openLooseRefs[H objfmt.HashType](gitDir, commonDir string, algo objfmt.Algo) (*looseRefs[H], error) {
+func openLooseRefs[H objfmt.Hash](gitDir, commonDir string, algo objfmt.Algo) (*looseRefs[H], error) {
 	r := &looseRefs[H]{
 		gitDir:    gitDir,
 		commonDir: commonDir,
@@ -88,7 +88,7 @@ func openLooseRefs[H objfmt.HashType](gitDir, commonDir string, algo objfmt.Algo
 // readPackedRefsFile opens `<commonDir>/packed-refs` and returns the
 // parsed [packedRefs]. A missing file is not an error — it yields an
 // empty map and zero traits, the canonical "no packed refs yet" shape.
-func readPackedRefsFile[H objfmt.HashType](commonDir string) (packedRefs[H], error) {
+func readPackedRefsFile[H objfmt.Hash](commonDir string) (packedRefs[H], error) {
 	path := filepath.Join(commonDir, "packed-refs")
 	f, err := os.Open(path)
 	if err != nil {

@@ -32,7 +32,7 @@ const maxPeelDepth = 16
 // — "this OID is a tag whose terminal target is `peeled`" and "this
 // OID is not a peelable tag" — are cached so the second call on the
 // same OID short-circuits the object-body read in either direction.
-type peelEntry[H objfmt.HashType] struct {
+type peelEntry[H objfmt.Hash] struct {
 	// peeled is the dereferenced non-tag OID when ok is true. The zero
 	// hash when ok is false (and intentionally so: a zero peeled hash
 	// alongside ok=false is the canonical "not peelable" shape).
@@ -233,7 +233,7 @@ func (s *Store[H]) readLooseTag(oid H) (objfmt.ObjectType, []byte, bool, error) 
 // is ignored. A missing `object` or `type` line, or a malformed OID,
 // surfaces as an error wrapping [ErrCorruptObject] so callers can
 // distinguish "this tag is broken" from "this is not a tag".
-func parseTagBody[H objfmt.HashType](body []byte) (H, string, error) {
+func parseTagBody[H objfmt.Hash](body []byte) (H, string, error) {
 	var zero H
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	// Tag header lines are short; the default 64 KiB buffer is

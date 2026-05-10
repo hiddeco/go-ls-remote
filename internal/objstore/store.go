@@ -33,7 +33,7 @@ import (
 // presence of `objects/pack/multi-pack-index`. The chosen backends
 // are not switched at runtime; reopen the Store to pick up a layout
 // change.
-type Store[H objfmt.HashType] struct {
+type Store[H objfmt.Hash] struct {
 	algo       objfmt.Algo
 	refs       refBackend[H]
 	loose      *looseObjects[H]
@@ -109,7 +109,7 @@ func WithoutCRCCheck() Option {
 // Errors from each step wrap the originating sentinel
 // ([ErrNotARepo], [ErrUnsupportedFormat], [ErrAlgoMismatch]) so
 // callers can match with [errors.Is].
-func Open[H objfmt.HashType](path string, opts ...Option) (*Store[H], error) {
+func Open[H objfmt.Hash](path string, opts ...Option) (*Store[H], error) {
 	return openWithSeen[H](path, opts, map[string]bool{})
 }
 
@@ -119,7 +119,7 @@ func Open[H objfmt.HashType](path string, opts ...Option) (*Store[H], error) {
 // recursing through transitive alternates. Public callers reach this
 // through [Open] with a fresh empty set; [openAlternates] forwards its
 // growing set into recursive opens of each child store.
-func openWithSeen[H objfmt.HashType](path string, opts []Option, seen map[string]bool) (*Store[H], error) {
+func openWithSeen[H objfmt.Hash](path string, opts []Option, seen map[string]bool) (*Store[H], error) {
 	gitDir, commonDir, err := resolveGitDir(path)
 	if err != nil {
 		return nil, err
@@ -202,7 +202,7 @@ func openWithSeen[H objfmt.HashType](path string, opts []Option, seen map[string
 // transport-layer dispatch — every such callsite hard-codes `H` and
 // must match the repo it opens. Returns [ErrAlgoMismatch] wrapped
 // with the offending pair so `errors.Is` works.
-func checkHashTypeMatchesAlgo[H objfmt.HashType](algo objfmt.Algo) error {
+func checkHashTypeMatchesAlgo[H objfmt.Hash](algo objfmt.Algo) error {
 	var zero H
 	switch any(zero).(type) {
 	case objfmt.SHA1Hash:
@@ -216,7 +216,7 @@ func checkHashTypeMatchesAlgo[H objfmt.HashType](algo objfmt.Algo) error {
 				algo, ErrAlgoMismatch)
 		}
 	default:
-		// `objfmt.HashType` is sealed to the two concrete types above;
+		// `objfmt.Hash` is sealed to the two concrete types above;
 		// the default arm cannot be reached at runtime but stays as
 		// defence in depth against a future widening of the type set.
 		return fmt.Errorf("objstore: unknown H type: %w", ErrAlgoMismatch)
@@ -266,7 +266,7 @@ func (s *Store[H]) Close() error {
 // [ErrUnsupportedFormat], so the default branch here is defence in
 // depth — it would only fire if the parser ever grew a new
 // recognised value the opener had not been taught about.
-func openRefBackend[H objfmt.HashType](gitDir, commonDir string, cfg storeConfig) (refBackend[H], error) {
+func openRefBackend[H objfmt.Hash](gitDir, commonDir string, cfg storeConfig) (refBackend[H], error) {
 	switch cfg.refStorage.format {
 	case "files":
 		return openLooseRefs[H](gitDir, commonDir, cfg.algo)
@@ -283,7 +283,7 @@ func openRefBackend[H objfmt.HashType](gitDir, commonDir string, cfg storeConfig
 // per-pack `.idx` files alongside the midx for compatibility, so this
 // is a one-way preference: midx wins whenever it exists, regardless of
 // how many `.idx` files sit beside it.
-func openPackBackend[H objfmt.HashType](commonDir string, cfg storeConfig) (packBackend[H], error) {
+func openPackBackend[H objfmt.Hash](commonDir string, cfg storeConfig) (packBackend[H], error) {
 	midx := filepath.Join(commonDir, "objects", "pack", "multi-pack-index")
 	if _, err := os.Stat(midx); err == nil {
 		return openMidxBackend[H](commonDir, cfg.algo)

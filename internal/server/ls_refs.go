@@ -40,7 +40,7 @@ import (
 // pkt-line + flush. Canonical's handler `die()`s at `ls-refs.c:188`; the
 // structured error lets the dispatcher's error path surface to callers
 // without re-decoding the response stream.
-func handleLSRefs[H objfmt.HashType](r *argsReader, w *pktline.Writer,
+func handleLSRefs[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	_ = opts
 
@@ -149,7 +149,7 @@ func refuseUnknownArg(w *pktline.Writer, arg string) error {
 // [wire.RefsArgs.Peel] is set; the loose-refs HEAD does not carry a
 // packed peel hint, so the cheap `RefEntry.PeelKnown` short-circuit
 // does not apply.
-func writeLSRefsResponse[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], args wire.RefsArgs) error {
+func writeLSRefsResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], args wire.RefsArgs) error {
 	head, err := store.Head()
 	if err != nil {
 		return fmt.Errorf("server: ls-refs: resolve HEAD: %w", err)
@@ -188,7 +188,7 @@ func writeLSRefsResponse[H objfmt.HashType](w *pktline.Writer, store *objstore.S
 // `send_possibly_unborn_head` rules admit it, subject to the same
 // prefix filter that applies to non-HEAD refs (`ls-refs.c:88`'s
 // `ref_match` check fires before any other gate).
-func emitHead[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H],
+func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 	head objstore.Head[H], args wire.RefsArgs) error {
 	if !refMatch(args.Prefixes, "HEAD") {
 		return nil
@@ -248,7 +248,7 @@ func emitHead[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H],
 // `[]byte(line.String())` conversion that the previous shape
 // allocated. OID hex is appended directly into the scratch via the
 // typed `H.AppendHex` so no per-ref string allocates either.
-func formatRefLine[H objfmt.HashType](dst []byte, store *objstore.Store[H],
+func formatRefLine[H objfmt.Hash](dst []byte, store *objstore.Store[H],
 	ref objstore.RefEntry[H], args wire.RefsArgs) ([]byte, error) {
 	dst = ref.OID.AppendHex(dst)
 	dst = append(dst, ' ')
@@ -280,7 +280,7 @@ func formatRefLine[H objfmt.HashType](dst []byte, store *objstore.Store[H],
 // into the per-ref callback at `ls-refs.c::send_ref` line 88; we do
 // it at collection time so a request with a bounded prefix set
 // does not allocate a slice scaled to the entire ref namespace.
-func collectLSRefsRefs[H objfmt.HashType](store *objstore.Store[H], prefixes []string) ([]objstore.RefEntry[H], error) {
+func collectLSRefsRefs[H objfmt.Hash](store *objstore.Store[H], prefixes []string) ([]objstore.RefEntry[H], error) {
 	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {
 		if err != nil {

@@ -2,99 +2,15 @@ package objfmt
 
 import (
 	"encoding/hex"
-	"fmt"
 	"unsafe"
 )
-
-// Hash is a 32-byte buffer holding a Git object id.
-//
-// The interpretation is contextual: the owning store knows whether a
-// given Hash carries a SHA-1 or a SHA-256 id. SHA-1 ids occupy the
-// low 20 bytes and leave the high 12 bytes zero; SHA-256 ids fill all
-// 32. Defined as a fixed-size array so Hash is comparable and usable
-// directly as a Go map key — two SHA-1 ids with the same low 20 bytes
-// compare equal because the cleared high bytes match too.
-//
-// Deprecated: this single-buffer model is being replaced by the
-// per-algorithm typed values [SHA1Hash] and [SHA256Hash], which carry
-// their size in their type and remove the need to thread an [Algo]
-// through every call site. New code should use those types.
-type Hash [32]byte
-
-// IsZero reports whether h is the all-zero hash.
-//
-// Canonical Git uses the all-zero hash as the null-OID sentinel — for
-// example as the `old` value of a receive-pack ref create or the `new`
-// value of a delete — and the library follows the same convention.
-func (h Hash) IsZero() bool {
-	for _, b := range h {
-		if b != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// Hex returns the lowercase hex encoding of h interpreted under a:
-// 40 chars of the low 20 bytes for [SHA1], 64 chars of all 32 bytes
-// for [SHA256].
-func (h Hash) Hex(a Algo) string {
-	n := a.Size()
-	// Historical guard — [Algo]'s sealed interface admits only [SHA1]
-	// and [SHA256] today, both of which return a positive Size, but
-	// the check is kept defensive against a future zero-sized algo.
-	if n == 0 {
-		return ""
-	}
-	return hex.EncodeToString(h[:n])
-}
-
-// AppendHex appends the lowercase hex encoding of h interpreted under a
-// to dst and returns the extended slice: 40 chars of the low 20 bytes
-// for [SHA1], 64 chars of all 32 bytes for [SHA256].
-//
-// AppendHex pairs with [Hash.Hex] the same way `strconv.AppendInt`
-// pairs with `strconv.Itoa`: callers on a hot loop pass a scratch
-// buffer to avoid the per-call string allocation that Hex's return
-// type forces.
-func (h Hash) AppendHex(dst []byte, a Algo) []byte {
-	n := a.Size()
-	// See [Hash.Hex] for the historical-guard rationale.
-	if n == 0 {
-		return dst
-	}
-	return hex.AppendEncode(dst, h[:n])
-}
-
-// ParseHex decodes s into a Hash, requiring exactly `a.Size()*2` hex
-// characters. Bytes beyond `a.Size()` are left zero so SHA-1 ids parsed
-// this way compare equal to other SHA-1 ids with the same low 20 bytes.
-//
-// Returns an error if s has the wrong length, or if s contains non-hex
-// characters.
-func ParseHex(s string, a Algo) (Hash, error) {
-	n := a.Size()
-	// See [Hash.Hex] for the historical-guard rationale.
-	if n == 0 {
-		return Hash{}, fmt.Errorf("objfmt: unknown algo %v", a)
-	}
-	want := n * 2
-	if len(s) != want {
-		return Hash{}, fmt.Errorf("objfmt: hex %q has length %d, want %d", s, len(s), want)
-	}
-	var h Hash
-	if _, err := hex.Decode(h[:n], []byte(s)); err != nil {
-		return Hash{}, fmt.Errorf("objfmt: invalid hex: %w", err)
-	}
-	return h, nil
-}
 
 // SHA1Hash is the 20-byte object id under the SHA-1 algorithm.
 //
 // SHA1Hash carries its size in its type; methods take no [Algo]
 // argument because the type is the algorithm. Defined as a fixed-size
 // array so SHA1Hash is comparable and usable directly as a Go map key
-// — the [HashType] constraint relies on this for generic ref and peel
+// — the [Hash] constraint relies on this for generic ref and peel
 // caches keyed by object id.
 type SHA1Hash [20]byte
 
@@ -103,8 +19,8 @@ type SHA1Hash [20]byte
 // its byte length.
 type SHA256Hash [32]byte
 
-// HashType is the type-set constraint that admits both concrete hash
-// types. Generic code that operates on either uses `[H HashType]`.
+// Hash is the type-set constraint that admits both concrete hash
+// types. Generic code that operates on either uses `[H Hash]`.
 //
 // The `comparable` bound is required so generic code can use H as a
 // Go map key — a type set of comparable types does not auto-satisfy
@@ -114,12 +30,7 @@ type SHA256Hash [32]byte
 // alongside the type union so generic callers can invoke the typed
 // hex / zero-check methods on `H` without a per-callsite type switch.
 // Both [SHA1Hash] and [SHA256Hash] satisfy this method set.
-//
-// HashType is a temporary placeholder name. The legacy [Hash] array
-// type still occupies the `Hash` identifier; once every consumer has
-// migrated to [SHA1Hash] and [SHA256Hash] and the legacy array is
-// deleted, this constraint takes over the [Hash] name.
-type HashType interface {
+type Hash interface {
 	comparable
 	SHA1Hash | SHA256Hash
 
@@ -186,6 +97,6 @@ func (h SHA256Hash) Bytes() []byte { return h[:] }
 // For the typed-public APIs ([SHA1Hash.Bytes], [SHA256Hash.Bytes])
 // continue to use the by-copy form: their `[:]` form is inherently
 // safer because the copy lives on the caller's stack.
-func hashBytes[H HashType](h *H) []byte {
+func hashBytes[H Hash](h *H) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(h)), len(*h))
 }

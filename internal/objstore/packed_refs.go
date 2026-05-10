@@ -18,7 +18,7 @@ import (
 // The same shape is reused for loose refs that override packed entries —
 // loose ref files never carry peel information, so peelKnown is always
 // false in that case and peeled is the zero hash.
-type packedEntry[H objfmt.HashType] struct {
+type packedEntry[H objfmt.Hash] struct {
 	// oid is the resolved object id of the ref's terminal target.
 	oid H
 
@@ -73,7 +73,7 @@ type packedTraits struct {
 // map keyed by fully-qualified ref name, plus the header-derived
 // [packedTraits]. The zero value is the canonical "empty packed-refs"
 // shape returned when the file is absent.
-type packedRefs[H objfmt.HashType] struct {
+type packedRefs[H objfmt.Hash] struct {
 	refs   map[string]packedEntry[H]
 	traits packedTraits
 }
@@ -102,7 +102,7 @@ type packedRefs[H objfmt.HashType] struct {
 // lines (wrong hex length, no separator, `^` with no preceding ref,
 // duplicate peel) surface as an error wrapping [ErrCorruptObject], with
 // the offending line number and text included for diagnostics.
-func parsePackedRefs[H objfmt.HashType](r io.Reader) (packedRefs[H], error) {
+func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 	out := packedRefs[H]{refs: make(map[string]packedEntry[H])}
 
 	scanner := bufio.NewScanner(r)

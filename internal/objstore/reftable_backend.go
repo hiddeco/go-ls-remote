@@ -27,7 +27,7 @@ import (
 // stack itself is held open for [reftableBackend.IterRefs] (which
 // re-walks the cached merged view on every call) and released by
 // [reftableBackend.Close].
-type reftableBackend[H objfmt.HashType] struct {
+type reftableBackend[H objfmt.Hash] struct {
 	gitDir, commonDir, location string
 	stack                       *reftable.Stack[H]
 	head                        Head[H]
@@ -50,7 +50,7 @@ type reftableBackend[H objfmt.HashType] struct {
 // [reftable.OpenReader]; opening a SHA-256 reftable as a SHA-1 backend
 // (or vice versa) surfaces as [reftable.ErrMixedHashAlgo] before any
 // record reaches the lift.
-func openReftableBackend[H objfmt.HashType](gitDir, commonDir, location string) (*reftableBackend[H], error) {
+func openReftableBackend[H objfmt.Hash](gitDir, commonDir, location string) (*reftableBackend[H], error) {
 	reftableDir := resolveReftableDir(gitDir, commonDir, location)
 
 	stack, err := reftable.OpenStack[H](reftableDir)
@@ -105,7 +105,7 @@ func resolveReftableDir(gitDir, commonDir, location string) string {
 //     OID populated.
 //   - both empty — corruption (an on-disk record that is neither a
 //     symref nor a value record cannot be interpreted).
-func resolveReftableHead[H objfmt.HashType](stack *reftable.Stack[H]) (Head[H], error) {
+func resolveReftableHead[H objfmt.Hash](stack *reftable.Stack[H]) (Head[H], error) {
 	rec, found, err := stack.FindRef("HEAD")
 	if err != nil {
 		return Head[H]{}, fmt.Errorf("objstore: read HEAD: %w", err)
@@ -204,7 +204,7 @@ func (b *reftableBackend[H]) Lookup(name string) (RefEntry[H], bool, error) {
 // and a set slot means "peels to this OID"), so callers never need to
 // fall through to an object-body read for refs the reftable backend
 // resolves.
-func refEntryFromReftable[H objfmt.HashType](rec reftable.RefRecord[H]) RefEntry[H] {
+func refEntryFromReftable[H objfmt.Hash](rec reftable.RefRecord[H]) RefEntry[H] {
 	return RefEntry[H]{
 		Name:      rec.Name,
 		OID:       rec.Value,

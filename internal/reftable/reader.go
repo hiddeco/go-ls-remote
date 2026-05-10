@@ -34,7 +34,7 @@ import (
 // surface in [Stack] hides update_index by construction. A future
 // caller (status, reflog) that needs the field should add it here
 // rather than re-deriving it.
-type RefRecord[H objfmt.HashType] struct {
+type RefRecord[H objfmt.Hash] struct {
 	Name      string
 	Value     H
 	TargetRef string
@@ -64,7 +64,7 @@ type RefRecord[H objfmt.HashType] struct {
 // drain in-flight reads before closing and serialize Close calls. Once
 // drained, Close is idempotent — a second call returns nil without
 // touching the OS.
-type Reader[H objfmt.HashType] struct {
+type Reader[H objfmt.Hash] struct {
 	mmap   *mmap.ReaderAt
 	file   []byte
 	header header
@@ -91,7 +91,7 @@ type Reader[H objfmt.HashType] struct {
 // On any error after the open succeeds, the mapping is closed before
 // the error is returned; callers do not need to call [Reader.Close]
 // on a failed open.
-func OpenReader[H objfmt.HashType](path string) (*Reader[H], error) {
+func OpenReader[H objfmt.Hash](path string) (*Reader[H], error) {
 	rdr, err := mmap.Open(path)
 	if err != nil {
 		return nil, err
@@ -329,7 +329,7 @@ func (r *Reader[H]) FindRef(name string) (RefRecord[H], bool, error) {
 // public [RefRecord]. Per-value-type fields are populated only for the
 // types that carry them; tombstones (value_type=0) lift to the zero
 // RefRecord and are filtered upstream rather than surfaced as records.
-func liftRefRecord[H objfmt.HashType](r refRecord[H]) RefRecord[H] {
+func liftRefRecord[H objfmt.Hash](r refRecord[H]) RefRecord[H] {
 	out := RefRecord[H]{Name: r.Name}
 	switch r.ValueType {
 	case refValueSingle:

@@ -105,7 +105,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 // wiring, and the goroutine spawn; the dispatch in [Transport.open]
 // picks the type parameter based on the algo discovered from the
 // repo config.
-func openTyped[H objfmt.HashType](ctx context.Context, t *Transport, opts transport.OpenOptions,
+func openTyped[H objfmt.Hash](ctx context.Context, t *Transport, opts transport.OpenOptions,
 	path, redacted string, preferred transport.ProtocolVersion) (transport.Conn, error) {
 	store, err := objstore.Open[H](path)
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 // store opener picks one or the other based on `extensions.refStorage`
 // and treats the rest of the lookup pipeline as backend-agnostic.
 //
-// The interface is parameterised on `H` — the [objfmt.HashType] of the
+// The interface is parameterised on `H` — the [objfmt.Hash] of the
 // owning [Store] — so [refBackend.Head], [refBackend.IterRefs], and
 // [refBackend.Lookup] return typed [Head] / [RefEntry] values without
 // reaching back through the [objfmt.Algo] interface for hex
@@ -21,7 +21,7 @@ import (
 // All methods are safe for concurrent use by multiple goroutines once
 // the backend has been constructed; mutation of the underlying on-disk
 // state is out of scope for this library.
-type refBackend[H objfmt.HashType] interface {
+type refBackend[H objfmt.Hash] interface {
 	// Head returns the resolved [Head] of the repository.
 	Head() (Head[H], error)
 
@@ -51,7 +51,7 @@ type refBackend[H objfmt.HashType] interface {
 // Unborn signals the canonical "symbolic ref points at a branch with
 // no commits yet" shape — the only state where neither field is
 // meaningful on its own and the caller must special-case the response.
-type Head[H objfmt.HashType] struct {
+type Head[H objfmt.Hash] struct {
 	// Symref is the fully-qualified target of a symbolic HEAD, e.g.
 	// `refs/heads/main`. Empty for a detached HEAD.
 	Symref string
@@ -71,7 +71,7 @@ type Head[H objfmt.HashType] struct {
 // id. Symbolic refs other than `HEAD` are dereferenced to their
 // terminal OID before being yielded; the iterator never surfaces
 // `ref: ...` payloads.
-type RefEntry[H objfmt.HashType] struct {
+type RefEntry[H objfmt.Hash] struct {
 	// Name is the fully-qualified ref name, e.g. `refs/heads/main`,
 	// `refs/tags/v1.0`, `refs/remotes/origin/main`.
 	Name string

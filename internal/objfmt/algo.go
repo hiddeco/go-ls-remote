@@ -124,13 +124,13 @@ func ParseSHA256Hex(s string) (SHA256Hash, error) { return sha256Algo{}.ParseHex
 // abstractly use this helper to dispatch to the correct concrete
 // parser without a per-callsite type switch.
 //
-// The dispatch is bounded by the [HashType] type set: H is statically
+// The dispatch is bounded by the [Hash] type set: H is statically
 // one of [SHA1Hash] or [SHA256Hash], so the switch covers every
 // possible instantiation. The default arm exists only as defence in
 // depth — it cannot be reached at runtime — and returns an error
 // rather than panicking so a future widening of the type set surfaces
 // at a callsite boundary instead of mid-loop.
-func ParseHexAs[H HashType](s string) (H, error) {
+func ParseHexAs[H Hash](s string) (H, error) {
 	var zero H
 	switch any(zero).(type) {
 	case SHA1Hash:

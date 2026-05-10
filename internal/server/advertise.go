@@ -42,7 +42,7 @@ import (
 //     `serve.c::object_format_advertise` lines 53-58.
 //   - `object-info` — boolean, no `=value`. Canonical reference:
 //     `serve.c::object_info_advertise` lines 92-101.
-func writeV2Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
+func writeV2Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	if err := w.WritePacket([]byte("version 2\n")); err != nil {
 		return fmt.Errorf("server: write v2 version line: %w", err)
 	}
@@ -99,7 +99,7 @@ func writeV2Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.
 // [objstore.Store.Peel] otherwise. The peel is suppressed when the
 // resolved peel hash is zero, matching `reference_get_peeled_oid`'s
 // "no peel" return at `upload-pack.c:1268-1270`.
-func writeV0Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
+func writeV0Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	head, err := store.Head()
 	if err != nil {
 		return fmt.Errorf("server: resolve HEAD: %w", err)
@@ -196,7 +196,7 @@ func writeV0Advertisement[H objfmt.HashType](w *pktline.Writer, store *objstore.
 // advertisement. The caller frames it into the first ref's pkt-line.
 // Order matches `write_v0_ref` at `upload-pack.c:1249-1262` reduced
 // to the emulator's discovery-only subset.
-func buildV0Caps[H objfmt.HashType](head objstore.Head[H], algo objfmt.Algo, opts Options) string {
+func buildV0Caps[H objfmt.Hash](head objstore.Head[H], algo objfmt.Algo, opts Options) string {
 	var b strings.Builder
 	if head.Symref != "" {
 		b.WriteString("symref=HEAD:")
@@ -219,7 +219,7 @@ func buildV0Caps[H objfmt.HashType](head objstore.Head[H], algo objfmt.Algo, opt
 // by name in C-locale byte order. `gitprotocol-pack.adoc:201-203`
 // requires the wire output to be C-sorted; canonical Git delivers
 // this through `for_each_namespaced_ref_1`'s merged sorted view.
-func collectV0Refs[H objfmt.HashType](store *objstore.Store[H]) ([]objstore.RefEntry[H], error) {
+func collectV0Refs[H objfmt.Hash](store *objstore.Store[H]) ([]objstore.RefEntry[H], error) {
 	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {
 		if err != nil {
@@ -239,7 +239,7 @@ func collectV0Refs[H objfmt.HashType](store *objstore.Store[H]) ([]objstore.RefE
 // reading the object body. The bool follows
 // [objstore.Store.Peel]'s convention: false means "no peel known"
 // (the caller skips emitting `^{}`).
-func refPeel[H objfmt.HashType](store *objstore.Store[H], ref objstore.RefEntry[H]) (H, bool, error) {
+func refPeel[H objfmt.Hash](store *objstore.Store[H], ref objstore.RefEntry[H]) (H, bool, error) {
 	if ref.PeelKnown {
 		return ref.Peeled, !ref.Peeled.IsZero(), nil
 	}

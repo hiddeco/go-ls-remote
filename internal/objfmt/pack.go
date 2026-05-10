@@ -21,7 +21,7 @@ import (
 // A Pack is safe for concurrent reads from multiple goroutines once
 // constructed: every method is keyed on an offset and the underlying
 // `packReader` permits concurrent [io.ReaderAt.ReadAt] calls.
-type Pack[H HashType] struct {
+type Pack[H Hash] struct {
 	r    packReader
 	algo Algo
 	ver  uint32
@@ -56,7 +56,7 @@ type Pack[H HashType] struct {
 // [SHA256Hash]. The caller is responsible for the pairing; mismatched
 // instantiations are not detected here because callsites that go
 // through `objstore` already gate on the discovered repo algo.
-func OpenPack[H HashType](path string, algo Algo) (*Pack[H], error) {
+func OpenPack[H Hash](path string, algo Algo) (*Pack[H], error) {
 	if algo == nil {
 		return nil, fmt.Errorf("objfmt: nil algo: %w", ErrUnsupportedAlgo)
 	}
