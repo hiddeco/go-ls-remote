@@ -83,6 +83,42 @@ func BenchmarkWriter_WritePacket(b *testing.B) {
 	}
 }
 
+func BenchmarkWriter_WriteLine(b *testing.B) {
+	// 60-byte payload representative of a v2 ref-advertisement line
+	// (`<oid> <refname>`). The string is copied directly into the
+	// writer's scratch buffer with no intermediate concatenation or
+	// `[]byte` conversion.
+	const line = "9c52d0f2bbc8e3a141b1c0c83f7d5e6a2b3c4d5e refs/heads/main"
+	w := NewWriter(io.Discard)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if err := w.WriteLine(line); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWriter_WriteLineParts(b *testing.B) {
+	// Two-part 60-byte payload representative of the same line shape
+	// the encoders build, where the oid and the refname arrive as
+	// separate strings the caller would otherwise concatenate.
+	const (
+		oid  = "9c52d0f2bbc8e3a141b1c0c83f7d5e6a2b3c4d5e "
+		name = "refs/heads/main"
+	)
+	w := NewWriter(io.Discard)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if err := w.WriteLineParts(oid, name); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkParseHexLength and BenchmarkParseHexLength_Strconv compare
 // the hand-rolled four-byte hex parser against `strconv.ParseUint`.
 // The hand-rolled version exists to avoid the per-call `string(b)`

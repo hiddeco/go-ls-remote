@@ -76,6 +76,86 @@ func (w *Writer) WritePacket(p []byte) error {
 	return nil
 }
 
+// WriteLine emits a data packet whose payload is s followed by a
+// trailing `'\n'`. The string is copied directly into the writer's
+// reused scratch buffer, avoiding the string-concatenation and
+// `[]byte` conversion a caller would otherwise need to feed
+// [Writer.WritePacket]. The empty string yields the on-wire bytes
+// `0005\n`.
+//
+// The cap check, tracer emission, and underlying-write error
+// propagation match [Writer.WritePacket]: a wrapped [ErrPayloadTooLarge]
+// is returned if `len(s) + 1 > [MaxPayload]`, and on success the same
+// reused `*trace.PacketEvent` is delivered to the configured tracer
+// with Bytes pointing at the payload slice (including the trailing
+// newline) — see the lifetime contract on [trace.PacketEvent].
+func (w *Writer) WriteLine(s string) error {
+	payloadLen := len(s) + 1
+	if payloadLen > MaxPayload {
+		return fmt.Errorf("%w: %d > %d", ErrPayloadTooLarge, payloadLen, MaxPayload)
+	}
+	total := 4 + payloadLen
+	if cap(w.out) < total {
+		w.out = make([]byte, total)
+	} else {
+		w.out = w.out[:total]
+	}
+	encodeHexLength(w.out[:4], total)
+	copy(w.out[4:], s)
+	w.out[total-1] = '\n'
+	if _, err := w.dst.Write(w.out); err != nil {
+		return err
+	}
+	w.emit(Data, w.out[4:total])
+	return nil
+}
+
+// WriteLineParts emits a data packet whose payload is the concatenation
+// of parts followed by a trailing `'\n'`. Each part is copied into
+// successive offsets of the writer's reused scratch buffer, avoiding
+// the intermediate string the caller would otherwise build to feed
+// [Writer.WritePacket]. An empty parts list yields the on-wire bytes
+// `0005\n`.
+//
+// The cap check, tracer emission, and underlying-write error
+// propagation match [Writer.WritePacket]: a wrapped [ErrPayloadTooLarge]
+// is returned if the sum of part lengths plus one exceeds [MaxPayload],
+// and on success the configured tracer receives a [trace.PacketEvent]
+// whose Bytes is the concatenated payload (including the trailing
+// newline).
+//
+// Callers should pass a fixed, small number of parts; the Go compiler
+// stack-allocates the variadic backing array for fixed call sites,
+// keeping the call alloc-free. An unbounded `parts...` explosion forces
+// a heap allocation for the slice header and defeats the point of this
+// primitive.
+func (w *Writer) WriteLineParts(parts ...string) error {
+	payloadLen := 1 // trailing '\n'
+	for _, p := range parts {
+		payloadLen += len(p)
+	}
+	if payloadLen > MaxPayload {
+		return fmt.Errorf("%w: %d > %d", ErrPayloadTooLarge, payloadLen, MaxPayload)
+	}
+	total := 4 + payloadLen
+	if cap(w.out) < total {
+		w.out = make([]byte, total)
+	} else {
+		w.out = w.out[:total]
+	}
+	encodeHexLength(w.out[:4], total)
+	off := 4
+	for _, p := range parts {
+		off += copy(w.out[off:], p)
+	}
+	w.out[total-1] = '\n'
+	if _, err := w.dst.Write(w.out); err != nil {
+		return err
+	}
+	w.emit(Data, w.out[4:total])
+	return nil
+}
+
 // WriteFlush emits the flush control packet, on-wire `0000`.
 func (w *Writer) WriteFlush() error { return w.writeControl("0000", Flush) }
 
