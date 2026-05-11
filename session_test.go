@@ -16,6 +16,7 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // openObjectInfoFixture builds an on-disk store rooted at a fresh
@@ -243,6 +244,99 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 			"client-side prefix filter on v0 must drop HEAD; got %q", ref.Name)
 		assert.Contains(t, ref.Name, "refs/heads/",
 			"every retained ref must carry the requested prefix; got %q", ref.Name)
+	}
+}
+
+// TestSession_Refs_v0_SymrefsFalseLeavesEmpty pins that the default
+// RefsRequest{} on a v0 session yields every ref with an empty
+// Ref.Symref — callers that do not opt in to symref resolution must not
+// observe the capability-level mapping.
+func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
+	store, _ := openObjectInfoFixture(t)
+	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
+	defer srv.Close()
+
+	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.Equal(t, ProtocolV0, s.Capabilities().Version)
+
+	// Default request does not set Symrefs; every yielded ref must have
+	// an empty Symref, even HEAD whose capability-level mapping is
+	// `symref=HEAD:refs/heads/main`.
+	seq, err := s.Refs(context.Background(), RefsRequest{})
+	require.NoError(t, err)
+	var got []Ref
+	for ref, err := range seq {
+		require.NoError(t, err)
+		got = append(got, ref)
+	}
+	require.NotEmpty(t, got)
+	for _, ref := range got {
+		assert.Empty(t, ref.Symref,
+			"Symrefs: false must yield empty Ref.Symref; got %q on %q",
+			ref.Symref, ref.Name)
+	}
+}
+
+// TestSession_Refs_v0_SymrefsFlagFillsRefSymref pins that
+// RefsRequest{Symrefs: true} on a v0 session post-fills Ref.Symref
+// from Capabilities.Symrefs, unifying the call-site experience with
+// v2. The fixture advertises `symref=HEAD:refs/heads/main`, so HEAD
+// must carry Symref == "refs/heads/main" when the flag is set.
+func TestSession_Refs_v0_SymrefsFlagFillsRefSymref(t *testing.T) {
+	store, _ := openObjectInfoFixture(t)
+	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
+	defer srv.Close()
+
+	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.Equal(t, ProtocolV0, s.Capabilities().Version)
+
+	seq, err := s.Refs(context.Background(), RefsRequest{Symrefs: true})
+	require.NoError(t, err)
+	var sawHEAD bool
+	for ref, err := range seq {
+		require.NoError(t, err)
+		if ref.Name == "HEAD" {
+			assert.Equal(t, "refs/heads/main", ref.Symref,
+				"Symrefs: true on v0 must post-fill Ref.Symref from "+
+					"Capabilities.Symrefs; HEAD must carry refs/heads/main")
+			sawHEAD = true
+		}
+	}
+	assert.True(t, sawHEAD,
+		"v0 advertisement must include HEAD so the symref assertion fires")
+}
+
+// TestSession_Refs_v0_NoSymrefsCapability pins the no-capability edge
+// case: when the v0 advertisement carries no `symref=` capability,
+// RefsRequest{Symrefs: true} must yield refs with an empty Ref.Symref
+// rather than synthesising data. The stub uses
+// buildV0NoSymrefAdvertisement, which emits HEAD with no symref cap.
+func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
+	advBytes := buildV0NoSymrefAdvertisement(t)
+	conn := &stubConn{
+		adv: pktline.NewReader(bytes.NewReader(advBytes)),
+	}
+	cap := &captureTransport{schemes: []string{"file"}, conn: conn}
+	reg := transport.NewRegistry(cap)
+	s, err := Dial(context.Background(), "file:///stub",
+		WithTransports(reg))
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+	require.Equal(t, ProtocolV0, s.Capabilities().Version)
+
+	// No symref capability in the advertisement; Symrefs: true must
+	// still yield refs with empty Symref rather than injecting data.
+	seq, err := s.Refs(context.Background(), RefsRequest{Symrefs: true})
+	require.NoError(t, err)
+	for ref, err := range seq {
+		require.NoError(t, err)
+		assert.Empty(t, ref.Symref,
+			"no symref= capability means Ref.Symref must be empty even "+
+				"with Symrefs: true; got %q on %q", ref.Symref, ref.Name)
 	}
 }
 

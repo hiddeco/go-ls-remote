@@ -91,12 +91,18 @@ func (s *Session) Capabilities() Capabilities {
 // On v0/v1 the wire has no `ls-refs` equivalent: the full ref
 // advertisement has already been consumed by [Dial] and cached on the
 // Session. Refs filters that cached slice by [RefsRequest.Prefixes]
-// client-side and yields the survivors. [RefsRequest.Peel],
-// [RefsRequest.Symrefs], and [RefsRequest.Unborn] are no-ops on
-// v0/v1: peeled-tag information rides inline on the v0/v1
-// advertisement regardless, symref targets surface on
-// [Capabilities.Symrefs] rather than per-ref, and v0/v1 has no
-// unborn-`HEAD` wire representation.
+// client-side and yields the survivors. [RefsRequest.Peel] and
+// [RefsRequest.Unborn] are still no-ops on v0/v1: peeled-tag
+// information rides inline on the v0/v1 advertisement regardless, and
+// v0/v1 has no unborn-`HEAD` wire representation.
+//
+// [RefsRequest.Symrefs] is honoured client-side on v0/v1 even though
+// it has no wire effect: when the flag is true the library post-fills
+// [Ref.Symref] on each yielded ref from [Capabilities.Symrefs],
+// unifying the call-site experience with v2. When the flag is false,
+// [Ref.Symref] is always empty on yielded refs, regardless of what the
+// advertisement carried. [Capabilities.Symrefs] remains populated in
+// both cases for callers who prefer the capability-level view.
 //
 // The returned error is non-nil only when the v2 command request
 // itself fails before any response bytes are consumed (for example a
@@ -116,17 +122,66 @@ func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, er
 // `args.Prefixes`. Used by the v0/v1 paths where the wire has no
 // equivalent of `ls-refs` and the full ref list was already captured
 // at [Dial] time.
+//
+// When `args.Symrefs` is true, the yielded [Ref.Symref] is populated
+// from the capability-level advertisement (`s.caps.Symrefs`) for any
+// ref whose name appears in that list — matching the v0/v1 wire shape
+// described in `connect.c::parse_one_symref_info`. This unifies the
+// call-site experience with v2, where the `symrefs` argument to
+// `ls-refs` causes the server to include per-ref symref targets inline.
+//
+// When `args.Symrefs` is false, [Ref.Symref] is always empty on the
+// yielded copy, even when the underlying advertisement carried the
+// information. This preserves the pre-existing contract: the symref
+// mapping is available at all times on [Capabilities.Symrefs] for
+// callers who prefer that view, but per-ref fields are opt-in.
+//
+// The cached [Session.refs] slice is never mutated; only the copy
+// that is passed to yield is adjusted.
 func (s *Session) refsCached(args RefsRequest) iter.Seq2[Ref, error] {
 	return func(yield func(Ref, error) bool) {
 		for _, ref := range s.refs {
 			if !matchPrefixes(ref.Name, args.Prefixes) {
 				continue
 			}
-			if !yield(ref, nil) {
+			out := ref
+			if args.Symrefs {
+				// Post-fill Ref.Symref from the capability-level
+				// advertisement when the caller opted in. The wire layer
+				// already applies symrefs to RawRef at parse time (via
+				// `connect.c::annotate_refs_with_symref_info`), so the
+				// cached entry carries the value; we expose it here only
+				// when Symrefs is set, matching the opt-in semantics of
+				// the v2 path.
+				if out.Symref == "" {
+					out.Symref = s.symrefTarget(ref.Name)
+				}
+			} else {
+				// Clear any capability-level symref that rode in from
+				// the wire cache so callers that did not request symref
+				// resolution observe an empty field.
+				out.Symref = ""
+			}
+			if !yield(out, nil) {
 				return
 			}
 		}
 	}
+}
+
+// symrefTarget returns the capability-level symref target for name,
+// matching the v0/v1 advertisement shape captured in
+// `connect.c::parse_one_symref_info` (lines 183-207). A linear scan
+// is acceptable because Capabilities.Symrefs is typically tiny on
+// v0/v1 servers — often just `HEAD → refs/heads/main`. Returns the
+// empty string when no entry matches.
+func (s *Session) symrefTarget(name string) string {
+	for _, sr := range s.caps.Symrefs {
+		if sr.Name == name {
+			return sr.Target
+		}
+	}
+	return ""
 }
 
 // refsV2 issues an `ls-refs` command and returns an iterator over the

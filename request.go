@@ -28,9 +28,12 @@ package lsremote
 //   - [RefsRequest.Symrefs] asks the server to disclose symref targets
 //     alongside each [Ref]. On v2 it maps to the `symrefs` argument
 //     to `ls-refs` and surfaces inline on [Ref.Symref]. On v0/v1 the
-//     same information is advertised at capability level and surfaces
-//     on [Capabilities.Symrefs] instead, so this flag has no wire
-//     effect there.
+//     flag has no wire effect (the symref info already rides on the
+//     capability list), but the library post-fills [Ref.Symref] from
+//     [Capabilities.Symrefs] when the flag is set, unifying the
+//     call-site experience with v2. When the flag is not set on v0/v1,
+//     [Ref.Symref] is always empty; the raw mapping remains available
+//     on [Capabilities.Symrefs] regardless.
 //   - [RefsRequest.Unborn] asks a v2 server to advertise an unborn
 //     `HEAD` — a `HEAD` whose target ref exists but holds no commit
 //     yet. The flag maps to the `unborn` argument to `ls-refs` and is
@@ -53,8 +56,9 @@ type RefsRequest struct {
 
 	// Symrefs asks the server to disclose symref targets alongside
 	// each [Ref]. On v2 this maps to the `symrefs` argument and
-	// surfaces on [Ref.Symref]. On v0/v1 the same information is
-	// advertised at capability level on [Capabilities.Symrefs].
+	// surfaces on [Ref.Symref]. On v0/v1 the flag has no wire effect,
+	// but the library post-fills [Ref.Symref] from
+	// [Capabilities.Symrefs] when the flag is set.
 	Symrefs bool
 
 	// Unborn asks a v2 server to advertise an unborn `HEAD`. The
