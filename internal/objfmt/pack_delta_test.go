@@ -85,8 +85,21 @@ func TestPack_ReadDeltaHeader_AllocsAfterWarmup(t *testing.T) {
 	// was 10 allocs/op; the budget here is set to fail loudly on a
 	// regression to the unpooled cold path while leaving headroom
 	// for stdlib churn in the reset-internal allocations.
-	const maxAllocs = 5
-	if avg > maxAllocs {
+	//
+	// The `-race` budget carries one extra alloc because race
+	// instrumentation perturbs `sync.Pool`'s steady state: the
+	// extra heap pressure from the race runtime triggers GCs more
+	// frequently, `sync.Pool` discards per-P entries on every GC
+	// cycle (`sync/pool.go::poolCleanup`), and the cold path
+	// (`zlib.NewReader`) fires periodically as a result. The
+	// inflation is a runtime characteristic, not a regression in
+	// the hot path; the non-race budget continues to pin the
+	// production shape.
+	maxAllocs := 5
+	if raceEnabled {
+		maxAllocs = 6
+	}
+	if avg > float64(maxAllocs) {
 		t.Fatalf("post-warmup allocs/op = %.1f, want <= %d (regression)",
 			avg, maxAllocs)
 	}
