@@ -104,6 +104,30 @@ func httpHandler[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) http.Han
 	}
 }
 
+// NewHTTPSServer returns the base URL of an in-process smart-HTTP
+// server backed by [httptest.NewTLSServer] alongside an [*http.Client]
+// preconfigured to trust the server's self-signed certificate. The
+// server mounts store at `/repo.git` and routes requests through the
+// same handler [NewHTTPServer] uses, so the wire shape is byte-for-byte
+// identical between the two harnesses.
+//
+// HTTPS is a distinct harness rather than a [NewHTTPServer] option
+// because it has caller-side crypto state (the cert pool) that the
+// client must adopt. The returned client is wired through
+// `transport/http.WithClient`; callers building a [transport.Registry]
+// pass it to `httpt.New(httpt.WithClient(client))` so the dial honours
+// the test cert.
+//
+// The generic parameter H is inferred from store; cross-fixture
+// callers that iterate [Entries] type-switch on [Entry.ObjectFormat]
+// once and call this function with the matching concrete store.
+func NewHTTPSServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) (string, *http.Client) {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(httpHandler(t, store)))
+	t.Cleanup(srv.Close)
+	return srv.URL, srv.Client()
+}
+
 // NewHTTPRedirectServer returns the base URL of an in-process server
 // that responds with status and a `Location: location` header for
 // every request, regardless of method or path. It is the minimal
