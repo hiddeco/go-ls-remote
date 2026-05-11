@@ -178,7 +178,8 @@ func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, 
 
 // Tags is a shorthand for [Refs] restricted to `refs/tags/` with
 // `Peel` set so annotated tags carry their peeled commit id on
-// [Ref.Peeled].
+// [Ref.Peeled]. Tags do not carry symref targets, so [Ref.Symref] is
+// always empty on every ref yielded by this iterator.
 func Tags(ctx context.Context, rawURL string,
 	opts ...Option) (iter.Seq2[Ref, error], error) {
 	return Refs(ctx, rawURL, RefsRequest{

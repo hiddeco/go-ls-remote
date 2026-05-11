@@ -74,6 +74,12 @@ type Session struct {
 //
 // The fields are populated per the rules documented on [Capabilities]
 // itself.
+//
+// # Allocation
+//
+// `Capabilities` allocates a fresh deep copy on every call. Callers in
+// hot loops should cache the returned value rather than calling this
+// method repeatedly.
 func (s *Session) Capabilities() Capabilities {
 	return cloneCapabilities(s.caps)
 }
@@ -245,6 +251,12 @@ func (s *Session) ListRefs(ctx context.Context, args RefsRequest) ([]Ref, error)
 // itself. The library cannot distinguish a real zero-byte blob from a
 // size the server elided on a Size-requested call, so a returned
 // `Size == 0` is left as-is in the Size-requested branch.
+//
+// `ObjectInfo` returns a slice, not an iterator, because the response
+// is bounded by the caller-supplied `oids` count and can be safely
+// materialised in memory. `Session.Refs`, by contrast, returns an
+// iterator: an `ls-refs` response can be arbitrarily large and should
+// be streamed rather than buffered.
 func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 	args ObjectInfoRequest) ([]ObjectInfo, error) {
 	if s.caps.Version != ProtocolV2 {
