@@ -365,7 +365,6 @@ func cloneCapabilities(c Capabilities) Capabilities {
 		Commands:       slices.Clone(c.Commands),
 		LSRefsArgs:     slices.Clone(c.LSRefsArgs),
 		ObjectInfoArgs: slices.Clone(c.ObjectInfoArgs),
-		FetchArgs:      slices.Clone(c.FetchArgs),
 		Symrefs:        slices.Clone(c.Symrefs),
 	}
 	if c.Raw != nil {

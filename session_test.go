@@ -100,7 +100,6 @@ func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
 	c1.Commands = append(c1.Commands, "ADDED-CMD")
 	c1.LSRefsArgs = append(c1.LSRefsArgs, "ADDED-LSREFS-ARG")
 	c1.ObjectInfoArgs = append(c1.ObjectInfoArgs, "ADDED-OI-ARG")
-	c1.FetchArgs = append(c1.FetchArgs, "ADDED-FETCH-ARG")
 	c1.Symrefs = append(c1.Symrefs, Symref{Name: "ADDED", Target: "ADDED-TGT"})
 	c1.Raw["agent"] = []string{"MUTATED-AGENT"}
 	c1.Raw["MUTATED-KEY"] = []string{"x"}
@@ -112,7 +111,6 @@ func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
 		"appending to the returned Commands must not extend the snapshot")
 	assert.NotContains(t, c2.LSRefsArgs, "ADDED-LSREFS-ARG")
 	assert.NotContains(t, c2.ObjectInfoArgs, "ADDED-OI-ARG")
-	assert.NotContains(t, c2.FetchArgs, "ADDED-FETCH-ARG")
 	for _, sr := range c2.Symrefs {
 		assert.NotEqual(t, "ADDED", sr.Name)
 	}

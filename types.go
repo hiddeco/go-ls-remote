@@ -128,11 +128,12 @@ const (
 //     advertised under the `command=` capability. It is empty for
 //     v0/v1 handshakes, where command-style negotiation does not
 //     exist.
-//   - [Capabilities.LSRefsArgs], [Capabilities.ObjectInfoArgs], and
-//     [Capabilities.FetchArgs] list the per-command arguments the
-//     server claims to accept for `ls-refs`, `object-info`, and
-//     `fetch` respectively. [Capabilities.FetchArgs] is recorded for
-//     completeness; the library never issues a `fetch`.
+//   - [Capabilities.LSRefsArgs] and [Capabilities.ObjectInfoArgs] list
+//     the per-command arguments the server claims to accept for
+//     `ls-refs` and `object-info` respectively. The `fetch` command's
+//     argument list is not exposed as a typed field — the library never
+//     issues `fetch`, and callers that want the advertised arg list can
+//     read `Capabilities.Raw["fetch"]` verbatim.
 //   - [Capabilities.Symrefs] lists `HEAD → refs/heads/...` style
 //     mappings advertised in the v0/v1 capability list. v2 servers
 //     surface symrefs inline on each [Ref] instead, so this slice
@@ -180,11 +181,6 @@ type Capabilities struct {
 	// ObjectInfoArgs lists the per-command arguments the server
 	// accepts on `object-info`.
 	ObjectInfoArgs []string
-
-	// FetchArgs lists the per-command arguments the server
-	// accepts on `fetch`. Recorded for completeness; the library
-	// does not implement `fetch`.
-	FetchArgs []string
 
 	// Symrefs lists v0/v1 capability-level symref advertisements.
 	// Empty for v2 handshakes.

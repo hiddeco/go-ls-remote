@@ -27,7 +27,6 @@ func Test_convertCaps(t *testing.T) {
 				assert.Nil(t, c.Commands)
 				assert.Nil(t, c.LSRefsArgs)
 				assert.Nil(t, c.ObjectInfoArgs)
-				assert.Nil(t, c.FetchArgs)
 				assert.Nil(t, c.Symrefs)
 				assert.NotNil(t, c.Raw)
 				assert.Empty(t, c.Raw)
@@ -51,7 +50,6 @@ func Test_convertCaps(t *testing.T) {
 				}, c.Symrefs)
 				assert.Nil(t, c.LSRefsArgs)
 				assert.Nil(t, c.ObjectInfoArgs)
-				assert.Nil(t, c.FetchArgs)
 			},
 		},
 		{
@@ -70,8 +68,8 @@ func Test_convertCaps(t *testing.T) {
 				assert.Equal(t, ObjectFormatSHA256, c.ObjectFormat)
 				assert.Equal(t, []string{"ls-refs", "fetch", "object-info"}, c.Commands)
 				assert.Equal(t, []string{"unborn"}, c.LSRefsArgs)
-				assert.Equal(t, []string{"shallow", "filter"}, c.FetchArgs)
 				assert.Equal(t, []string{"size"}, c.ObjectInfoArgs)
+				assert.Equal(t, []string{"shallow filter"}, c.Raw["fetch"])
 				assert.Empty(t, c.Symrefs)
 			},
 		},

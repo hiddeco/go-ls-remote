@@ -46,13 +46,14 @@ var v2CommandNames = []string{
 //     [v2CommandNames] with the advertised capability names. v0/v1
 //     servers never populate this field — they do not advertise
 //     commands at the capability level.
-//   - [Capabilities.LSRefsArgs], [Capabilities.ObjectInfoArgs] and
-//     [Capabilities.FetchArgs] are the whitespace-split values of the
-//     `ls-refs=`, `object-info=` and `fetch=` capabilities. A boolean
-//     advertisement (capability present with no value) yields an empty
-//     non-nil slice; absence yields nil. Splitting uses
-//     [strings.Fields], which matches the v2 grammar's tokenisation
-//     ("one or more whitespace-separated arguments").
+//   - [Capabilities.LSRefsArgs] and [Capabilities.ObjectInfoArgs] are
+//     the whitespace-split values of the `ls-refs=` and `object-info=`
+//     capabilities. A boolean advertisement (capability present with no
+//     value) yields an empty non-nil slice; absence yields nil.
+//     Splitting uses [strings.Fields], which matches the v2 grammar's
+//     tokenisation ("one or more whitespace-separated arguments").
+//     The `fetch=` capability value is not split into a typed field;
+//     it is available verbatim in [Capabilities.Raw].
 //   - [Capabilities.Symrefs] is populated only for v0/v1 by walking
 //     every `symref=NAME:TARGET` capability and splitting on the first
 //     `:` per `connect.c::parse_one_symref_info`. Malformed entries —
@@ -94,7 +95,6 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 
 	c.LSRefsArgs = splitArgs(raw, "ls-refs")
 	c.ObjectInfoArgs = splitArgs(raw, "object-info")
-	c.FetchArgs = splitArgs(raw, "fetch")
 
 	if v != ProtocolV2 {
 		for _, val := range raw.All("symref") {

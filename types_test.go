@@ -88,7 +88,6 @@ func TestCapabilities(t *testing.T) {
 		assert.Nil(t, c.Commands)
 		assert.Nil(t, c.LSRefsArgs)
 		assert.Nil(t, c.ObjectInfoArgs)
-		assert.Nil(t, c.FetchArgs)
 		assert.Nil(t, c.Symrefs)
 		assert.Nil(t, c.Raw)
 	})
@@ -117,7 +116,6 @@ func TestCapabilities(t *testing.T) {
 			Commands:       []string{"ls-refs", "fetch", "object-info"},
 			LSRefsArgs:     []string{"unborn", "ref-prefix", "symrefs", "peel"},
 			ObjectInfoArgs: []string{"size"},
-			FetchArgs:      []string{"shallow", "filter"},
 		}
 		assert.Equal(t, ProtocolV2, c.Version)
 		assert.Equal(t, "git/2.45.0", c.Agent)
