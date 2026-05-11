@@ -1,6 +1,7 @@
 package lsremote
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -271,6 +272,89 @@ func TestDefaultBranch_v0(t *testing.T) {
 	got, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", got)
+}
+
+// TestDefaultBranch_v2_noSymref pins the error path for a v2 server
+// that does not attach a `symref-target:` attribute to HEAD and has no
+// capability-level symref entry. The helper must return a
+// [*ProtocolError] whose chain matches [ErrNoDefaultBranch] (the
+// repository is reachable but HEAD has no symbolic target) and must NOT
+// match [ErrNotFound] (which is reserved for "repository missing").
+// The [*ProtocolError.Op] must be `"ls-refs"` because the failure is
+// detected after the `ls-refs` command exchange.
+func TestDefaultBranch_v2_noSymref(t *testing.T) {
+	conn := &commandStubConn{
+		adv:    pktline.NewReader(bytes.NewReader(buildV2Advertisement(t))),
+		cmdRdr: pktline.NewReader(bytes.NewReader(buildV2LSRefsNoSymrefResponse(t))),
+	}
+	cap := &captureTransport{schemes: []string{"https"}, conn: conn}
+	reg := transport.NewRegistry(cap)
+
+	_, err := DefaultBranch(context.Background(), "https://example.com/repo.git",
+		WithTransports(reg))
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrNoDefaultBranch),
+		"v2 headless must match ErrNoDefaultBranch via errors.Is; got %v", err)
+	assert.False(t, errors.Is(err, ErrNotFound),
+		"v2 headless must NOT match ErrNotFound; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"v2 headless must surface as *ProtocolError; got %T", err)
+	assert.Equal(t, "ls-refs", pe.Op,
+		"v2 failure is detected after the ls-refs exchange; Op must be \"ls-refs\"")
+}
+
+// TestDefaultBranch_v0_noSymref pins the error path for a v0 server
+// whose capability list omits the `symref=HEAD:...` entry. The helper
+// must return [ErrNoDefaultBranch] and the [*ProtocolError.Op] must be
+// `"advertisement"` because the failure is detected at capability-scan
+// time, not via a command.
+func TestDefaultBranch_v0_noSymref(t *testing.T) {
+	conn := &stubConn{
+		adv: pktline.NewReader(bytes.NewReader(buildV0NoSymrefAdvertisement(t))),
+	}
+	cap := &captureTransport{schemes: []string{"https"}, conn: conn}
+	reg := transport.NewRegistry(cap)
+
+	_, err := DefaultBranch(context.Background(), "https://example.com/repo.git",
+		WithTransports(reg))
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrNoDefaultBranch),
+		"v0 headless must match ErrNoDefaultBranch via errors.Is; got %v", err)
+	assert.False(t, errors.Is(err, ErrNotFound),
+		"v0 headless must NOT match ErrNotFound; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"v0 headless must surface as *ProtocolError; got %T", err)
+	assert.Equal(t, "advertisement", pe.Op,
+		"v0 failure is detected at advertisement time; Op must be \"advertisement\"")
+}
+
+// TestDefaultBranch_repoNotFound pins that a dial failure caused by a
+// missing repository (404 on the discovery probe) still surfaces
+// [ErrNotFound], NOT [ErrNoDefaultBranch]. The two sentinels are
+// mutually exclusive: [ErrNotFound] means the repository itself is
+// absent, while [ErrNoDefaultBranch] means the repository is present
+// but HEAD has no symbolic target.
+func TestDefaultBranch_repoNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	_, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrNotFound),
+		"a 404 on discovery must reach ErrNotFound via errors.Is; got %v", err)
+	assert.False(t, errors.Is(err, ErrNoDefaultBranch),
+		"a 404 on discovery must NOT match ErrNoDefaultBranch; got %v", err)
 }
 
 // TestTags_topLevel pins the `Tags` shorthand: it restricts the

@@ -119,10 +119,15 @@ func Exists(ctx context.Context, rawURL string, opts ...Option) (bool, error) {
 // target.
 //
 // When no symref target can be resolved DefaultBranch returns a
-// [*ProtocolError] whose `Err` chains to [ErrNotFound]. The
-// [ErrNotFound] reuse is deliberate: it carries the "the target
-// identity wasn't located" meaning without growing the public sentinel
-// surface.
+// [*ProtocolError] whose `Err` chains to [ErrNoDefaultBranch]. The
+// surrounding [ProtocolError.Op] is `"ls-refs"` on a v2 server
+// (the mapping is sought via the `ls-refs` command exchange) and
+// `"advertisement"` on a v0/v1 server (the mapping is sought in
+// the capability advertisement). Use `errors.Is(err,
+// ErrNoDefaultBranch)` to detect the "repository present but HEAD
+// has no symbolic target" condition. A dial failure whose chain
+// matches [ErrNotFound] means the repository itself is absent — the
+// two sentinels are mutually exclusive.
 func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {
@@ -167,7 +172,7 @@ func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, 
 		Op:      op,
 		Version: &v,
 		Server:  "HEAD has no symbolic target",
-		Err:     ErrNotFound,
+		Err:     ErrNoDefaultBranch,
 	}
 }
 

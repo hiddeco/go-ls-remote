@@ -229,3 +229,65 @@ func buildV2Advertisement(t *testing.T) []byte {
 	require.NoError(t, pw.WriteFlush())
 	return b.Bytes()
 }
+
+// buildV2LSRefsResponse returns a byte slice carrying a minimal v2
+// `ls-refs` response that lists HEAD without a `symref-target:`
+// attribute — simulating a detached HEAD or a server that does not
+// honour the `symrefs` argument. The body is a single pkt-line
+// followed by a flush:
+//
+//	pkt:  "<zero40> HEAD\n"
+//	flush
+func buildV2LSRefsNoSymrefResponse(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	pw := pktline.NewWriter(&b)
+	// A zero SHA-1 is acceptable for a stub; the DefaultBranch helper
+	// only inspects the symref-target attribute, not the OID value.
+	require.NoError(t, pw.WritePacket(
+		[]byte("0000000000000000000000000000000000000000 HEAD\n")))
+	require.NoError(t, pw.WriteFlush())
+	return b.Bytes()
+}
+
+// buildV0NoSymrefAdvertisement returns a byte slice carrying a minimal
+// v0 advertisement where the capability list does NOT contain
+// `symref=HEAD:...`. HEAD is present with a zero OID so the parser
+// records a valid (non-empty-repo) first ref, but no symref capability
+// is emitted — simulating a detached HEAD on a v0 server:
+//
+//	pkt:  "<zero40> HEAD\0object-format=sha1 agent=test/0\n"
+//	flush
+func buildV0NoSymrefAdvertisement(t *testing.T) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	pw := pktline.NewWriter(&b)
+	zeroOID := "0000000000000000000000000000000000000000"
+	// The first ref line carries the NUL-delimited cap list. No symref
+	// capability is included, matching a detached-HEAD v0 server.
+	line := zeroOID + " HEAD\x00object-format=sha1 agent=test/0\n"
+	require.NoError(t, pw.WritePacket([]byte(line)))
+	require.NoError(t, pw.WriteFlush())
+	return b.Bytes()
+}
+
+// commandStubConn is a variant of [stubConn] whose [Command] method
+// returns a caller-supplied [pktline.Reader] on the first invocation
+// and an error on every subsequent call. It is used by tests that need
+// to exercise the v2 command path (e.g. `ls-refs`) with a hand-crafted
+// response body.
+type commandStubConn struct {
+	adv    *pktline.Reader
+	cmdRdr *pktline.Reader // returned on the first Command call
+}
+
+func (c *commandStubConn) Advertisement() *pktline.Reader { return c.adv }
+func (c *commandStubConn) Command(_ context.Context, _ string, _, _ []string) (*pktline.Reader, error) {
+	if c.cmdRdr == nil {
+		return nil, errors.New("commandStubConn: no more Command responses")
+	}
+	r := c.cmdRdr
+	c.cmdRdr = nil
+	return r, nil
+}
+func (c *commandStubConn) Close() error { return nil }

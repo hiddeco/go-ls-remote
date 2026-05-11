@@ -48,6 +48,18 @@ var (
 	// the connection was established. The originating message is
 	// preserved on [ProtocolError.Server] when available.
 	ErrServerRefused = errors.New("lsremote: server refused")
+
+	// ErrNoDefaultBranch signals that the remote repository is reachable
+	// but HEAD has no symbolic target — it is either detached or the
+	// server omitted the symref mapping from its advertisement. Returned
+	// by [DefaultBranch] when no HEAD symref can be resolved. The
+	// surrounding [ProtocolError] carries `Op == "ls-refs"` on a v2
+	// server (the mapping is sought via the `ls-refs` command) and
+	// `Op == "advertisement"` on a v0/v1 server (the mapping is sought
+	// in the capability advertisement). Use [errors.Is] to distinguish
+	// this from [ErrNotFound], which means the repository itself is
+	// absent.
+	ErrNoDefaultBranch = errors.New("lsremote: remote has no default branch")
 )
 
 // ProtocolError carries diagnostic context for a protocol-level
