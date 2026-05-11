@@ -6,18 +6,18 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 )
 
-// v2CommandNames is the allow-list of v2 commands recognised when
-// translating a server's capability advertisement into
-// [Capabilities.Commands]. Per `gitprotocol-v2.adoc`
+// v2CommandNames is the library-curated set of v2 commands that
+// [Session] methods know how to issue. Per `gitprotocol-v2.adoc`
 // §"capability-advertisement", a v2 server advertises each command it
 // supports as a top-level capability whose name is the command name;
 // the canonical set today is `ls-refs`, `fetch`, `object-info`, and
-// `bundle-uri`. Intersecting the advertised names against this fixed
-// list keeps metadata capabilities (`agent`, `object-format`,
-// `server-option`, `session-id`, ...) out of the command slice without
-// having to enumerate them. Future v2 commands not in this list will
-// not show up in [Capabilities.Commands]; callers needing exhaustive
-// information can inspect [Capabilities.Raw] instead.
+// `bundle-uri`. Intersecting the advertised names against this set
+// keeps metadata capabilities (`agent`, `object-format`,
+// `server-option`, `session-id`, ...) out of [Capabilities.Commands]
+// without having to enumerate them. The set grows when the library
+// learns to issue a new command. Callers who need the verbatim wire
+// view — every advertised capability name, including commands this
+// library does not yet implement — can read [Capabilities.Raw].
 var v2CommandNames = []string{
 	"ls-refs",
 	"fetch",

@@ -125,10 +125,13 @@ const (
 //     string, signalling a protocol violation rather than a default.
 //     Unknown values advertised explicitly are preserved verbatim so
 //     callers can detect future formats.
-//   - [Capabilities.Commands] lists the v2 commands the server
-//     advertised under the `command=` capability. It is empty for
-//     v0/v1 handshakes, where command-style negotiation does not
-//     exist.
+//   - [Capabilities.Commands] is the curated set of v2 commands
+//     that both the server advertised and this library knows how to
+//     issue through [Session] methods. It is empty for v0/v1
+//     handshakes, where command-style negotiation does not exist.
+//     Callers who want the verbatim wire-level capability set —
+//     including future v2 commands this library does not yet
+//     implement — can read [Capabilities.Raw] directly.
 //   - [Capabilities.LSRefsArgs] and [Capabilities.ObjectInfoArgs] list
 //     the per-command arguments the server claims to accept for
 //     `ls-refs` and `object-info` respectively. The `fetch` command's
@@ -174,8 +177,10 @@ type Capabilities struct {
 	// the empty string (a server-side protocol violation).
 	ObjectFormat ObjectFormat
 
-	// Commands lists the v2 commands the server advertised. Empty
-	// for v0/v1 handshakes.
+	// Commands is the curated intersection of v2 commands this
+	// library can issue and the server advertised. Empty for v0/v1
+	// handshakes. [Capabilities.Raw] carries the verbatim wire-level
+	// capability set for callers that need it.
 	Commands []string
 
 	// LSRefsArgs lists the per-command arguments the server
