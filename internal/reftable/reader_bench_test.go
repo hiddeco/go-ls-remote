@@ -1,6 +1,7 @@
 package reftable
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -146,6 +147,53 @@ func BenchmarkReader_IterRefs_WithIndex(b *testing.B) {
 		if count == 0 {
 			b.Fatal("no records iterated")
 		}
+	}
+}
+
+// BenchmarkReader_FindRef_AtScale measures `FindRef` against
+// realistic forge-scale ref sets. The 1k and 10k fixtures are
+// single-table — the index-descent path is the only thing in scope;
+// no stack-merge bookkeeping. Probes are cycled across mid-namespace
+// names so each call forces a full descent rather than landing on
+// the leading or trailing leaf block.
+func BenchmarkReader_FindRef_AtScale(b *testing.B) {
+	for _, sc := range []struct {
+		name    string
+		fixture string
+		count   int
+	}{
+		{"n=1000", "many-refs-1k-sha1", 1000},
+		{"n=10000", "many-refs-10k-sha1", 10000},
+	} {
+		b.Run(sc.name, func(b *testing.B) {
+			r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath(
+				sc.fixture + "/0001-0001-aaaaaaaa.ref"))
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Cleanup(func() { _ = r.Close() })
+
+			// Mid-namespace probes spanning the whole ref set so the
+			// access pattern hits all block paths roughly evenly.
+			probes := make([]string, 32)
+			for i := range probes {
+				probes[i] = fmt.Sprintf("refs/heads/branch-%d",
+					(i*sc.count)/len(probes))
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			i := 0
+			for b.Loop() {
+				rec, ok, err := r.FindRef(probes[i%len(probes)])
+				if err != nil {
+					b.Fatal(err)
+				}
+				benchReaderRefSink = rec
+				benchReaderOKSink = ok
+				i++
+			}
+		})
 	}
 }
 
