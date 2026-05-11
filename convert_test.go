@@ -137,6 +137,32 @@ func Test_convertCaps(t *testing.T) {
 			},
 		},
 		{
+			name:    "empty raw, v0 → SHA1",
+			raw:     nil,
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ObjectFormatSHA1, c.ObjectFormat)
+			},
+		},
+		{
+			name:    "empty raw, v1 → SHA1",
+			raw:     nil,
+			version: ProtocolV1,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ObjectFormatSHA1, c.ObjectFormat)
+			},
+		},
+		{
+			name: "v0 explicit sha256 wins over SHA1 default",
+			raw: wire.RawCapabilities{
+				{Name: "object-format", Value: "sha256"},
+			},
+			version: ProtocolV0,
+			check: func(t *testing.T, c Capabilities) {
+				assert.Equal(t, ObjectFormatSHA256, c.ObjectFormat)
+			},
+		},
+		{
 			name: "object-format unknown value preserved raw",
 			raw: wire.RawCapabilities{
 				{Name: "object-format", Value: "sha512"},

@@ -39,9 +39,14 @@ var v2CommandNames = []string{
 //   - [Capabilities.ObjectFormat] is the literal `object-format=` value
 //     when present (the constants [ObjectFormatSHA1] /
 //     [ObjectFormatSHA256] cover the two known formats). An unknown
-//     value is stored raw so callers can detect future hash algorithms;
-//     absence leaves the field at its zero value rather than defaulting
-//     to `sha1`.
+//     value is stored raw so callers can detect future hash algorithms.
+//     When the server does not advertise `object-format` and the
+//     negotiated version is v0 or v1, the field is normalised to
+//     [ObjectFormatSHA1] — omitting the capability on those protocol
+//     versions always implies SHA-1 per the capability contract.
+//     For v2 servers that omit `object-format` (a protocol violation),
+//     the field is left at its zero value so callers can detect the
+//     misbehaviour.
 //   - [Capabilities.Commands] is populated only for v2 by intersecting
 //     [v2CommandNames] with the advertised capability names. v0/v1
 //     servers never populate this field — they do not advertise
@@ -74,6 +79,14 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 	}
 	if of, ok := raw.Get("object-format"); ok {
 		c.ObjectFormat = ObjectFormat(of)
+	} else if v != ProtocolV2 {
+		// v0/v1 servers that omit `object-format` always use SHA-1;
+		// see gitprotocol-capabilities.adoc §"object-format":
+		// "If this capability is not provided, it is assumed that the
+		// only supported algorithm is SHA-1."
+		// v2 servers that omit `object-format` violate the v2 wire
+		// protocol; leave the field empty so callers can detect it.
+		c.ObjectFormat = ObjectFormatSHA1
 	}
 
 	if v == ProtocolV2 {
