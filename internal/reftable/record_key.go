@@ -3,11 +3,11 @@ package reftable
 import "fmt"
 
 // decodeKey decodes the prefix-compressed key shared by every reftable
-// record type (ref, index, obj, log) from the start of buf and
-// reconstructs the full key by combining a `prefix_length` slice of
-// prevKey with the new `suffix`.
+// record type (ref, index, obj, log).
 //
-// The on-disk layout is (reftable.adoc §"ref record" / §"index record"):
+// The full key is reconstructed by combining a `prefix_length` slice
+// of prevKey with the new `suffix` parsed from buf. The on-disk layout
+// is (reftable.adoc §"ref record" / §"index record"):
 //
 //	varint( prefix_length )
 //	varint( (suffix_length << 3) | extra )
@@ -25,25 +25,31 @@ import "fmt"
 // (reftable.adoc §"ref record"), so a caller doing binary search via
 // the restart table can pass prevKey=nil.
 //
-// decodeKey returns the reconstructed key, the 3-bit extra field, the
-// number of bytes consumed from buf, and any error. It allocates a
-// new slice for the returned key; callers may retain it without fear
-// of aliasing buf or prevKey. The fresh allocation per call is
-// intentional for v0 — sharing a running buffer between callers would
-// invalidate prevKey on the next decode and add lifetime rules the
-// public iterators do not need. A future hot-path tuning could thread
-// a reusable buffer through the block walkers if profiling shows the
-// allocation matters.
+// scratch is an optional caller-owned byte buffer. When `cap(scratch)
+// >= prefix_length+suffix_length`, decodeKey reuses the underlying
+// array; otherwise it allocates a fresh slice. The returned slice
+// always aliases either `scratch`'s underlying array or a fresh
+// allocation — never `prevKey` or `buf`. Pass nil to force a fresh
+// allocation (matches the seek path's compare-and-discard usage).
+//
+// The returned key has `len == prefix_length + suffix_length`. Its
+// `cap` is deliberately NOT bounded to len: callers feed the result
+// back as the next call's scratch and rely on the underlying array
+// retaining its full capacity so subsequent decodes of shorter or
+// equal-length keys can reuse it without allocation. Callers therefore
+// must use `len(key)`, not `cap(key)`, to size any follow-up read —
+// bytes past `len(key)` are stale prior-key data from an earlier
+// decode, not part of the current record.
 //
 // Errors:
-//   - ErrTruncatedRecord wraps a buffer that ends mid-varint, mid-
+//   - [ErrTruncatedRecord] wraps a buffer that ends mid-varint, mid-
 //     suffix, or whose prefix_length exceeds prevKey.
-//   - ErrVarintOverflow wraps a 10-byte-plus varint, propagated from
+//   - [ErrVarintOverflow] wraps a 10-byte-plus varint, propagated from
 //     [decodeVarint].
 //
 // See `reftable/record.c::reftable_decode_key` for the canonical
 // reference.
-func decodeKey(buf []byte, prevKey []byte) ([]byte, uint8, int, error) {
+func decodeKey(buf, prevKey, scratch []byte) ([]byte, uint8, int, error) {
 	prefixLen, n1, err := decodeVarint(buf)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("reftable: prefix_length: %w", err)
@@ -66,7 +72,19 @@ func decodeKey(buf []byte, prevKey []byte) ([]byte, uint8, int, error) {
 		return nil, 0, 0, fmt.Errorf("reftable: prefix_length %d exceeds prev key %d: %w", prefixLen, len(prevKey), ErrTruncatedRecord)
 	}
 
-	key := make([]byte, prefixLen+suffixLen)
+	keyLen := int(prefixLen) + int(suffixLen)
+	var key []byte
+	if cap(scratch) >= keyLen {
+		// Preserve scratch's full cap on the return slice so the next
+		// decode that ping-pongs this buffer back in as scratch can
+		// reuse it for a key of any length up to that cap; capping
+		// here would freeze buffers at their first-decode length and
+		// defeat steady-state reuse in namespaces with varying key
+		// lengths (e.g. branch-1, branch-10, branch-100).
+		key = scratch[:keyLen]
+	} else {
+		key = make([]byte, keyLen)
+	}
 	copy(key, prevKey[:prefixLen])
 	copy(key[prefixLen:], rest[:suffixLen])
 

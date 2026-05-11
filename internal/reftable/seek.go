@@ -156,7 +156,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	// a self-contained key; no running prevKey is needed.
 	idx := blk.seekRestart(func(i int) int {
 		off := blk.restartOffsets[i]
-		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil)
+		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil, nil)
 		if err != nil {
 			// Returning +1 makes seekRestart skip this restart; the
 			// chosen earlier restart still anchors the linear scan,
@@ -182,7 +182,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	haveLast := false
 
 	for cur < restartOff {
-		key, _, n, err := decodeKey(blk.bytes[cur:restartOff], prevKey)
+		key, _, n, err := decodeKey(blk.bytes[cur:restartOff], prevKey, nil)
 		if err != nil {
 			return 0, fmt.Errorf("reftable: decode index key at offset %d: %w", cur, err)
 		}
@@ -277,7 +277,7 @@ func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter)
 		// sorts ≤ probe, this block is a candidate. We compare against
 		// the new block's first key to decide whether to keep walking.
 		firstKeyOff := firstByteOffset + 4
-		firstKey, _, _, err := decodeKey(blk.bytes[firstKeyOff:], nil)
+		firstKey, _, _, err := decodeKey(blk.bytes[firstKeyOff:], nil, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("reftable: decode first key in block at %d: %w", readPos, err)
 		}

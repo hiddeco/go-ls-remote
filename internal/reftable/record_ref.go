@@ -42,18 +42,22 @@ var (
 // that carry them: Value for types 1 and 2, Peeled for type 2, Target
 // for type 3. Type 0 (deletion / tombstone) leaves all three zero.
 //
+// Name and Target are byte slices with borrowed-buffer lifetimes (see
+// [decodeRefRecord]). Callers that retain a record past the next
+// decode must copy these fields explicitly.
+//
 // The hash type parameter `H` carries the on-disk OID width: a SHA-1
 // reftable instantiates `refRecord[objfmt.SHA1Hash]`, a SHA-256 file
 // `refRecord[objfmt.SHA256Hash]`. Mixed-algorithm inputs surface at
 // [OpenReader] / [OpenStack] time as [ErrMixedHashAlgo] before any
 // record bytes reach the decoder.
 type refRecord[H objfmt.Hash] struct {
-	Name        string
+	Name        []byte
 	UpdateIndex uint64
 	ValueType   uint8
 	Value       H
 	Peeled      H
-	Target      string
+	Target      []byte
 }
 
 // reftable.adoc §"ref record" — the low 3 bits of the second varint in
@@ -66,26 +70,40 @@ const (
 	refValueSymref   uint8 = 0x3
 )
 
-// decodeRefRecord decodes one ref_record at buf[0]. minUpdateIndex is
-// the value taken from the file header; the function adds the on-disk
-// update_index_delta to it to materialise the record's UpdateIndex.
+// decodeRefRecord decodes a single ref_record from the start of buf
+// and reconstructs the record's key by combining a prefix slice of
+// prevKey with the new suffix. The decoded key becomes the new prevKey
+// for the next call (read it from the returned record's Name field);
+// the caller threads it back via a ping-pong of two scratch buffers
+// so the previous key remains valid while the next key is being
+// decoded. The [keyBuf] helper encapsulates the swap.
 //
-// prevKey is the running prefix-decompression context: the fully
-// reconstructed key from the previous record in the same block.
-// Callers seeking via the restart table pass nil — restart-point
-// records are required by the spec to encode prefix_length=0, so the
-// suffix is the complete key.
+// prevKey is the key from the previous record in the same block, or
+// nil at a restart point or at the start of a block. scratch is a
+// caller-owned buffer for the reconstructed key; pass the buffer
+// that is NOT currently aliased by prevKey (the walker swaps the
+// two each iteration). When `cap(scratch) >= keyLen`, decodeRefRecord
+// reuses it; otherwise a fresh allocation happens.
 //
-// The function returns the decoded record, the reconstructed key (so
-// callers can update prevKey), and the number of bytes consumed.
+// The returned [refRecord.Name] is a slice into either scratch's
+// underlying array or a fresh allocation, and is valid until the
+// next decode reuses scratch. [refRecord.Target], when present (for
+// symref records), is a slice into buf and is valid for as long as
+// buf is valid.
+//
+// minUpdateIndex is the file header's `min_update_index`; the
+// decoded record's `UpdateIndex` is `minUpdateIndex + delta` where
+// delta is varint-encoded on disk.
 //
 // Errors:
-//   - [ErrTruncatedRecord] / [ErrVarintOverflow] propagate from the
-//     key, varint, and value-byte readers when the buffer is short.
-//   - [ErrUnsupportedValueType] is returned when the on-disk
-//     value_type is in the reserved range 0x4..0x7.
-//   - [ErrUpdateIndexOverflow] is returned when adding the delta to
-//     minUpdateIndex would exceed uint64.
+//   - [ErrTruncatedRecord] wraps a buffer that ends mid-record, a
+//     prefix_length that exceeds prevKey, or a target_len that runs
+//     past buf.
+//   - [ErrUpdateIndexOverflow] wraps minUpdateIndex+delta wrapping
+//     uint64 (the wrapped value would compare incorrectly in a
+//     merged stack).
+//   - [ErrUnsupportedValueType] wraps value_type 4..7 (reserved in
+//     the on-disk format).
 //
 // The hash size is the constant `len(*new(H))` — 20 for
 // [objfmt.SHA1Hash] or 32 for [objfmt.SHA256Hash]. Folding it into the
@@ -94,19 +112,19 @@ const (
 //
 // See `reftable/record.c::reftable_ref_record_decode` for the
 // canonical implementation.
-func decodeRefRecord[H objfmt.Hash](buf, prevKey []byte, minUpdateIndex uint64) (refRecord[H], []byte, int, error) {
+func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex uint64) (refRecord[H], int, error) {
 	var zero refRecord[H]
 	hashSize := len(zero.Value)
 
-	key, valueType, n1, err := decodeKey(buf, prevKey)
+	key, valueType, n1, err := decodeKey(buf, prevKey, scratch)
 	if err != nil {
-		return zero, nil, 0, fmt.Errorf("reftable: ref_record key: %w", err)
+		return zero, 0, fmt.Errorf("reftable: ref_record key: %w", err)
 	}
 
 	rest := buf[n1:]
 	delta, n2, err := decodeVarint(rest)
 	if err != nil {
-		return zero, nil, 0, fmt.Errorf("reftable: ref_record update_index_delta: %w", err)
+		return zero, 0, fmt.Errorf("reftable: ref_record update_index_delta: %w", err)
 	}
 
 	// minUpdateIndex + delta must fit in uint64. Detect wrap-around
@@ -115,11 +133,11 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey []byte, minUpdateIndex uint64) 
 	// confuse merged-stack ordering.
 	updateIndex := minUpdateIndex + delta
 	if updateIndex < minUpdateIndex {
-		return zero, nil, 0, fmt.Errorf("reftable: min %d + delta %d wraps uint64: %w", minUpdateIndex, delta, ErrUpdateIndexOverflow)
+		return zero, 0, fmt.Errorf("reftable: min %d + delta %d wraps uint64: %w", minUpdateIndex, delta, ErrUpdateIndexOverflow)
 	}
 
 	rec := refRecord[H]{
-		Name:        string(key),
+		Name:        key,
 		UpdateIndex: updateIndex,
 		ValueType:   valueType,
 	}
@@ -132,13 +150,13 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey []byte, minUpdateIndex uint64) 
 		// No value bytes follow.
 	case refValueSingle:
 		if len(rest) < hashSize {
-			return zero, nil, 0, fmt.Errorf("reftable: ref_record value wants %d bytes, have %d: %w", hashSize, len(rest), ErrTruncatedRecord)
+			return zero, 0, fmt.Errorf("reftable: ref_record value wants %d bytes, have %d: %w", hashSize, len(rest), ErrTruncatedRecord)
 		}
 		copy(hashBytes(&rec.Value), rest[:hashSize])
 		consumed += hashSize
 	case refValuePeeled:
 		if len(rest) < 2*hashSize {
-			return zero, nil, 0, fmt.Errorf("reftable: ref_record value+peeled want %d bytes, have %d: %w", 2*hashSize, len(rest), ErrTruncatedRecord)
+			return zero, 0, fmt.Errorf("reftable: ref_record value+peeled want %d bytes, have %d: %w", 2*hashSize, len(rest), ErrTruncatedRecord)
 		}
 		copy(hashBytes(&rec.Value), rest[:hashSize])
 		copy(hashBytes(&rec.Peeled), rest[hashSize:2*hashSize])
@@ -146,20 +164,24 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey []byte, minUpdateIndex uint64) 
 	case refValueSymref:
 		targetLen, n3, err := decodeVarint(rest)
 		if err != nil {
-			return zero, nil, 0, fmt.Errorf("reftable: ref_record target_len: %w", err)
+			return zero, 0, fmt.Errorf("reftable: ref_record target_len: %w", err)
 		}
 		rest = rest[n3:]
 		if uint64(len(rest)) < targetLen {
-			return zero, nil, 0, fmt.Errorf("reftable: ref_record target wants %d bytes, have %d: %w", targetLen, len(rest), ErrTruncatedRecord)
+			return zero, 0, fmt.Errorf("reftable: ref_record target wants %d bytes, have %d: %w", targetLen, len(rest), ErrTruncatedRecord)
 		}
-		rec.Target = string(rest[:targetLen])
+		// Target aliases buf directly; no allocation. buf itself is a
+		// slice into block.bytes (which slices into the Reader's
+		// underlying file per `block.go`), so Target is valid for as
+		// long as the Reader is open.
+		rec.Target = rest[:targetLen]
 		consumed += n3 + int(targetLen)
 	default:
 		// 0x4..0x7 are reserved per reftable.adoc §"ref record".
-		return zero, nil, 0, fmt.Errorf("reftable: value_type %#x: %w", valueType, ErrUnsupportedValueType)
+		return zero, 0, fmt.Errorf("reftable: value_type %#x: %w", valueType, ErrUnsupportedValueType)
 	}
 
-	return rec, key, consumed, nil
+	return rec, consumed, nil
 }
 
 // hashBytes returns a slice over the in-place storage of h. The decoder

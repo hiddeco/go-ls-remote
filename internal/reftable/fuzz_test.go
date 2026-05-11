@@ -82,7 +82,7 @@ func fuzzExerciseReader[H objfmt.Hash](r *Reader[H]) {
 		if iterErr != nil {
 			return
 		}
-		_, _, _ = r.FindRef(rec.Name)
+		_, _, _ = r.FindRef(string(rec.Name))
 	}
 }
 

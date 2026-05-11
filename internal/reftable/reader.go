@@ -10,16 +10,23 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
-// RefRecord is the public, read-only view of one reference stored in a
-// reftable file.
+// RefRecord is one reference decoded from a reftable file.
 //
 // Three shapes are observable: a value record (Value populated, Peeled
-// and TargetRef zero); a peeled-tag record (Value and Peeled populated,
-// TargetRef zero); and a symbolic-ref record (TargetRef populated,
-// Value and Peeled zero). Tombstones — the on-disk markers used to
-// shadow a name in a later table — are never returned to callers; the
-// reader filters them out so [Reader.IterRefs] and [Reader.FindRef]
-// only ever yield observable refs.
+// and Target zero); a peeled-tag record (Value and Peeled populated,
+// Target zero); and a symbolic-ref record (Target populated, Value and
+// Peeled zero). Tombstones — the on-disk markers used to shadow a name
+// in a later table — are never returned to callers; the reader filters
+// them out so [Reader.IterRefs] and [Reader.FindRef] only ever yield
+// observable refs.
+//
+// Name and Target are byte slices rather than strings. Both carry the
+// same borrowed-buffer contract: the bytes are valid only until the
+// next yield from [Reader.IterRefs] (or, equivalently, until the next
+// call on the same [Reader]). Callers that need to retain either field
+// past that boundary must copy with `string(...)` or `bytes.Clone`.
+// Treat Name and Target as borrowed views, like the bytes returned by
+// a [bufio.Reader.ReadSlice] call.
 //
 // The hash type parameter `H` carries the on-disk OID width: a SHA-1
 // reftable yields `RefRecord[objfmt.SHA1Hash]`, a SHA-256 file
@@ -35,10 +42,15 @@ import (
 // caller (status, reflog) that needs the field should add it here
 // rather than re-deriving it.
 type RefRecord[H objfmt.Hash] struct {
-	Name      string
-	Value     H
-	TargetRef string
-	Peeled    H
+	// Name is the ref's full name. Borrowed; see the type doc.
+	Name []byte
+	// Value is the ref's OID, or zero for symref records.
+	Value H
+	// Target is the symref target name, or empty for value records.
+	// Borrowed; see the type doc.
+	Target []byte
+	// Peeled is the annotated-tag peel target, or zero otherwise.
+	Peeled H
 }
 
 // Reader is a read-only view of a single reftable file.
@@ -239,9 +251,10 @@ func (r *Reader[H]) iterAllRefs() iter.Seq2[refRecord[H], error] {
 
 			recordsEnd := blk.header.blockLen - 2 - 3*uint32(blk.header.restartCount)
 			cur := firstByteOffset + 4
-			var prevKey []byte
+			var kb keyBuf
 			for cur < recordsEnd {
-				rec, key, n, err := decodeRefRecord[H](blk.bytes[cur:recordsEnd], prevKey, r.header.minUpdateIndex)
+				prev, scratch := kb.Next()
+				rec, n, err := decodeRefRecord[H](blk.bytes[cur:recordsEnd], prev, scratch, r.header.minUpdateIndex)
 				if err != nil {
 					yield(refRecord[H]{}, fmt.Errorf("reftable: decode ref_record at %d: %w", pos+cur, err))
 					return
@@ -249,7 +262,7 @@ func (r *Reader[H]) iterAllRefs() iter.Seq2[refRecord[H], error] {
 				if !yield(rec, nil) {
 					return
 				}
-				prevKey = key
+				kb.Swap(rec.Name)
 				cur += uint32(n)
 			}
 
@@ -302,13 +315,14 @@ func (r *Reader[H]) FindRef(name string) (RefRecord[H], bool, error) {
 
 	recordsEnd := blk.header.blockLen - 2 - 3*uint32(blk.header.restartCount)
 	cur := firstByteOffset + 4
-	var prevKey []byte
+	var kb keyBuf
 	for cur < recordsEnd {
-		rec, key, n, err := decodeRefRecord[H](blk.bytes[cur:recordsEnd], prevKey, r.header.minUpdateIndex)
+		prev, scratch := kb.Next()
+		rec, n, err := decodeRefRecord[H](blk.bytes[cur:recordsEnd], prev, scratch, r.header.minUpdateIndex)
 		if err != nil {
 			return RefRecord[H]{}, false, fmt.Errorf("reftable: decode ref_record at %d: %w", cur, err)
 		}
-		switch cmp := bytes.Compare(key, probe); {
+		switch cmp := bytes.Compare(rec.Name, probe); {
 		case cmp == 0:
 			if rec.ValueType == refValueDeletion {
 				return RefRecord[H]{}, false, nil
@@ -319,26 +333,24 @@ func (r *Reader[H]) FindRef(name string) (RefRecord[H], bool, error) {
 			// block.
 			return RefRecord[H]{}, false, nil
 		}
-		prevKey = key
+		kb.Swap(rec.Name)
 		cur += uint32(n)
 	}
 	return RefRecord[H]{}, false, nil
 }
 
 // liftRefRecord converts the decoder's internal refRecord into the
-// public [RefRecord]. Per-value-type fields are populated only for the
-// types that carry them; tombstones (value_type=0) lift to the zero
-// RefRecord and are filtered upstream rather than surfaced as records.
+// public [RefRecord]. The decoder leaves fields unrelated to the
+// record's value_type at their zero value (Value/Peeled for symref and
+// deletion, Target for value records), so the lift is an unconditional
+// field-copy with no per-shape selection. Tombstones (value_type=0)
+// lift to the zero RefRecord and are filtered upstream rather than
+// surfaced as records.
 func liftRefRecord[H objfmt.Hash](r refRecord[H]) RefRecord[H] {
-	out := RefRecord[H]{Name: r.Name}
-	switch r.ValueType {
-	case refValueSingle:
-		out.Value = r.Value
-	case refValuePeeled:
-		out.Value = r.Value
-		out.Peeled = r.Peeled
-	case refValueSymref:
-		out.TargetRef = r.Target
+	return RefRecord[H]{
+		Name:   r.Name,
+		Value:  r.Value,
+		Target: r.Target,
+		Peeled: r.Peeled,
 	}
-	return out
 }

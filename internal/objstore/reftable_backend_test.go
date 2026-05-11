@@ -104,7 +104,7 @@ func TestReftableBackend_Head_SymrefToMissingTargetIsUnborn(t *testing.T) {
 
 func TestReftableBackend_Head_Detached(t *testing.T) {
 	// `git update-ref --no-deref HEAD <oid>` rewrites HEAD to a value
-	// record (no TargetRef). The backend reports it as a detached HEAD:
+	// record (no Target). The backend reports it as a detached HEAD:
 	// Symref empty, OID populated, Unborn false.
 	b := openReftableFromFixture(t, "with-reftable-detached")
 

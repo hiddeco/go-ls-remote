@@ -26,7 +26,7 @@ func BenchmarkDecodeRefRecord_Single_SHA1(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 100)
+		rec, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, nil, 100)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func BenchmarkDecodeRefRecord_Peeled_SHA1(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 50)
+		rec, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, nil, 50)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -64,7 +64,7 @@ func BenchmarkDecodeRefRecord_Symref(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, 10)
+		rec, _, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, nil, 10)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -85,7 +85,7 @@ func BenchmarkDecodeRefRecord_Single_SHA256(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		rec, _, _, err := decodeRefRecord[objfmt.SHA256Hash](raw, nil, 5)
+		rec, _, err := decodeRefRecord[objfmt.SHA256Hash](raw, nil, nil, 5)
 		if err != nil {
 			b.Fatal(err)
 		}

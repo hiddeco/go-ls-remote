@@ -76,7 +76,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 						t.Errorf("goroutine %d: FindRef(%q) miss", id, name)
 						return
 					}
-					if rec.Name != name {
+					if string(rec.Name) != name {
 						t.Errorf("goroutine %d: FindRef(%q) returned name %q", id, name, rec.Name)
 						return
 					}
@@ -123,7 +123,7 @@ func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 					t.Errorf("FindRef miss for refs/heads/main")
 					return
 				}
-				if rec.Name != "refs/heads/main" {
+				if string(rec.Name) != "refs/heads/main" {
 					t.Errorf("FindRef returned name %q", rec.Name)
 					return
 				}
@@ -169,7 +169,7 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 						t.Errorf("goroutine %d: FindRef(%q) miss", id, name)
 						return
 					}
-					if rec.Name != name {
+					if string(rec.Name) != name {
 						t.Errorf("goroutine %d: FindRef(%q) returned name %q", id, name, rec.Name)
 						return
 					}

@@ -1,6 +1,7 @@
 package objstore
 
 import (
+	"bytes"
 	"fmt"
 	"iter"
 	"path/filepath"
@@ -98,10 +99,9 @@ func resolveReftableDir(gitDir, commonDir, location string) string {
 //
 // The accepted record shapes mirror canonical Git's reftable backend:
 //
-//   - `TargetRef != ""` — symbolic HEAD. The target is looked up in
-//     the stack; a hit yields Symref + OID, a miss yields Symref +
-//     Unborn.
-//   - `TargetRef == "" && Value != zero` — detached HEAD. Symref empty,
+//   - `Target != ""` — symbolic HEAD. The target is looked up in the
+//     stack; a hit yields Symref + OID, a miss yields Symref + Unborn.
+//   - `Target == "" && Value != zero` — detached HEAD. Symref empty,
 //     OID populated.
 //   - both empty — corruption (an on-disk record that is neither a
 //     symref nor a value record cannot be interpreted).
@@ -115,16 +115,17 @@ func resolveReftableHead[H objfmt.Hash](stack *reftable.Stack[H]) (Head[H], erro
 			"objstore: HEAD record absent from reftable stack: %w", ErrCorruptObject)
 	}
 
-	if rec.TargetRef != "" {
-		target, ok, err := stack.FindRef(rec.TargetRef)
+	if len(rec.Target) != 0 {
+		target := string(rec.Target)
+		tgtRec, ok, err := stack.FindRef(target)
 		if err != nil {
 			return Head[H]{}, fmt.Errorf(
-				"objstore: read HEAD target %q: %w", rec.TargetRef, err)
+				"objstore: read HEAD target %q: %w", target, err)
 		}
 		if !ok {
-			return Head[H]{Symref: rec.TargetRef, Unborn: true}, nil
+			return Head[H]{Symref: target, Unborn: true}, nil
 		}
-		return Head[H]{Symref: rec.TargetRef, OID: target.Value}, nil
+		return Head[H]{Symref: target, OID: tgtRec.Value}, nil
 	}
 
 	if !rec.Value.IsZero() {
@@ -162,11 +163,11 @@ func (b *reftableBackend[H]) IterRefs() iter.Seq2[RefEntry[H], error] {
 				yield(RefEntry[H]{}, err)
 				return
 			}
-			if rec.Name == "HEAD" {
+			if bytes.Equal(rec.Name, []byte("HEAD")) {
 				continue
 			}
 			// Symrefs other than HEAD are dropped; see the doc comment.
-			if rec.TargetRef != "" {
+			if len(rec.Target) != 0 {
 				continue
 			}
 			if !yield(refEntryFromReftable(rec), nil) {
@@ -192,7 +193,7 @@ func (b *reftableBackend[H]) Lookup(name string) (RefEntry[H], bool, error) {
 	if !found {
 		return RefEntry[H]{}, false, nil
 	}
-	if rec.TargetRef != "" {
+	if len(rec.Target) != 0 {
 		return RefEntry[H]{}, false, nil
 	}
 	return refEntryFromReftable(rec), true, nil
@@ -206,7 +207,7 @@ func (b *reftableBackend[H]) Lookup(name string) (RefEntry[H], bool, error) {
 // resolves.
 func refEntryFromReftable[H objfmt.Hash](rec reftable.RefRecord[H]) RefEntry[H] {
 	return RefEntry[H]{
-		Name:      rec.Name,
+		Name:      string(rec.Name),
 		OID:       rec.Value,
 		Peeled:    rec.Peeled,
 		PeelKnown: true,

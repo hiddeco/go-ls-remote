@@ -3,6 +3,7 @@ package reftable
 import (
 	"errors"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,7 +46,7 @@ func Test_decodeKey(t *testing.T) {
 		// Restart-point records always carry prefix_length=0, so the
 		// decoded key equals the suffix.
 		raw := encodeKey(nil, []byte("refs/heads/main"), 1)
-		key, extra, n, err := decodeKey(raw, nil)
+		key, extra, n, err := decodeKey(raw, nil, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []byte("refs/heads/main"), key)
 		assert.Equal(t, uint8(1), extra)
@@ -55,7 +56,7 @@ func Test_decodeKey(t *testing.T) {
 	t.Run("second_record_shares_prefix", func(t *testing.T) {
 		prev := []byte("refs/heads/main")
 		raw := encodeKey(prev, []byte("refs/heads/master"), 2)
-		key, extra, n, err := decodeKey(raw, prev)
+		key, extra, n, err := decodeKey(raw, prev, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []byte("refs/heads/master"), key)
 		assert.Equal(t, uint8(2), extra)
@@ -82,7 +83,7 @@ func Test_decodeKey(t *testing.T) {
 
 		var got []byte
 		for i, k := range keys {
-			decoded, ex, n, err := decodeKey(raw[offsets[i]:], got)
+			decoded, ex, n, err := decodeKey(raw[offsets[i]:], got, nil)
 			require.NoError(t, err)
 			assert.Equal(t, []byte(k), decoded)
 			assert.Equal(t, extras[i], ex)
@@ -98,7 +99,7 @@ func Test_decodeKey(t *testing.T) {
 		// All eight extra values round-trip through encode/decode.
 		for ex := range uint8(8) {
 			raw := encodeKey(nil, []byte("HEAD"), ex)
-			key, gotEx, _, err := decodeKey(raw, nil)
+			key, gotEx, _, err := decodeKey(raw, nil, nil)
 			require.NoError(t, err)
 			assert.Equal(t, []byte("HEAD"), key)
 			assert.Equal(t, ex, gotEx)
@@ -109,7 +110,7 @@ func Test_decodeKey(t *testing.T) {
 		// Encoded key claims a 4-byte suffix but only supplies 2.
 		raw := encodeKey(nil, []byte("HEAD"), 1)
 		short := raw[:len(raw)-2]
-		_, _, _, err := decodeKey(short, nil)
+		_, _, _, err := decodeKey(short, nil, nil)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrTruncatedRecord), "want ErrTruncatedRecord, got %v", err)
 	})
@@ -120,8 +121,34 @@ func Test_decodeKey(t *testing.T) {
 		raw := []byte{}
 		raw = append(raw, encodeVarint(20)...)     // prefix_length
 		raw = append(raw, encodeVarint(0<<3|1)...) // suffix_length=0, extra=1
-		_, _, _, err := decodeKey(raw, []byte("HEAD"))
+		_, _, _, err := decodeKey(raw, []byte("HEAD"), nil)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, ErrTruncatedRecord), "want ErrTruncatedRecord, got %v", err)
+	})
+
+	t.Run("reuses_scratch_when_cap_sufficient", func(t *testing.T) {
+		// When the caller hands in a scratch slice whose cap is at
+		// least the decoded key's length, decodeKey reuses the
+		// underlying array. Pointer-identity (via [unsafe.SliceData])
+		// is the direct shape of that contract: both slices index into
+		// the same backing storage.
+		raw := encodeKey(nil, []byte("refs/heads/main"), 1)
+		scratch := make([]byte, 0, 64)
+		key, _, _, err := decodeKey(raw, nil, scratch)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("refs/heads/main"), key)
+		assert.Same(t, unsafe.SliceData(key), unsafe.SliceData(scratch),
+			"scratch and key must share the backing array")
+	})
+
+	t.Run("allocates_when_scratch_cap_insufficient", func(t *testing.T) {
+		// With nil scratch (or scratch too small), decodeKey allocates
+		// fresh, leaving any caller-supplied bytes untouched.
+		raw := encodeKey(nil, []byte("refs/heads/main"), 1)
+		scratch := []byte{} // cap=0
+		key, _, _, err := decodeKey(raw, nil, scratch)
+		require.NoError(t, err)
+		assert.Equal(t, []byte("refs/heads/main"), key)
+		assert.Empty(t, scratch, "scratch must be untouched when too small")
 	})
 }

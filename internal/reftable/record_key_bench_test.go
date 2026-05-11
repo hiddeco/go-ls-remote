@@ -15,7 +15,7 @@ func BenchmarkDecodeKey_NoPrefix(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		key, _, _, err := decodeKey(raw, nil)
+		key, _, _, err := decodeKey(raw, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -32,7 +32,7 @@ func BenchmarkDecodeKey_Prefixed(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		key, _, _, err := decodeKey(raw, prev)
+		key, _, _, err := decodeKey(raw, prev, nil)
 		if err != nil {
 			b.Fatal(err)
 		}

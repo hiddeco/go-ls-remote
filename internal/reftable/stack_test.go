@@ -32,12 +32,12 @@ func TestOpenStack(t *testing.T) {
 		want := map[string]RefRecord[objfmt.SHA1Hash]{}
 		for rec, err := range rdr.IterRefs() {
 			require.NoError(t, err)
-			want[rec.Name] = rec
+			want[string(rec.Name)] = rec
 		}
 		got := map[string]RefRecord[objfmt.SHA1Hash]{}
 		for rec, err := range stack.IterRefs() {
 			require.NoError(t, err)
-			got[rec.Name] = rec
+			got[string(rec.Name)] = rec
 		}
 		assert.Equal(t, want, got)
 
@@ -219,7 +219,7 @@ func TestStack_FindRef(t *testing.T) {
 		rec, ok, err := stack.FindRef("refs/heads/main")
 		require.NoError(t, err)
 		require.True(t, ok)
-		assert.Equal(t, "refs/heads/main", rec.Name)
+		assert.Equal(t, []byte("refs/heads/main"), rec.Name)
 		assert.False(t, rec.Value.IsZero())
 
 		rec, ok, err = stack.FindRef("refs/heads/missing")
@@ -263,7 +263,7 @@ func TestStack_IterRefs(t *testing.T) {
 		var names []string
 		for rec, err := range stack.IterRefs() {
 			require.NoError(t, err)
-			names = append(names, rec.Name)
+			names = append(names, string(rec.Name))
 		}
 		require.NotEmpty(t, names)
 		assert.True(t, slices.IsSorted(names), "names must be sorted lexicographically: %v", names)
@@ -279,7 +279,7 @@ func TestStack_IterRefs(t *testing.T) {
 		var fromIter RefRecord[objfmt.SHA1Hash]
 		for rec, err := range stack.IterRefs() {
 			require.NoError(t, err)
-			if rec.Name == "refs/heads/main" {
+			if string(rec.Name) == "refs/heads/main" {
 				fromIter = rec
 			}
 		}

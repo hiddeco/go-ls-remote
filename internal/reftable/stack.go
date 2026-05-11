@@ -134,10 +134,23 @@ func OpenStack[H objfmt.Hash](reftableDir string) (*Stack[H], error) {
 				return nil, err
 			}
 			if rec.ValueType == refValueDeletion {
-				delete(merged, rec.Name)
+				delete(merged, string(rec.Name))
 				continue
 			}
-			merged[rec.Name] = liftRefRecord(rec)
+			// Take ownership of Name's bytes via a single allocation
+			// that backs both the merged-map key and the cached []byte
+			// Name. The conversion `string(rec.Name)` clones the
+			// scratch-aliased bytes onto the heap; `asReadOnlyBytes`
+			// then exposes that same memory as a []byte view for the
+			// cached Name field. The Name slice and the map key alias
+			// the same string-backed memory and are valid for the
+			// Stack's lifetime, read-only.
+			//
+			// Target aliases the Reader's underlying file (retained by
+			// Stack), so no clone is needed there.
+			name := string(rec.Name)
+			rec.Name = asReadOnlyBytes(name)
+			merged[name] = liftRefRecord(rec)
 		}
 	}
 

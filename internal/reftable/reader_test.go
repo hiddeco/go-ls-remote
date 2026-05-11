@@ -115,7 +115,7 @@ func TestReader_IterRefs(t *testing.T) {
 				break
 			}
 			recs = append(recs, rec)
-			switch rec.Name {
+			switch string(rec.Name) {
 			case "HEAD":
 				seenHEAD = true
 			case "refs/heads/main":
@@ -132,7 +132,7 @@ func TestReader_IterRefs(t *testing.T) {
 		// carries a real OID. Both shapes must round-trip through the
 		// public surface.
 		assert.False(t, mainRecord.Value.IsZero(), "main ref must carry a non-zero OID")
-		assert.Empty(t, mainRecord.TargetRef, "main ref is a value record, not a symref")
+		assert.Empty(t, mainRecord.Target, "main ref is a value record, not a symref")
 	})
 
 	t.Run("sha256_yields_records", func(t *testing.T) {
@@ -165,8 +165,9 @@ func TestReader_IterRefs(t *testing.T) {
 				break
 			}
 			count++
-			if rec.Name != "" && rec.Name != "HEAD" && rec.Name != "refs/heads/main" {
-				branches[rec.Name] = true
+			name := string(rec.Name)
+			if name != "" && name != "HEAD" && name != "refs/heads/main" {
+				branches[name] = true
 			}
 		}
 		require.NoError(t, iterErr)
@@ -234,7 +235,7 @@ func TestReader_IterRefs(t *testing.T) {
 				)
 				for rec, err := range r.IterRefs() {
 					require.NoError(t, err)
-					if rec.Name == "HEAD" {
+					if string(rec.Name) == "HEAD" {
 						seenHEAD = true
 						continue
 					}
@@ -257,7 +258,7 @@ func TestReader_FindRef(t *testing.T) {
 		rec, ok, err := r.FindRef("refs/heads/main")
 		require.NoError(t, err)
 		require.True(t, ok)
-		assert.Equal(t, "refs/heads/main", rec.Name)
+		assert.Equal(t, []byte("refs/heads/main"), rec.Name)
 		assert.False(t, rec.Value.IsZero(), "refs/heads/main must carry a non-zero OID")
 	})
 
@@ -269,8 +270,8 @@ func TestReader_FindRef(t *testing.T) {
 		rec, ok, err := r.FindRef("HEAD")
 		require.NoError(t, err)
 		require.True(t, ok)
-		assert.Equal(t, "HEAD", rec.Name)
-		assert.Equal(t, "refs/heads/main", rec.TargetRef)
+		assert.Equal(t, []byte("HEAD"), rec.Name)
+		assert.Equal(t, []byte("refs/heads/main"), rec.Target)
 		assert.True(t, rec.Value.IsZero(), "HEAD is a symref; Value must be zero")
 	})
 
@@ -295,7 +296,7 @@ func TestReader_FindRef(t *testing.T) {
 		rec, ok, err := r.FindRef("refs/heads/branch-50")
 		require.NoError(t, err)
 		require.True(t, ok)
-		assert.Equal(t, "refs/heads/branch-50", rec.Name)
+		assert.Equal(t, []byte("refs/heads/branch-50"), rec.Name)
 		assert.False(t, rec.Value.IsZero())
 	})
 
@@ -317,7 +318,148 @@ func TestReader_FindRef(t *testing.T) {
 		rec, ok, err := r.FindRef("refs/heads/main")
 		require.NoError(t, err)
 		require.True(t, ok)
-		assert.Equal(t, "refs/heads/main", rec.Name)
+		assert.Equal(t, []byte("refs/heads/main"), rec.Name)
 		assert.False(t, rec.Value.IsZero())
 	})
+}
+
+// TestReader_IterRefs_NameContract verifies the documented contract
+// that rec.Name's bytes may be overwritten by a later yield once the
+// ping-pong's scratch buffer cycles back. A regression that cloned
+// Name per record (silently restoring the pre-byte-typed per-record
+// alloc) would let the saved slice's bytes survive unchanged; this
+// test would then fail. Conversely, if a future change kept Name
+// stable for the iter's lifetime by some other mechanism, the test
+// would also catch it — and is the place to update the contract.
+//
+// The fixture's namespace (`refs/heads/branch-N`) yields keys of
+// similar length, so once both scratch buffers grow they are reused
+// for subsequent decodes and earlier rec.Name slices observe their
+// bytes overwritten. The test grabs a snapshot a few records in
+// (skipping HEAD, whose 4-byte buffer is too small to ever be
+// reused) and then advances enough records that the buffer the
+// snapshot aliased is decoded into again.
+func TestReader_IterRefs_NameContract(t *testing.T) {
+	r, err := OpenReader[objfmt.SHA1Hash](
+		fixturePath(t, "many-refs-1k-sha1/0001-0001-aaaaaaaa.ref"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	// Skip the first few records so the ping-pong buffers have grown
+	// large enough that further decodes reuse them. The snapshot is
+	// taken from a record whose Name slice aliases one of those
+	// grown buffers.
+	const skip = 8
+	const advance = 50
+
+	var snapName []byte
+	var snapStr string
+	var saw int
+	for rec, err := range r.IterRefs() {
+		require.NoError(t, err)
+		if rec.Name == nil {
+			continue
+		}
+		saw++
+		if saw == skip {
+			snapName = rec.Name
+			snapStr = string(snapName)
+			continue
+		}
+		if saw >= skip+advance {
+			break
+		}
+	}
+	require.GreaterOrEqual(t, saw, skip+advance,
+		"fixture must have at least %d records to exercise the contract", skip+advance)
+	require.NotEmpty(t, snapStr, "snapshot must have been captured")
+	assert.NotEqualf(t, snapStr, string(snapName),
+		"rec.Name captured at yield %d must be invalidated by yield %d "+
+			"per the documented lifetime; got stable bytes %q across "+
+			"the scratch ping-pong", skip, saw, snapStr)
+}
+
+// TestReader_FindRef_NameStability verifies that rec.Name from a
+// FindRef call is stable for the returned record's lifetime — i.e.
+// a subsequent FindRef on the same Reader does not overwrite the
+// previous record's Name. This is the FindRef counterpart to
+// TestReader_IterRefs_NameContract.
+func TestReader_FindRef_NameStability(t *testing.T) {
+	r, err := OpenReader[objfmt.SHA1Hash](
+		fixturePath(t, "many-refs-1k-sha1/0001-0001-aaaaaaaa.ref"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	first, found, err := r.FindRef("refs/heads/branch-1")
+	require.NoError(t, err)
+	require.True(t, found)
+	snapshot := string(first.Name)
+
+	// A subsequent FindRef must not overwrite the previous record's
+	// bytes — each FindRef escapes its scratch to the heap with the
+	// returned record.
+	_, _, err = r.FindRef("refs/heads/branch-500")
+	require.NoError(t, err)
+
+	assert.Equal(t, snapshot, string(first.Name),
+		"first record's Name must remain valid after a second FindRef")
+}
+
+// TestReader_FindRef_AllocBudget pins the per-call alloc count for
+// a forge-scale single-block lookup. With the byte-typed Name and
+// scratch-buffer ping-pong, the leaf-block walk decodes records into
+// a reusable buffer that the caller (the walker) holds across the
+// scan. After the first record the scratch is sized large enough for
+// every subsequent record in the same block, so the steady-state
+// per-record cost is zero. The remaining allocs come from
+// `parseBlock`, the descent path, and the `[]byte(name)` probe
+// conversion fed to `seekToLeaf`. A ceiling of 30 leaves room for
+// Go-runtime alloc drift between point releases; a regression that
+// brings even one alloc per record back would push this to ~150.
+func TestReader_FindRef_AllocBudget(t *testing.T) {
+	r, err := OpenReader[objfmt.SHA1Hash](
+		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	avg := testing.AllocsPerRun(50, func() {
+		_, _, err := r.FindRef("refs/heads/branch-5000")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Logf("FindRef allocs/op: %.2f", avg)
+	assert.LessOrEqualf(t, avg, 30.0,
+		"FindRef allocs/op: got %.0f, want <= 30", avg)
+}
+
+// TestReader_IterRefs_AllocBudget pins the per-iteration cost of
+// draining the iterator over 10k refs. With the byte-typed Name and
+// the scratch-buffer ping-pong, every record decode reuses the
+// walker's two scratch buffers (after the first record sizes them
+// large enough for the fixture's namespace), and the symref target
+// aliases directly into the block bytes. The remaining allocations
+// are paid once per ref block (the 316KiB fixture splits into ~77
+// 4 KiB blocks; each `parseBlock` allocates its `restartOffsets`
+// slice plus a handful of bookkeeping items). A ceiling of 300
+// covers ~2-3 allocs per block over 77 blocks with slack; a
+// regression that brings even one alloc per record back would push
+// this to ~10000.
+func TestReader_IterRefs_AllocBudget(t *testing.T) {
+	r, err := OpenReader[objfmt.SHA1Hash](
+		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+
+	avg := testing.AllocsPerRun(20, func() {
+		for rec, err := range r.IterRefs() {
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = rec
+		}
+	})
+	t.Logf("IterRefs allocs/op: %.2f", avg)
+	assert.LessOrEqualf(t, avg, 300.0,
+		"IterRefs allocs/op: got %.0f, want <= 300", avg)
 }
