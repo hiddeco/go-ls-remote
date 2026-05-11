@@ -71,7 +71,7 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 		return nil, mapDialError(err, redacted)
 	}
 
-	writer := pktline.NewWriter(netConn)
+	writer := pktline.NewWriter(netConn, outboundWriterOpts(opts.Tracer, redacted)...)
 	if err := wire.WriteStreamRequest(writer, u, opts.PreferredProtocol); err != nil {
 		_ = netConn.Close()
 		return nil, &ProtocolError{
@@ -83,7 +83,7 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 
 	return &Conn{
 		conn:        netConn,
-		reader:      pktline.NewReader(netConn),
+		reader:      pktline.NewReader(netConn, inboundReaderOpts(opts.Tracer, redacted)...),
 		writer:      writer,
 		redactedURL: redacted,
 	}, nil
