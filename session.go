@@ -297,14 +297,16 @@ func (s *Session) Close() error {
 // `ls-refs=unborn` per `connect.c::server_supports_feature` lines
 // 112-132), then one `ref-prefix <p>` per element of `args.Prefixes`.
 func buildLSRefsArgs(args RefsRequest, caps Capabilities) []string {
-	var out []string
+	unbornOK := args.Unborn && lsRefsAdvertisesUnborn(caps)
+	cap := boolToOne(args.Peel) + boolToOne(args.Symrefs) + boolToOne(unbornOK) + len(args.Prefixes)
+	out := make([]string, 0, cap)
 	if args.Peel {
 		out = append(out, "peel")
 	}
 	if args.Symrefs {
 		out = append(out, "symrefs")
 	}
-	if args.Unborn && lsRefsAdvertisesUnborn(caps) {
+	if unbornOK {
 		out = append(out, "unborn")
 	}
 	for _, p := range args.Prefixes {
@@ -320,7 +322,7 @@ func buildLSRefsArgs(args RefsRequest, caps Capabilities) []string {
 // §"object-info"; canonical Git's `protocol-caps.c::cap_object_info`
 // accepts any interleaving.
 func buildObjectInfoArgs(oids []string, args ObjectInfoRequest) []string {
-	out := make([]string, 0, len(oids)+1)
+	out := make([]string, 0, len(oids)+boolToOne(args.Size))
 	if args.Size {
 		out = append(out, "size")
 	}
@@ -344,7 +346,7 @@ func buildObjectInfoArgs(oids []string, args ObjectInfoRequest) []string {
 // would have emitted directly.
 func buildCommandCaps(caps Capabilities, userAgent string) []string {
 	var out []string
-	if _, ok := caps.Raw["agent"]; ok {
+	if caps.Agent != "" || len(caps.Raw["agent"]) > 0 {
 		ua := userAgent
 		if ua == "" {
 			ua = wire.DefaultUserAgent
@@ -365,12 +367,7 @@ func buildCommandCaps(caps Capabilities, userAgent string) []string {
 // [convertCaps]. A boolean `ls-refs` advertisement leaves
 // [Capabilities.LSRefsArgs] empty and so does not enable the gate.
 func lsRefsAdvertisesUnborn(caps Capabilities) bool {
-	for _, arg := range caps.LSRefsArgs {
-		if arg == "unborn" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(caps.LSRefsArgs, "unborn")
 }
 
 // matchPrefixes reports whether name is admitted by the prefix filter.
@@ -407,6 +404,15 @@ func (s *Session) protocolError(op string, err error) error {
 func versionPtr(v ProtocolVersion) *ProtocolVersion {
 	out := v
 	return &out
+}
+
+// boolToOne returns 1 when b is true and 0 otherwise. Used to compute
+// exact slice capacities from flag sets without branching.
+func boolToOne(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // cloneCapabilities returns a deep copy of c. Every slice and map is

@@ -1,6 +1,7 @@
 package lsremote
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
@@ -90,18 +91,9 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 	}
 
 	if v == ProtocolV2 {
-		names := raw.Names()
-		seen := make(map[string]struct{}, len(v2CommandNames))
-		for _, n := range names {
-			if _, dup := seen[n]; dup {
-				continue
-			}
-			for _, cmd := range v2CommandNames {
-				if n == cmd {
-					c.Commands = append(c.Commands, n)
-					seen[n] = struct{}{}
-					break
-				}
+		for _, n := range raw.Names() {
+			if slices.Contains(v2CommandNames, n) && !slices.Contains(c.Commands, n) {
+				c.Commands = append(c.Commands, n)
 			}
 		}
 	}
