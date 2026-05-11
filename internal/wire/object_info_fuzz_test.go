@@ -70,5 +70,15 @@ func objectInfoFuzzSeeds() [][]byte {
 			_ = w.WritePacket([]byte("ERR object-info: aborting\n"))
 			_ = w.WriteFlush()
 		}),
+		// No-attrs canonical shape: `send_info:47-48` elides the attrs
+		// PKT-LINE when `size` was not requested, so the response starts
+		// with per-OID `<oid>\n` rows.
+		buildPktBytes(func(w *pktline.Writer) {
+			_ = w.WritePacket([]byte(
+				"0123456789abcdef0123456789abcdef01234567\n"))
+			_ = w.WritePacket([]byte(
+				"89abcdef0123456789abcdef0123456789abcdef\n"))
+			_ = w.WriteFlush()
+		}),
 	}
 }

@@ -59,56 +59,86 @@ func EncodeObjectInfo(
 }
 
 // DecodeObjectInfo reads a v2 `object-info` response from r and returns the
-// per-OID information in stream order. The first data packet is the `attrs`
-// line echoing which attributes the response carries (`size` is the only
-// currently-defined attribute per `gitprotocol-v2.adoc`). Subsequent data
-// packets are `<oid> <size>` lines.
+// per-OID information in stream order. Per `protocol-caps.c::send_info`
+// (lines 37-77), the response takes one of three shapes:
 //
-// Per `protocol-caps.c::send_info`, an OID the server cannot resolve in
-// its odb is emitted as `<oid> ` with an empty size field. DecodeObjectInfo
-// drops such entries from the returned slice; callers can detect a missing
+//   - Bare flush — the client requested zero OIDs (`send_info:44-45`).
+//     Returns `nil, nil`.
+//   - Attrs PKT-LINE followed by `<oid>[ <size>]` rows — the client
+//     requested at least one attribute (only `size` is currently
+//     defined). The attrs line is `size\n` per `send_info:47-48`.
+//   - Per-OID rows with no attrs PKT-LINE — the client requested no
+//     attributes; `send_info:47-48` skips the attrs emission entirely
+//     and `send_info:63` writes just `<oid>\n` per OID.
+//
+// The third shape diverges from the `gitprotocol-v2.adoc` §"object-info"
+// grammar (lines 573-585), which lists the attrs PKT-LINE as
+// non-optional. The decoder follows canonical Git's actual emission
+// rather than the spec text and identifies the shape from the first
+// data packet: a line whose first space-delimited token is a
+// canonical-length hex OID (40 chars for SHA-1, 64 for SHA-256) is
+// treated as a per-OID row; anything else is treated as the attrs
+// line.
+//
+// An OID the server cannot resolve in its odb is emitted as `<oid> `
+// with an empty size field (`send_info:66-67`). DecodeObjectInfo drops
+// such entries from the returned slice; callers can detect a missing
 // OID by comparing input requests against the result.
 //
 // DecodeObjectInfo does not close r; the caller owns its lifetime.
 func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
-	// First data packet: attrs line. Treat any control packet here as a
-	// wire violation — `gitprotocol-v2.adoc` §"object-info" output (lines
-	// 573-585) requires the server emit at least the attrs PKT-LINE.
-	attrsPkt, err := r.ReadPacket()
+	pkt, err := r.ReadPacket()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, io.ErrUnexpectedEOF
 		}
 		return nil, err
 	}
-	switch attrsPkt.Kind {
+	switch pkt.Kind {
 	case pktline.Flush:
-		return nil, errors.New("wire: object-info response missing attrs line")
+		return nil, nil
 	case pktline.Delim, pktline.ResponseEnd:
 		return nil, fmt.Errorf(
-			"wire: unexpected control packet %v in object-info response", attrsPkt.Kind)
+			"wire: unexpected control packet %v in object-info response", pkt.Kind)
 	}
 
-	attrsLine := bytes.TrimSuffix(attrsPkt.Data, []byte{'\n'})
+	firstLine := bytes.TrimSuffix(pkt.Data, []byte{'\n'})
 
 	// `ERR ` detection per `pkt-line.c:509-510`. The shared
 	// [CheckERRPacket] helper wraps [ErrServerRefused] so callers
 	// can match the sentinel via `errors.Is`.
-	if errPkt := CheckERRPacket(attrsLine); errPkt != nil {
+	if errPkt := CheckERRPacket(firstLine); errPkt != nil {
 		return nil, errPkt
 	}
 
-	// Tokenise `attrs = attr | attrs SP attrs` (lines 576-577). Today the
-	// only defined attribute is `size`; record whether the response will
-	// carry a size token on each per-OID line.
-	wantSize := false
-	for tok := range strings.FieldsSeq(string(attrsLine)) {
-		if tok == "size" {
-			wantSize = true
+	var (
+		infos    []RawObjectInfo
+		wantSize bool
+	)
+
+	if looksLikeObjectInfoOIDLine(firstLine) {
+		// `send_info:47-48` skipped the attrs PKT-LINE because the
+		// client requested no attributes; the first packet is already
+		// a per-OID row. wantSize stays false — the no-attrs branch is
+		// only reachable when `size` was not requested.
+		info, drop, err := parseObjectInfoLine(string(firstLine), false)
+		if err != nil {
+			return nil, err
+		}
+		if !drop {
+			infos = append(infos, info)
+		}
+	} else {
+		// Tokenise `attrs = attr | attrs SP attrs` (lines 576-577).
+		// Today the only defined attribute is `size`; record whether
+		// the response will carry a size token on each per-OID line.
+		for tok := range strings.FieldsSeq(string(firstLine)) {
+			if tok == "size" {
+				wantSize = true
+			}
 		}
 	}
 
-	var infos []RawObjectInfo
 	for {
 		pkt, err := r.ReadPacket()
 		if err != nil {
@@ -142,6 +172,31 @@ func DecodeObjectInfo(r *pktline.Reader) ([]RawObjectInfo, error) {
 		}
 		infos = append(infos, info)
 	}
+}
+
+// looksLikeObjectInfoOIDLine reports whether line is shaped like a
+// per-OID row from `protocol-caps.c::send_info`. The first
+// space-delimited token of a per-OID row is the lowercase-hex object
+// id, of length 40 (SHA-1) or 64 (SHA-256). No currently-defined
+// attribute name (only `size` exists today) collides with that shape,
+// and an empty attrs PKT-LINE (`\n`) yields an empty token that is
+// also distinguishable.
+//
+// The check lets [DecodeObjectInfo] tell the no-attrs shape (per-OID
+// row first) from the attrs-bearing shape (`size\n` or `\n` first)
+// without out-of-band knowledge of whether the client asked for the
+// `size` argument.
+func looksLikeObjectInfoOIDLine(line []byte) bool {
+	tok, _, _ := bytes.Cut(line, []byte{' '})
+	if len(tok) != 40 && len(tok) != 64 {
+		return false
+	}
+	for _, c := range tok {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 // parseObjectInfoLine parses a single trimmed v2 `object-info` per-OID

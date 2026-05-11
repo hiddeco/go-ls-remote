@@ -317,30 +317,52 @@ func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 	assert.Equal(t, "object-info", pe.Op)
 }
 
-// TestSession_ObjectInfo_sizeFalseSetsNegativeOne pins the public
-// "size not requested" translation: when `ObjectInfoArgs.Size` is
-// false, every returned `ObjectInfo.Size` must be `-1` regardless of
-// what the wire layer reported. The test drives the Session through a
-// stub `transport.Conn` so the wire response is pinned bytes: an empty
-// `attrs` line per `gitprotocol-v2.adoc` §"object-info" grammar
-// (`info = PKT-LINE(attrs LF) ...`), one `<oid>\n` per OID, and a
-// flush.
+// TestSession_ObjectInfo_sizeFalseSeam pins the wire-server seam on a
+// no-`size` `object-info` request. Canonical Git's
+// `protocol-caps.c::send_info` lines 47-48 skip the attrs PKT-LINE
+// entirely when the client did not request `size`, so the response is
+// per-OID `<oid>\n` rows followed by a flush — no attrs. The wire
+// decoder must recognise that shape and surface the OIDs, and the
+// Session must translate each row's wire `Size=0` into the public
+// `Size=-1` sentinel.
 //
-// A stub is used (rather than the in-process server) because the
-// in-process server omits the attrs line entirely on the no-`size`
-// branch — matching canonical Git's `protocol-caps.c::send_info` —
-// while the wire decoder assumes an attrs line is always present.
-// Reconciling that pre-existing mismatch is out of scope for this
-// task; the unit-shaped test below verifies the public translation
-// without depending on it.
-func TestSession_ObjectInfo_sizeFalseSetsNegativeOne(t *testing.T) {
+// This test exercises the full seam through the in-process server so a
+// regression in either layer (server elides attrs, decoder consumes the
+// first row as a degenerate attrs line, Session forgets to translate
+// the sentinel) is caught here rather than at the next phase boundary.
+func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
+	store, commitOID := openObjectInfoFixture(t)
+	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
+	defer srv.Close()
+
+	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	require.NoError(t, err)
+	defer func() { _ = s.Close() }()
+
+	got, err := s.ObjectInfo(context.Background(),
+		[]string{commitOID}, ObjectInfoArgs{})
+	require.NoError(t, err)
+	require.Len(t, got, 1,
+		"no-size response must surface one row per requested OID; "+
+			"decoder previously consumed the first row as a degenerate attrs line")
+	assert.Equal(t, commitOID, got[0].Hash)
+	assert.Equal(t, int64(-1), got[0].Size,
+		"Size: false must translate to ObjectInfo.Size == -1")
+}
+
+// TestSession_ObjectInfo_sizeFalseNoSizeArg confirms the request side
+// of [TestSession_ObjectInfo_sizeFalseSeam]: when `ObjectInfoArgs.Size`
+// is false the wire request must not carry the `size` argument. The
+// public contract leaks no Size-related capability the caller did not
+// opt into. A stub `transport.Conn` pins the bytes the Session writes
+// without rebuilding the in-process server here.
+func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 	commitOID := "26dae744f51e61913f50bd402cbe63953c7d637b"
 
-	// Build a synthetic v2 object-info response with an empty attrs
-	// line so the wire decoder treats subsequent rows as per-OID.
+	// Synthesise a canonical no-attrs response so the Session call
+	// returns; this test cares only about the request bytes.
 	var resp bytes.Buffer
 	pw := pktline.NewWriter(&resp)
-	require.NoError(t, pw.WritePacket([]byte("\n")))
 	require.NoError(t, pw.WritePacket([]byte(commitOID+"\n")))
 	require.NoError(t, pw.WriteFlush())
 
@@ -354,17 +376,10 @@ func TestSession_ObjectInfo_sizeFalseSetsNegativeOne(t *testing.T) {
 		},
 	}
 
-	got, err := s.ObjectInfo(context.Background(),
+	_, err := s.ObjectInfo(context.Background(),
 		[]string{commitOID}, ObjectInfoArgs{})
 	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, commitOID, got[0].Hash)
-	assert.Equal(t, int64(-1), got[0].Size,
-		"Size: false must translate to ObjectInfo.Size == -1")
 
-	// And confirm the wire request did NOT carry a `size` argument: the
-	// public contract leaks no Size-related capability the caller did
-	// not opt into.
 	assert.Equal(t, "object-info", conn.lastCmdName)
 	for _, a := range conn.lastCmdArgs {
 		assert.NotEqual(t, "size", a,

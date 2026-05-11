@@ -16,12 +16,14 @@ var benchObjectInfoSink []RawObjectInfo
 // buildBenchObjectInfoStream serialises a server-side `object-info`
 // response into a contiguous byte slice the bench can rewind per
 // iteration. It mirrors `protocol-caps.c::send_info`'s success-path
-// framing: an attrs line (`size` or empty), one `<oid>[ <size>]` row
-// per requested OID, then a flush. When withMissing is true every
-// fourth row is replaced with the canonical `<oid> ` shape that
-// `send_info` writes when `odb_read_object_info` cannot resolve the
-// OID — `DecodeObjectInfo` filters those, so this exercises the drop
-// path alongside the resolved-row hot path.
+// framing: with `size` requested, a `size\n` attrs PKT-LINE precedes
+// the `<oid> <size>\n` rows (`send_info:47-48`); without `size`, no
+// attrs PKT-LINE is emitted and rows are bare `<oid>\n`
+// (`send_info:63`). When withMissing is true every fourth row is
+// replaced with the canonical `<oid> ` shape that `send_info` writes
+// when `odb_read_object_info` cannot resolve the OID —
+// `DecodeObjectInfo` filters those, so this exercises the drop path
+// alongside the resolved-row hot path.
 func buildBenchObjectInfoStream(b *testing.B, n int, withSize, withMissing bool) []byte {
 	b.Helper()
 	var buf bytes.Buffer
@@ -29,10 +31,6 @@ func buildBenchObjectInfoStream(b *testing.B, n int, withSize, withMissing bool)
 
 	if withSize {
 		if err := w.WritePacket([]byte("size\n")); err != nil {
-			b.Fatal(err)
-		}
-	} else {
-		if err := w.WritePacket([]byte("\n")); err != nil {
 			b.Fatal(err)
 		}
 	}

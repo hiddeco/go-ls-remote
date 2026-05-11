@@ -256,13 +256,16 @@ func TestDecodeObjectInfo(t *testing.T) {
 	)
 
 	t.Run("empty (just flush)", func(t *testing.T) {
+		// `protocol-caps.c::send_info` lines 44-45 short-circuit on an
+		// empty OID list and emit neither attrs nor per-OID lines — the
+		// response is a bare flush. The decoder must accept that as an
+		// empty result, not as a missing-attrs error.
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WriteFlush())
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(&buf))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "attrs")
+		require.NoError(t, err)
 		assert.Empty(t, infos)
 	})
 
@@ -411,6 +414,39 @@ func TestDecodeObjectInfo(t *testing.T) {
 			{OID: oid2, Size: 0},
 		}, infos)
 	})
+
+	t.Run("attrs line elided, single OID (canonical no-size)", func(t *testing.T) {
+		// `protocol-caps.c::send_info` lines 47-48 gate the `size\n` attrs
+		// PKT-LINE on `info->size`; when the client did not request the
+		// `size` argument, canonical Git emits no attrs line at all and
+		// jumps straight to per-OID `<oid>\n` lines. The decoder must
+		// recognise the first packet as a per-OID line in that shape and
+		// not consume it as a degenerate attrs line.
+		buf := buildObjectInfoStream(t,
+			oid1+"\n",
+		)
+
+		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
+		require.NoError(t, err)
+		assert.Equal(t, []RawObjectInfo{{OID: oid1}}, infos)
+	})
+
+	t.Run("attrs line elided, multiple OIDs (canonical no-size)", func(t *testing.T) {
+		buf := buildObjectInfoStream(t,
+			oid1+"\n",
+			oid2+"\n",
+			oid3+"\n",
+		)
+
+		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
+		require.NoError(t, err)
+		assert.Equal(t, []RawObjectInfo{
+			{OID: oid1},
+			{OID: oid2},
+			{OID: oid3},
+		}, infos)
+	})
+
 }
 
 // readRequestArgs walks an encoded `object-info` request stream and
@@ -464,17 +500,16 @@ func readRequestArgs(t *testing.T, raw []byte) (oids []string, sizeFlag bool) {
 }
 
 // emitObjectInfoResponse serialises a server-side `object-info`
-// response from the given infos, choosing the attrs line based on
-// whether the caller asked for size echoing. It mirrors the shape
-// that `protocol-caps.c::send_info` writes for the success path: an
-// `attrs` line, one `<oid>[ <size>]` line per row, and a flush.
+// response from the given infos. It mirrors `protocol-caps.c::send_info`
+// exactly: with `size` requested, the `size\n` attrs PKT-LINE precedes
+// the `<oid> <size>\n` rows (`send_info:47-48`); without `size`, no
+// attrs PKT-LINE is emitted at all and rows are bare `<oid>\n`
+// (`send_info:63`). The trailing flush closes the response.
 func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) *bytes.Buffer {
 	t.Helper()
 	payloads := make([]string, 0, 1+len(infos))
 	if withSize {
 		payloads = append(payloads, "size\n")
-	} else {
-		payloads = append(payloads, "\n")
 	}
 	for _, info := range infos {
 		if withSize {
