@@ -1,13 +1,9 @@
 package ssht
 
 import (
-	"context"
-	"errors"
 	"net"
 
 	"golang.org/x/crypto/ssh"
-
-	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // Transport is the SSH Git [transport.Transport]. It is constructed via
@@ -45,10 +41,6 @@ type Transport struct {
 	dialer *net.Dialer
 }
 
-// errNotImplemented is returned by [Transport.Open] until the dial,
-// exec, and version-negotiation work lands.
-var errNotImplemented = errors.New("ssht: not implemented yet")
-
 // New returns a [Transport] configured with opts. The zero
 // configuration is usable; options refine it. Nil entries in opts are
 // skipped, so callers may pass conditionally constructed options
@@ -70,13 +62,4 @@ func New(opts ...Option) *Transport {
 // lookup runs.
 func (t *Transport) Schemes() []string {
 	return []string{"ssh"}
-}
-
-// Open implements [transport.Transport]. It is intentionally stubbed
-// in this commit: the dial, command exec, and version-negotiation
-// machinery lands in the next commit. Until then every call returns a
-// fixed sentinel error so that misconfigured wiring fails loudly rather
-// than panicking on a half-built [Conn].
-func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
-	return nil, errNotImplemented
 }
