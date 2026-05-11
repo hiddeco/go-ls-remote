@@ -3,6 +3,7 @@ package gitt
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -16,6 +17,17 @@ import (
 // sent. Field order clusters the pointer-shaped fields ahead of the
 // `sync.Once` and trailing error so the struct packs without padding on
 // 64-bit platforms.
+//
+// # Concurrency
+//
+// Conn is single-flight per the [transport.Conn] contract. While a
+// [*pktline.Reader] returned from [Conn.Advertisement] or [Conn.Command]
+// is still open, callers must not invoke [Conn.Command] again on the
+// same Conn: the response of the prior call must be drained through to
+// its trailing flush first. The single TCP connection carries every
+// command sequentially with no multiplexing seam, so the contract is
+// enforced trivially — overlapping reads and writes would interleave
+// frames against the same stream.
 //
 // Lifecycle: ownership of the [net.Conn], the [*pktline.Reader], and
 // the [*pktline.Writer] transfers from [Transport.Open] to the [Conn];
@@ -56,25 +68,58 @@ type Conn struct {
 func (c *Conn) Advertisement() *pktline.Reader { return c.reader }
 
 // Command issues a v2 command and returns a [pktline.Reader] over the
-// response. The single TCP connection carries every command sequentially,
-// so callers must drain the response of any prior command before invoking
-// Command again.
+// response. The returned reader is the same one [Conn.Advertisement]
+// returns: the git-daemon transport keeps a single TCP connection
+// attached to one pkt-line stream for the entire session, and every
+// command's response streams back on that connection. The caller
+// therefore sees a single persistent stream whose packets are
+// segmented by the canonical v2 command-response framing
+// (`gitprotocol-v2.adoc` §"Command Response").
+//
+// # Concurrency
+//
+// [Conn] is single-flight per the [transport.Conn] contract. Callers
+// must drain the response of any prior command — through to its
+// trailing flush — before invoking Command again. The TCP connection
+// has no multiplexing seam, so the contract is enforced trivially.
+//
+// # Errors
 //
 // body is invoked exactly once against the [Conn]'s [pktline.Writer]
-// and must encode the canonical v2 command-request frame. On success
-// the same reader returned by [Conn.Advertisement] is returned.
-//
-// Note: the exact error envelope (sentinel mapping, ctx-cancel
-// handling) is hardened in the next commit; this stub satisfies the
-// [transport.Conn] interface.
+// and must encode the canonical v2 command-request frame
+// (`gitprotocol-v2.adoc` §"Command Request"). A non-nil return aborts
+// the call: all write failures — whether from a payload-cap rejection
+// (canonical cap at `pkt-line.h:234`) or a TCP-write error — flow
+// through `wrapWriteError` and surface as `*ProtocolError{Op: "command"}`
+// with the `"gitt: write command request: ..."` prefix; the
+// `errors.Is` chain to `pktline.ErrPayloadTooLarge` is preserved
+// through the wrap. After any Command error the [Conn] is effectively
+// dead and callers must invoke [Conn.Close] to release resources.
 func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody) (*pktline.Reader, error) {
+	// Honour cancellation up-front: the TCP connection has no
+	// per-write context plumbing, but a caller who has already
+	// cancelled before reaching here expects the cancellation to
+	// dominate.
 	if err := ctx.Err(); err != nil {
 		return nil, &ProtocolError{URL: c.redactedURL, Op: "command", Err: err}
 	}
 	if err := body(c.writer); err != nil {
-		return nil, &ProtocolError{URL: c.redactedURL, Op: "command", Err: err}
+		return nil, c.wrapWriteError(err)
 	}
 	return c.reader, nil
+}
+
+// wrapWriteError maps a TCP-write error from [Conn.Command]'s request
+// emission to a `*ProtocolError{Op: "command"}` with a stable
+// `"gitt: write command request: ..."` prefix so callers scanning log
+// lines see a consistent pattern regardless of the underlying failure
+// shape (net-closed, EPIPE, ECONNRESET, payload-too-large).
+func (c *Conn) wrapWriteError(err error) error {
+	return &ProtocolError{
+		URL: c.redactedURL,
+		Op:  "command",
+		Err: fmt.Errorf("gitt: write command request: %w", err),
+	}
 }
 
 // Close releases the underlying TCP connection. It is idempotent: a

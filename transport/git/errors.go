@@ -30,9 +30,8 @@ type ProtocolError struct {
 	// symmetric with the HTTP transport.
 	URL string
 
-	// Op identifies the operation. Today the only value is `"dial"`;
-	// future per-command failures will reuse the field with a
-	// command-specific value.
+	// Op identifies the operation. Known values are `"dial"` and
+	// `"command"`.
 	Op string
 
 	// Server carries an excerpt of a server-sent diagnostic, when one
