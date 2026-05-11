@@ -91,10 +91,21 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 	}
 
 	if v == ProtocolV2 {
-		for _, n := range raw.Names() {
-			if slices.Contains(v2CommandNames, n) && !slices.Contains(c.Commands, n) {
-				c.Commands = append(c.Commands, n)
+		// Iterate `raw` directly rather than via `raw.Names()`, which
+		// would allocate an intermediate `[]string`. The `Commands`
+		// slice is lazily made on first match and pre-sized to the
+		// upper bound — at most one element per curated v2 command —
+		// so it never grows. When no recognised commands are
+		// advertised, `c.Commands` stays nil, matching the documented
+		// contract for the v0/v1 path.
+		for _, rc := range raw {
+			if !slices.Contains(v2CommandNames, rc.Name) || slices.Contains(c.Commands, rc.Name) {
+				continue
 			}
+			if c.Commands == nil {
+				c.Commands = make([]string, 0, len(v2CommandNames))
+			}
+			c.Commands = append(c.Commands, rc.Name)
 		}
 	}
 
@@ -102,8 +113,13 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 	c.ObjectInfoArgs = splitArgs(raw, "object-info")
 
 	if v != ProtocolV2 {
-		for _, val := range raw.All("symref") {
-			name, target, ok := strings.Cut(val, ":")
+		// Iterate `raw` directly rather than calling `raw.All("symref")`,
+		// which would allocate an intermediate `[]string` of values.
+		for _, rc := range raw {
+			if rc.Name != "symref" {
+				continue
+			}
+			name, target, ok := strings.Cut(rc.Value, ":")
 			if !ok || name == "" || target == "" {
 				continue
 			}

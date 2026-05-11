@@ -246,6 +246,61 @@ func Test_convertCaps_rawIsolation(t *testing.T) {
 	assert.Equal(t, "git/2.45.0", raw[0].Value)
 }
 
+// Test_convertCaps_v2Typical_AllocBudget pins an allocation upper bound
+// for `convertCaps` on a typical v2 capability advertisement. The fixture
+// matches `Benchmark_convertCaps_v2Typical`. The budget guards against
+// regressions in slice pre-sizing and the v2 command-name walk.
+//
+// The structural floor is set by the `Capabilities.Raw` map escaping to
+// the heap (header + buckets + one slice per unique capability name),
+// the `LSRefsArgs` and `ObjectInfoArgs` slices produced by
+// `strings.Fields`, and the pre-sized `Commands` slice.
+func Test_convertCaps_v2Typical_AllocBudget(t *testing.T) {
+	raw := wire.RawCapabilities{
+		{Name: "agent", Value: "git/2.44.0"},
+		{Name: "object-format", Value: "sha1"},
+		{Name: "ls-refs", Value: "unborn"},
+		{Name: "fetch", Value: "shallow filter"},
+		{Name: "object-info", Value: "size"},
+		{Name: "server-option"},
+		{Name: "session-id", Value: "abc123def456"},
+		{Name: "bundle-uri"},
+	}
+
+	got := testing.AllocsPerRun(100, func() {
+		_ = convertCaps(raw, ProtocolV2)
+	})
+	const budget = 13.0
+	if got > budget {
+		t.Fatalf("convertCaps v2 typical: allocs/op=%v exceeds budget=%v", got, budget)
+	}
+}
+
+// Test_convertCaps_v0WithSymrefs_AllocBudget pins an allocation upper
+// bound for `convertCaps` on a v0 advertisement with symrefs. The fixture
+// matches `Benchmark_convertCaps_v0WithSymrefs`. The structural floor is
+// dominated by the escaping `Capabilities.Raw` map and the growth of
+// `Capabilities.Symrefs` as the three `symref` entries are appended.
+func Test_convertCaps_v0WithSymrefs_AllocBudget(t *testing.T) {
+	raw := wire.RawCapabilities{
+		{Name: "agent", Value: "git/2.44.0"},
+		{Name: "object-format", Value: "sha1"},
+		{Name: "symref", Value: "HEAD:refs/heads/main"},
+		{Name: "symref", Value: "refs/remotes/origin/HEAD:refs/heads/main"},
+		{Name: "symref", Value: "refs/remotes/upstream/HEAD:refs/heads/develop"},
+		{Name: "multi_ack"},
+		{Name: "side-band-64k"},
+	}
+
+	got := testing.AllocsPerRun(100, func() {
+		_ = convertCaps(raw, ProtocolV0)
+	})
+	const budget = 12.0
+	if got > budget {
+		t.Fatalf("convertCaps v0 with symrefs: allocs/op=%v exceeds budget=%v", got, budget)
+	}
+}
+
 func Test_convertRef(t *testing.T) {
 	cases := []struct {
 		name string
