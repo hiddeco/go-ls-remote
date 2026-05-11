@@ -187,12 +187,26 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 		return nil, &ProtocolError{URL: redacted, Op: "session", Err: fmt.Errorf("ssht: write initial pkt-line: %w", err)}
 	}
 
-	return &Conn{
-		client:  client,
-		session: session,
-		reader:  pktline.NewReader(stdout),
-		writer:  writer,
-	}, nil
+	c := &Conn{
+		client:      client,
+		session:     session,
+		reader:      pktline.NewReader(stdout),
+		writer:      writer,
+		redactedURL: redacted,
+		done:        make(chan struct{}),
+	}
+
+	// Reap the remote `git-upload-pack` in a goroutine so its exit
+	// status is observable through [Conn.sessionError]. `session.Wait`
+	// must be called exactly once after `session.Start`; the closure
+	// here is that single call. Closing `done` releases [Conn.Close]'s
+	// wait and signals every reader of `c.waitErr`.
+	go func() {
+		defer close(c.done)
+		c.waitErr = session.Wait()
+	}()
+
+	return c, nil
 }
 
 // resolveClientConfig merges the [Transport]'s configured client config
