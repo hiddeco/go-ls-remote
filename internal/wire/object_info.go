@@ -50,7 +50,7 @@ func EncodeObjectInfo(
 		}
 	}
 	for _, oid := range oids {
-		if err := writeLine(w, "oid "+oid); err != nil {
+		if err := w.WriteLineParts("oid ", oid); err != nil {
 			return err
 		}
 	}

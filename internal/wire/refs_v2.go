@@ -67,7 +67,7 @@ func EncodeLSRefs(
 		}
 	}
 	for _, p := range args.Prefixes {
-		if err := writeLine(w, "ref-prefix "+p); err != nil {
+		if err := w.WriteLineParts("ref-prefix ", p); err != nil {
 			return err
 		}
 	}
@@ -78,9 +78,11 @@ func EncodeLSRefs(
 // writeLine emits a single pkt-line whose payload is s followed by
 // the literal `LF` byte. The `LF` is part of every command, capability,
 // and argument line in the v2 request grammar
-// (`gitprotocol-v2.adoc` §"command-request").
+// (`gitprotocol-v2.adoc` §"command-request"). The body is a thin
+// wrapper around [pktline.Writer.WriteLine], which appends the LF
+// without allocating a temporary string or `[]byte`.
 func writeLine(w *pktline.Writer, s string) error {
-	return w.WritePacket([]byte(s + "\n"))
+	return w.WriteLine(s)
 }
 
 // lsRefsSupportsUnborn reports whether any `ls-refs` capability value

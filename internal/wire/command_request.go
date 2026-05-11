@@ -31,7 +31,7 @@ import (
 // or argument) exceeds the canonical cap from `pkt-line.h:234` once
 // the trailing LF is appended.
 func EncodeV2CommandRequest(w *pktline.Writer, name string, args, caps []string) error {
-	if err := writeLine(w, "command="+name); err != nil {
+	if err := w.WriteLineParts("command=", name); err != nil {
 		return err
 	}
 	for _, c := range caps {

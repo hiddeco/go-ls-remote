@@ -24,12 +24,12 @@ func writeCapabilityEcho(w *pktline.Writer, caps RawCapabilities, userAgent stri
 		if ua == "" {
 			ua = DefaultUserAgent
 		}
-		if err := writeLine(w, "agent="+ua); err != nil {
+		if err := w.WriteLineParts("agent=", ua); err != nil {
 			return err
 		}
 	}
 	if v, ok := caps.Get("object-format"); ok && v != "" {
-		if err := writeLine(w, "object-format="+v); err != nil {
+		if err := w.WriteLineParts("object-format=", v); err != nil {
 			return err
 		}
 	}
