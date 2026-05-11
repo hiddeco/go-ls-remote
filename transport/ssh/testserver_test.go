@@ -135,24 +135,26 @@ type testServer struct {
 }
 
 // newTestServer constructs and starts the fixture. It registers a
-// `t.Cleanup` that closes the listener, closes every accepted
+// `tb.Cleanup` that closes the listener, closes every accepted
 // connection, and waits for every spawned goroutine to return —
-// matching the package's `goleak.VerifyTestMain` shape.
-func newTestServer(t *testing.T, opts testServerOpts) *testServer {
-	t.Helper()
+// matching the package's `goleak.VerifyTestMain` shape. The signature
+// is `testing.TB` rather than `*testing.T` so benchmarks can reuse
+// the fixture without re-implementing it.
+func newTestServer(tb testing.TB, opts testServerOpts) *testServer {
+	tb.Helper()
 
 	_, hostPriv, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	hostSigner, err := ssh.NewSignerFromKey(hostPriv)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	_, clientPriv, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	clientSigner, err := ssh.NewSignerFromKey(clientPriv)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	s := &testServer{
 		listener:     ln,
@@ -165,7 +167,7 @@ func newTestServer(t *testing.T, opts testServerOpts) *testServer {
 	s.wg.Add(1)
 	go s.acceptLoop()
 
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		_ = ln.Close()
 		s.wg.Wait()
 	})

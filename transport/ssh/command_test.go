@@ -74,18 +74,20 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // [objstore.Store] over [objfmt.SHA1Hash]. The store is closed when
 // the test ends; the bridge handler is what
 // [testServerOpts.serveStore] invokes after the fixture has peeled
-// the initial extra-parameter pkt-line.
-func bridgeSHA1Store(t *testing.T, fixture string) bridgeServer {
-	t.Helper()
+// the initial extra-parameter pkt-line. The signature is
+// `testing.TB` rather than `*testing.T` so benchmarks can reuse the
+// bridge without re-implementing it.
+func bridgeSHA1Store(tb testing.TB, fixture string) bridgeServer {
+	tb.Helper()
 
-	gitdir := testfixture.MaterializeRepo(t, fixture)
-	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
+	gitdir := testfixture.MaterializeRepo(tb, fixture)
+	require.NoError(tb, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = store.Close() })
+	require.NoError(tb, err)
+	tb.Cleanup(func() { _ = store.Close() })
 
 	return bridgeServer{
-		tb: t,
+		tb: tb,
 		serve: func(ctx context.Context, r *pktline.Reader, w *pktline.Writer) error {
 			return server.Serve(ctx, r, w, store, server.Options{
 				Agent:             "test-server/0.0",
