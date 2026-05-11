@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -447,4 +448,70 @@ func flipPackByte(t *testing.T, packPath string, off int64) {
 	buf[0] ^= 0xff
 	_, err = f.WriteAt(buf[:], off)
 	require.NoError(t, err)
+}
+
+// TestEmitObjectInfoLine_AllocBudget pins the per-OID alloc floor of
+// the hit-with-size path. Before the formatting fix, the path landed
+// at ~8 allocs/OID — three of those came from the `strings.Builder`
+// chain (`Builder.grow`, `fmt.Fprintf` interface boxing, the
+// `b.String()` → `[]byte` round-trip). With those gone, the only
+// remaining allocs are the ones inside `Store.ObjectInfo` itself
+// (the pack-resolution path's read buffers), giving a floor near 5.
+//
+// The store is opened with `WithoutCRCCheck` so the budget isolates
+// the emitter's own allocs from the per-call CRC-32 verification
+// path's read buffers; the CRC path has its own coverage in
+// `internal/objstore/store_bench_test.go::BenchmarkStore_ObjectInfo_CRC`.
+//
+// Amortising over 1000 OIDs lets per-call constants (the response
+// setup, the iterator hand-off) round to zero so the average
+// isolates the loop body. The budget is set tight enough to fail if
+// any future change re-introduces a formatting-side alloc.
+func TestEmitObjectInfoLine_AllocBudget(t *testing.T) {
+	const oidCount = 1000
+	// 5 allocs/OID come from `Store.ObjectInfo`'s pack-resolution
+	// path (out of scope here); a tiny epsilon covers per-call
+	// constants (response setup, attrs line) that amortise but do
+	// not round to exactly zero across 1000 OIDs. A regression in
+	// the emitter would land back at 6+ and trip the budget.
+	const maxAllocsPerOID = 5.01
+
+	// Materialise the `pack-only` fixture and open without CRC so the
+	// budget is dominated by the emitter, not the per-object CRC pass.
+	dir := t.TempDir()
+	src := filepath.Join("..", "..", "testdata", "repos", "pack-only")
+	require.NoError(t, copyFixtureTree(src, dir))
+	require.NoError(t, os.Rename(
+		filepath.Join(dir, "dotgit"),
+		filepath.Join(dir, ".git")))
+	store, err := objstore.Open[objfmt.SHA1Hash](filepath.Join(dir, ".git"),
+		objstore.WithoutCRCCheck())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	w := pktline.NewWriter(io.Discard)
+
+	// Two known OIDs from the `pack-only` fixture, cycled so the
+	// loop alternates between them. Mirrors the bench's hit set.
+	hits := []string{
+		"26dae744f51e61913f50bd402cbe63953c7d637b", // commit
+		"97d881a6f710fc8fc34524d80bfc782359137a5c", // blob
+	}
+	oids := make([]string, oidCount)
+	for i := range oids {
+		oids[i] = hits[i%len(hits)]
+	}
+	args := wire.ObjectInfoArgs{Size: true}
+
+	avg := testing.AllocsPerRun(20, func() {
+		if err := writeObjectInfoResponse(w, store, args, oids); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	perOID := avg / float64(oidCount)
+	if perOID > maxAllocsPerOID {
+		t.Fatalf("post-fix allocs/OID = %.2f (total %.0f / %d OIDs), want <= %.1f",
+			perOID, avg, oidCount, maxAllocsPerOID)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
@@ -182,8 +183,21 @@ func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.S
 			return fmt.Errorf("server: object-info: write attrs: %w", err)
 		}
 	}
+	// One scratch buffer is reused across every per-OID pkt-line. Each
+	// iteration reslices to zero length and appends into the existing
+	// capacity, eliminating the per-OID `strings.Builder` growth +
+	// `[]byte(...)` conversion allocs the previous shape produced.
+	// `WritePacket` copies the payload into its own length-prefixed
+	// scratch (`pkt-line.c:509`), so reusing this slice across calls is
+	// safe. Capacity: 64-char SHA-256 hex + ' ' + 20-digit decimal int64
+	// + '\n' = 86 bytes worst case; round up to 96.
+	var scratch [96]byte
+	line := scratch[:0]
 	for _, oid := range oids {
-		if err := emitObjectInfoLine(w, store, oid, args.Size); err != nil {
+		line = line[:0]
+		var err error
+		line, err = emitObjectInfoLine(w, store, line, oid, args.Size)
+		if err != nil {
 			return err
 		}
 	}
@@ -215,13 +229,13 @@ func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.S
 //     [wire.ErrServerRefused] so the dispatcher terminates the
 //     session.
 func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
-	oidHex string, wantSize bool) error {
+	line []byte, oidHex string, wantSize bool) ([]byte, error) {
 	hash, err := objfmt.ParseHexAs[H](oidHex)
 	if err != nil {
 		// `protocol-caps.c:55-61`: malformed hex ⇒ inline ERR + continue.
 		// The bad hex is echoed verbatim into the message so a client
 		// trace shows the offending bytes.
-		return writeObjectInfoErr(w, fmt.Sprintf(
+		return line, writeObjectInfoErr(w, fmt.Sprintf(
 			"object-info: protocol error, expected to get oid, not '%s'", oidHex))
 	}
 
@@ -229,30 +243,32 @@ func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[
 	switch {
 	case err == nil:
 		// Hit. Build the line per canonical: `<oid>` then optional
-		// ` <size>` when wantSize is set.
-		var b strings.Builder
-		b.WriteString(oidHex)
+		// ` <size>` when wantSize is set. The caller-supplied scratch
+		// holds the payload until `WritePacket` copies it into its own
+		// length-prefixed scratch (`pkt-line.c:509`).
+		line = append(line, oidHex...)
 		if wantSize {
-			fmt.Fprintf(&b, " %d", info.Size)
+			line = append(line, ' ')
+			line = strconv.AppendInt(line, info.Size, 10)
 		}
-		b.WriteByte('\n')
-		if err := w.WritePacket([]byte(b.String())); err != nil {
-			return fmt.Errorf("server: object-info: write %s: %w", oidHex, err)
+		line = append(line, '\n')
+		if err := w.WritePacket(line); err != nil {
+			return line, fmt.Errorf("server: object-info: write %s: %w", oidHex, err)
 		}
-		return nil
+		return line, nil
 	case errors.Is(err, os.ErrNotExist):
 		// Empty-size form: `<oid> \n` when wantSize, just `<oid>\n`
-		// otherwise. Per `send_info:63-71`.
-		var b strings.Builder
-		b.WriteString(oidHex)
+		// otherwise. Per `send_info:63-71`. Same scratch-reuse shape as
+		// the hit branch; the size column collapses to a single space.
+		line = append(line, oidHex...)
 		if wantSize {
-			b.WriteByte(' ')
+			line = append(line, ' ')
 		}
-		b.WriteByte('\n')
-		if err := w.WritePacket([]byte(b.String())); err != nil {
-			return fmt.Errorf("server: object-info: write missing %s: %w", oidHex, err)
+		line = append(line, '\n')
+		if err := w.WritePacket(line); err != nil {
+			return line, fmt.Errorf("server: object-info: write missing %s: %w", oidHex, err)
 		}
-		return nil
+		return line, nil
 	default:
 		// Corruption or any other store error: fatal. Emit a structured
 		// ERR pkt-line carrying the wrapped error message, write the
@@ -260,12 +276,12 @@ func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[
 		// so the dispatcher terminates the session.
 		msg := fmt.Sprintf("objstore: object corrupt or unresolvable: %s", err.Error())
 		if werr := writeObjectInfoErr(w, msg); werr != nil {
-			return werr
+			return line, werr
 		}
 		if werr := w.WriteFlush(); werr != nil {
-			return fmt.Errorf("server: object-info: write fatal flush: %w", werr)
+			return line, fmt.Errorf("server: object-info: write fatal flush: %w", werr)
 		}
-		return fmt.Errorf("%w: %s", wire.ErrServerRefused, msg)
+		return line, fmt.Errorf("%w: %s", wire.ErrServerRefused, msg)
 	}
 }
 
