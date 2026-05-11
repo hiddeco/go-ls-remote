@@ -57,9 +57,12 @@ type AuthResolver interface {
 //
 // The dial is Unix-socket-only: on Windows the OpenSSH agent listens on
 // a named pipe (`\\.\pipe\openssh-ssh-agent`) rather than a Unix
-// socket, so callers on Windows must supply their own [AuthResolver].
-// A platform-specific build tag will be added in a later commit; this
-// constructor itself is portable Go.
+// socket, so `Agent` cannot reach the canonical Windows agent. The
+// constructor itself is portable Go and the runtime `net.Dial("unix",
+// ...)` is a no-op error path on Windows when `$SSH_AUTH_SOCK` is
+// unset, which is the typical Windows state; Windows callers needing
+// ssh-agent semantics should wire a named-pipe resolver of their own
+// via [AuthResolver] or supply an [ssh.Signer] via [Signer].
 //
 // If `$SSH_AUTH_SOCK` is unset or the dial fails the returned resolver
 // surfaces a wrapped error from its `Resolve` method; it never silently
