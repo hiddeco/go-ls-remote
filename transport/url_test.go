@@ -92,6 +92,62 @@ func TestParseURL(t *testing.T) {
 	}
 }
 
+// TestParseURL_RedactsCredentialsInErrors verifies that ParseURL never
+// leaks a password into its error text. Each case supplies a URL with
+// userinfo "alice:secret" and asserts that "secret" is absent from the
+// rendered error while "alice" and the redaction marker "***" are present.
+// Wrapping with fmt.Errorf("%w: %q", sentinel, RedactURL(s)) preserves
+// the sentinel chain, so errors.Is still matches.
+func TestParseURL_RedactsCredentialsInErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		wantErr error
+	}{
+		{
+			// Unterminated IPv6 bracket; userinfo contains a password.
+			name:    "invalid IPv6 — unterminated bracket",
+			in:      "https://alice:secret@[::1/repo.git",
+			wantErr: ErrInvalidIPv6,
+		},
+		{
+			// IPv6 bracket closed but followed by junk (no colon before port).
+			name:    "invalid IPv6 — junk after bracket",
+			in:      "https://alice:secret@[::1]junk/repo.git",
+			wantErr: ErrInvalidIPv6,
+		},
+		{
+			// Authority-branch missing-host: "https://alice:secret@/repo"
+			// passes scheme detection but yields an empty host.
+			name:    "missing host — authority branch",
+			in:      "https://alice:secret@/repo.git",
+			wantErr: ErrMissingHost,
+		},
+		{
+			// Authority-branch missing-host, port-only authority:
+			// "https://alice:secret@:8080/repo" parses scheme, strips
+			// userinfo, then finds host="" before the colon.
+			name:    "missing host — port-only authority",
+			in:      "https://alice:secret@:8080/repo.git",
+			wantErr: ErrMissingHost,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseURL(tt.in)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.wantErr)
+			msg := err.Error()
+			assert.NotContains(t, msg, "secret",
+				"error text must not contain the password")
+			assert.Contains(t, msg, "***",
+				"error text must contain redaction marker")
+			assert.Contains(t, msg, "alice",
+				"error text must preserve the username")
+		})
+	}
+}
+
 func TestParseURL_errors(t *testing.T) {
 	tests := []struct {
 		name string

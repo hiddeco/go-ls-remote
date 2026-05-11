@@ -118,13 +118,13 @@ func ParseURL(s string) (*URL, error) {
 			u.Host = hostPart
 		}
 		if u.Host == "" {
-			return nil, fmt.Errorf("%w: %q", ErrMissingHost, u.Raw)
+			return nil, fmt.Errorf("%w: %q", ErrMissingHost, RedactURL(u.Raw))
 		}
 		u.Path = "/" + path
 		return u, nil
 	}
 
-	return nil, fmt.Errorf("%w: %q", ErrUnrecognizedURL, s)
+	return nil, fmt.Errorf("%w: %q", ErrUnrecognizedURL, RedactURL(s))
 }
 
 // scpSeparator returns the index of the colon that separates host
@@ -180,7 +180,7 @@ func parseAuthorityPath(u *URL, s string) error {
 	if strings.HasPrefix(host, "[") {
 		end := strings.IndexByte(host, ']')
 		if end < 0 {
-			return fmt.Errorf("%w: %q", ErrInvalidIPv6, u.Raw)
+			return fmt.Errorf("%w: %q", ErrInvalidIPv6, RedactURL(u.Raw))
 		}
 		u.Host = host[1:end]
 		rest := host[end+1:]
@@ -190,7 +190,7 @@ func parseAuthorityPath(u *URL, s string) error {
 		case strings.HasPrefix(rest, ":"):
 			u.Port = rest[1:]
 		default:
-			return fmt.Errorf("%w: junk after closing bracket in %q", ErrInvalidIPv6, u.Raw)
+			return fmt.Errorf("%w: junk after closing bracket in %q", ErrInvalidIPv6, RedactURL(u.Raw))
 		}
 		return nil
 	}
@@ -202,7 +202,7 @@ func parseAuthorityPath(u *URL, s string) error {
 		u.Host = host
 	}
 	if u.Host == "" {
-		return fmt.Errorf("%w: %q", ErrMissingHost, u.Raw)
+		return fmt.Errorf("%w: %q", ErrMissingHost, RedactURL(u.Raw))
 	}
 	return nil
 }
