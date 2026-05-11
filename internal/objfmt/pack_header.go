@@ -155,10 +155,10 @@ func (p *Pack[H]) ReadHeader(at int64) (ObjectHeader[H], error) {
 		// Copy the on-disk hash bytes into the typed array. `H` is a
 		// fixed-size byte array, but the union of [SHA1Hash] and
 		// [SHA256Hash] has no single core type so `ref[:]` does not
-		// compile; [hashBytes] takes the address to recover a byte
+		// compile; [HashBytes] takes the address to recover a byte
 		// slice view of the in-place storage.
 		var ref H
-		copy(hashBytes(&ref), buf[used:used+hashLen])
+		copy(HashBytes(&ref), buf[used:used+hashLen])
 		hdr.DeltaRef.RefBase = ref
 		used += hashLen
 	case TypeCommit, TypeTree, TypeBlob, TypeTag:

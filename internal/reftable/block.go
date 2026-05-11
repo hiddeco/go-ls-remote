@@ -53,8 +53,25 @@ type blockHeader struct {
 }
 
 // block is a parsed view of a reftable ref/index/obj block: the
-// decoded header plus the eagerly resolved restart-offset table. The
-// caller hands in the block's bytes; [block] does not own or copy them.
+// decoded header plus the metadata needed to lazily resolve the
+// restart-offset table. The caller hands in the block's bytes;
+// [block] does not own or copy them.
+//
+// The on-disk restart_offset table sits at the tail of the block (as
+// `restartCount` uint24 entries followed by the uint16 restart_count
+// itself). [parseBlock] validates the table fits inside `blockLen` but
+// does not decode the entries up front — the [block.restart] accessor
+// resolves one entry at a time, which is allocation-free and matches
+// the access pattern of every consumer:
+//
+//   - [Reader.iterAllRefs] / [Reader.FindRef]'s linear scan never
+//     touches the restart table at all.
+//   - [block.seekRestart] (used by [descendIndex] in seek.go)
+//     binary-searches the table with O(log restartCount) accesses.
+//
+// Eager decoding was the dominant per-block allocation at scale; see
+// `reftable/block.c::block_reader_init` for the canonical (also lazy)
+// shape.
 type block struct {
 	header blockHeader
 
@@ -65,12 +82,18 @@ type block struct {
 	// bytes[firstByteOffset+4] (skipping block_type + block_len).
 	bytes []byte
 
-	// restartOffsets[i] is the offset of the i-th restart record,
-	// expressed relative to bytes[0]. For the first ref block in a
-	// file, on-disk restart_offset values are relative to position 0
-	// (they include the 24-byte file header); [parseBlock] subtracts
-	// firstByteOffset to bring them into the same frame.
-	restartOffsets []uint32
+	// firstByteOffset is the block-frame shift carried through from
+	// [parseBlock]. It is 24 (v1) or 28 (v2) for the first ref block in
+	// a file (whose on-disk restart_offset values are file-absolute)
+	// and 0 for every other block. [block.restart] subtracts it to
+	// rebase a decoded restart_offset into the block-local frame.
+	firstByteOffset uint32
+
+	// tableStart is the offset within bytes where the restart_offset
+	// table begins (3 bytes per entry, `restartCount` entries, then
+	// the uint16 restart_count at bytes[blockLen-2:]). Stored at parse
+	// time so [block.restart] avoids re-deriving it on each access.
+	tableStart uint32
 }
 
 // parseBlock decodes a block header and its restart-point table from
@@ -149,14 +172,16 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 		return block{}, fmt.Errorf("reftable: restart table of %d entries does not fit in block_len %d: %w", restartCount, blockLen, ErrTruncatedBlock)
 	}
 
-	restartOffsets := make([]uint32, restartCount)
+	// Per-entry validation runs at parse time so [block.restart] can
+	// trust the table; rebasing happens at access time. The smallest
+	// legal restart_offset in the block-local frame is firstByteOffset
+	// (the on-disk value); anything below would underflow the subtract
+	// done in [block.restart].
 	for i := range int(restartCount) {
 		off := be24(bytes[tableStart+3*int64(i) : tableStart+3*int64(i)+3])
-		// Rebase first-block offsets into the block-local frame.
 		if off < firstByteOffset {
 			return block{}, fmt.Errorf("reftable: restart_offset %d below firstByteOffset %d: %w", off, firstByteOffset, ErrTruncatedBlock)
 		}
-		restartOffsets[i] = off - firstByteOffset
 	}
 
 	return block{
@@ -165,20 +190,36 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 			blockLen:     blockLen,
 			restartCount: restartCount,
 		},
-		bytes:          bytes,
-		restartOffsets: restartOffsets,
+		bytes:           bytes,
+		firstByteOffset: firstByteOffset,
+		tableStart:      uint32(tableStart),
 	}, nil
+}
+
+// restart returns the block-local offset of the i-th restart record.
+// The caller is responsible for keeping i in [0, restartCount); the
+// restart table sits at the tail of the block (3 bytes per entry) and
+// [parseBlock] has already validated that every entry rebases without
+// underflow.
+//
+// Decoded lazily to keep [parseBlock] allocation-free at scale: a
+// full-table walk happens only in [block.seekRestart], which performs
+// O(log restartCount) accesses; the steady-state record walker in
+// [Reader.iterAllRefs] never reaches this path.
+func (b *block) restart(i int) uint32 {
+	off := uint32(b.tableStart) + 3*uint32(i)
+	return be24(b.bytes[off:off+3]) - b.firstByteOffset
 }
 
 // seekRestart returns the index of the largest restart point whose
 // record key compares <= probe via cmp, or -1 if probe sorts before
 // every restart point.
 //
-// cmp(i) returns -1, 0, or +1 if the record at restartOffsets[i]
+// cmp(i) returns -1, 0, or +1 if the record at [block.restart](i)
 // sorts before, equal to, or after the probe key. It is the bridge to
-// record-level decoding (Task 4): the caller decodes the record's
-// suffix (which equals the full key for restart records, since
-// prefix_length is 0 by spec) and compares it to probe.
+// record-level decoding: the caller decodes the record's suffix
+// (which equals the full key for restart records, since prefix_length
+// is 0 by spec) and compares it to probe.
 //
 // Mirrors `reftable/block.c::block_iter_seek_key`: we binary-search
 // for the first restart strictly greater than probe and back up by

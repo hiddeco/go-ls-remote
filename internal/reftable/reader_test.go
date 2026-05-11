@@ -437,14 +437,15 @@ func TestReader_FindRef_AllocBudget(t *testing.T) {
 // draining the iterator over 10k refs. With the byte-typed Name and
 // the scratch-buffer ping-pong, every record decode reuses the
 // walker's two scratch buffers (after the first record sizes them
-// large enough for the fixture's namespace), and the symref target
-// aliases directly into the block bytes. The remaining allocations
-// are paid once per ref block (the 316KiB fixture splits into ~77
-// 4 KiB blocks; each `parseBlock` allocates its `restartOffsets`
-// slice plus a handful of bookkeeping items). A ceiling of 300
-// covers ~2-3 allocs per block over 77 blocks with slack; a
-// regression that brings even one alloc per record back would push
-// this to ~10000.
+// large enough for the fixture's namespace); the symref target
+// aliases directly into the block bytes; and [parseBlock] now decodes
+// the restart-offset table lazily (via [block.restart]) so no
+// per-block slice is materialised on the iter path, which never
+// touches the table. The residual allocations come from iterator
+// harness bookkeeping (the closure capture for the `iter.Seq2`
+// pair). A ceiling of 25 leaves room for Go-runtime alloc drift
+// between point releases; a regression that brings even one alloc
+// per record back would push this to ~10000.
 func TestReader_IterRefs_AllocBudget(t *testing.T) {
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))
@@ -460,6 +461,6 @@ func TestReader_IterRefs_AllocBudget(t *testing.T) {
 		}
 	})
 	t.Logf("IterRefs allocs/op: %.2f", avg)
-	assert.LessOrEqualf(t, avg, 300.0,
-		"IterRefs allocs/op: got %.0f, want <= 300", avg)
+	assert.LessOrEqualf(t, avg, 25.0,
+		"IterRefs allocs/op: got %.0f, want <= 25", avg)
 }

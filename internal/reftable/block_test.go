@@ -66,7 +66,8 @@ func Test_parseBlock(t *testing.T) {
 		assert.Equal(t, byte('r'), b.header.blockType)
 		assert.Equal(t, uint32(32), b.header.blockLen)
 		assert.Equal(t, uint16(2), b.header.restartCount)
-		assert.Equal(t, []uint32{4, 16}, b.restartOffsets)
+		assert.Equal(t, uint32(4), b.restart(0))
+		assert.Equal(t, uint32(16), b.restart(1))
 		// bytes is a view sliced to blockLen.
 		assert.Len(t, b.bytes, 32)
 	})
@@ -78,7 +79,7 @@ func Test_parseBlock(t *testing.T) {
 		assert.Equal(t, byte('i'), b.header.blockType)
 		assert.Equal(t, uint32(24), b.header.blockLen)
 		assert.Equal(t, uint16(1), b.header.restartCount)
-		assert.Equal(t, []uint32{4}, b.restartOffsets)
+		assert.Equal(t, uint32(4), b.restart(0))
 	})
 
 	t.Run("obj_block", func(t *testing.T) {
@@ -172,7 +173,8 @@ func Test_parseBlock(t *testing.T) {
 		b, err := parseBlock(buf, 24)
 		require.NoError(t, err)
 		assert.Equal(t, uint32(64), b.header.blockLen)
-		assert.Equal(t, []uint32{4, 16}, b.restartOffsets)
+		assert.Equal(t, uint32(4), b.restart(0))
+		assert.Equal(t, uint32(16), b.restart(1))
 	})
 
 	t.Run("first_ref_block_offset_below_first_byte_rejected", func(t *testing.T) {

@@ -56,7 +56,7 @@ func (i *Idx[H]) findOffsetV1(h H) (int64, bool) {
 	}
 
 	tableStart := 256 * 4
-	want := hashBytes(&h)
+	want := HashBytes(&h)
 	for lo < hi {
 		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
 		// summands set bit 31; `lo + (hi-lo)/2` does not.

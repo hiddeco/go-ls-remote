@@ -9,8 +9,8 @@ import "unsafe"
 //
 // Mirrors stdlib's `unsafe.Slice(unsafe.StringData(s), len(s))` idiom
 // behind a named helper so call sites read intent rather than pointer
-// arithmetic. See `record_ref.go::hashBytes` for the analogous
-// minimum-surface unsafe wrapper.
+// arithmetic. See [objfmt.HashBytes] for the analogous minimum-surface
+// unsafe wrapper used by the ref-record decoder.
 func asReadOnlyBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

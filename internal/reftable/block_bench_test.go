@@ -7,9 +7,9 @@ var benchBlockSink block
 
 func BenchmarkParseBlock_RefBlock(b *testing.B) {
 	// Steady-state block parse: a ref block at firstByteOffset=0 with
-	// a small restart table. parseBlock allocates restartOffsets once
-	// per call (length = restartCount); the bench reflects that
-	// allocation in `B/op`.
+	// a small restart table. parseBlock decodes the restart table
+	// lazily via [block.restart]; the bench reflects only header
+	// parsing plus the parse-time validation pass over the table.
 	buf := buildBlock('r', 4096, []uint32{4, 256, 512, 1024, 2048})
 
 	b.ReportAllocs()

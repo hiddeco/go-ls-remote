@@ -90,7 +90,7 @@ func (i *Idx[H]) PackChecksum() H {
 	if hashLen == 0 || len(i.data) < 2*hashLen {
 		return h
 	}
-	copy(hashBytes(&h), i.data[len(i.data)-2*hashLen:len(i.data)-hashLen])
+	copy(HashBytes(&h), i.data[len(i.data)-2*hashLen:len(i.data)-hashLen])
 	return h
 }
 
@@ -166,7 +166,7 @@ func (i *Idx[H]) searchV2(h H) (uint32, bool) {
 	if len(i.data) < nameTable+int(i.count)*hashLen {
 		return 0, false
 	}
-	want := hashBytes(&h)
+	want := HashBytes(&h)
 	for lo < hi {
 		// Overflow-safe midpoint: `(lo + hi) / 2` would wrap when both
 		// summands set bit 31; `lo + (hi-lo)/2` does not.

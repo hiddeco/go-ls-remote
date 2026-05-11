@@ -84,19 +84,23 @@ func (h SHA256Hash) IsZero() bool { return h == SHA256Hash{} }
 // for the copy contract.
 func (h SHA256Hash) Bytes() []byte { return h[:] }
 
-// hashBytes returns a slice over the in-place storage of h. Used by
-// generic readers ([Idx.searchV2], [Midx.searchOID], etc.) that need a
+// HashBytes returns a `[]byte` view over the in-place storage of h.
+// Used by generic readers and decoders ([Idx.searchV2],
+// [Midx.searchOID], reftable's ref-record decoder, etc.) that need a
 // `[]byte` view of the OID without per-call allocation. The
 // type-parameter `H` cannot be sliced directly with `h[:]` because
 // the union of [SHA1Hash] and [SHA256Hash] does not have a single core
 // type — Go's generic slicing rules require one. The
-// [unsafe.Slice] form is the minimum-surface workaround; the slice
-// references the local-copy `h`, so callers must not retain it past
-// the end of `h`'s scope.
+// [unsafe.Slice] form is the minimum-surface workaround.
+//
+// The returned slice aliases `*h`. Callers must not retain it past
+// the lifetime of the storage `h` points to: if `h` addresses a stack
+// local the slice is valid only within that frame; if it addresses a
+// struct field the slice is valid only until the struct is recycled.
 //
 // For the typed-public APIs ([SHA1Hash.Bytes], [SHA256Hash.Bytes])
 // continue to use the by-copy form: their `[:]` form is inherently
 // safer because the copy lives on the caller's stack.
-func hashBytes[H Hash](h *H) []byte {
+func HashBytes[H Hash](h *H) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(h)), len(*h))
 }

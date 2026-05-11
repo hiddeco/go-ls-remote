@@ -155,7 +155,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	// Restart records carry prefix_length=0, so each cmp() call decodes
 	// a self-contained key; no running prevKey is needed.
 	idx := blk.seekRestart(func(i int) int {
-		off := blk.restartOffsets[i]
+		off := blk.restart(i)
 		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil, nil)
 		if err != nil {
 			// Returning +1 makes seekRestart skip this restart; the
@@ -173,7 +173,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	// `block_iter_seek_key`, then read its block_position.
 	scanFrom := startOff
 	if idx >= 0 {
-		scanFrom = blk.restartOffsets[idx]
+		scanFrom = blk.restart(idx)
 	}
 
 	cur := scanFrom

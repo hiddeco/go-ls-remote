@@ -3,7 +3,7 @@ package reftable
 import (
 	"errors"
 	"fmt"
-	"unsafe"
+	"math"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
@@ -37,10 +37,18 @@ var (
 // or reflog reading should implement the corresponding record decoders
 // alongside this file.
 
-// refRecord is the decoded form of one ref_record. Fields beyond Name,
-// UpdateIndex, and ValueType are populated only for the value types
-// that carry them: Value for types 1 and 2, Peeled for type 2, Target
-// for type 3. Type 0 (deletion / tombstone) leaves all three zero.
+// refRecord is the decoded form of one ref_record. Fields beyond Name
+// and ValueType are populated only for the value types that carry
+// them: Value for types 1 and 2, Peeled for type 2, Target for type 3.
+// Type 0 (deletion / tombstone) leaves all three zero.
+//
+// The on-disk `update_index` is intentionally not retained. ls-remote
+// consumers never observe it — the public [RefRecord] does not carry
+// it and the [Stack] merge keys it implicitly via newest-table-wins
+// ordering — so storing it per record would pay alloc and copy cost
+// for a field that has no reader. [decodeRefRecord] still validates
+// the on-disk `update_index_delta` for overflow (see
+// [ErrUpdateIndexOverflow]) so malformed inputs are rejected eagerly.
 //
 // Name and Target are byte slices with borrowed-buffer lifetimes (see
 // [decodeRefRecord]). Callers that retain a record past the next
@@ -51,13 +59,16 @@ var (
 // `refRecord[objfmt.SHA256Hash]`. Mixed-algorithm inputs surface at
 // [OpenReader] / [OpenStack] time as [ErrMixedHashAlgo] before any
 // record bytes reach the decoder.
+//
+// Field layout mirrors [RefRecord]: two slice headers (alignment 8)
+// at the front, the two hash arrays (alignment 1) packed back-to-back,
+// and ValueType (alignment 1) trailing into the struct's tail padding.
 type refRecord[H objfmt.Hash] struct {
-	Name        []byte
-	UpdateIndex uint64
-	ValueType   uint8
-	Value       H
-	Peeled      H
-	Target      []byte
+	Name      []byte
+	Target    []byte
+	Value     H
+	Peeled    H
+	ValueType uint8
 }
 
 // reftable.adoc §"ref record" — the low 3 bits of the second varint in
@@ -91,9 +102,10 @@ const (
 // symref records), is a slice into buf and is valid for as long as
 // buf is valid.
 //
-// minUpdateIndex is the file header's `min_update_index`; the
-// decoded record's `UpdateIndex` is `minUpdateIndex + delta` where
-// delta is varint-encoded on disk.
+// minUpdateIndex is the file header's `min_update_index`. The decoder
+// validates that `minUpdateIndex + update_index_delta` fits in uint64
+// (returning [ErrUpdateIndexOverflow] on wrap) but does not retain
+// the sum: [refRecord] no longer carries `UpdateIndex`.
 //
 // Errors:
 //   - [ErrTruncatedRecord] wraps a buffer that ends mid-record, a
@@ -127,19 +139,17 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex
 		return zero, 0, fmt.Errorf("reftable: ref_record update_index_delta: %w", err)
 	}
 
-	// minUpdateIndex + delta must fit in uint64. Detect wrap-around
-	// rather than silently truncating; a wrapped index would compare
-	// incorrectly against the file header's max_update_index and
-	// confuse merged-stack ordering.
-	updateIndex := minUpdateIndex + delta
-	if updateIndex < minUpdateIndex {
+	// Detect minUpdateIndex + delta wrapping uint64. The sum is not
+	// stored — the public [RefRecord] does not carry update_index, and
+	// [refRecord] has been trimmed to match — but the check still flags
+	// on-disk corruption that reftable.adoc §"ref record" disallows.
+	if delta > math.MaxUint64-minUpdateIndex {
 		return zero, 0, fmt.Errorf("reftable: min %d + delta %d wraps uint64: %w", minUpdateIndex, delta, ErrUpdateIndexOverflow)
 	}
 
 	rec := refRecord[H]{
-		Name:        key,
-		UpdateIndex: updateIndex,
-		ValueType:   valueType,
+		Name:      key,
+		ValueType: valueType,
 	}
 
 	rest = rest[n2:]
@@ -152,14 +162,14 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex
 		if len(rest) < hashSize {
 			return zero, 0, fmt.Errorf("reftable: ref_record value wants %d bytes, have %d: %w", hashSize, len(rest), ErrTruncatedRecord)
 		}
-		copy(hashBytes(&rec.Value), rest[:hashSize])
+		copy(objfmt.HashBytes(&rec.Value), rest[:hashSize])
 		consumed += hashSize
 	case refValuePeeled:
 		if len(rest) < 2*hashSize {
 			return zero, 0, fmt.Errorf("reftable: ref_record value+peeled want %d bytes, have %d: %w", 2*hashSize, len(rest), ErrTruncatedRecord)
 		}
-		copy(hashBytes(&rec.Value), rest[:hashSize])
-		copy(hashBytes(&rec.Peeled), rest[hashSize:2*hashSize])
+		copy(objfmt.HashBytes(&rec.Value), rest[:hashSize])
+		copy(objfmt.HashBytes(&rec.Peeled), rest[hashSize:2*hashSize])
 		consumed += 2 * hashSize
 	case refValueSymref:
 		targetLen, n3, err := decodeVarint(rest)
@@ -182,19 +192,4 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex
 	}
 
 	return rec, consumed, nil
-}
-
-// hashBytes returns a slice over the in-place storage of h. The decoder
-// uses it to copy a hash-sized run of bytes into a typed `H` value: the
-// union of [objfmt.SHA1Hash] and [objfmt.SHA256Hash] has no single core
-// type, so `h[:]` does not compile on a generic value. The
-// [unsafe.Slice] form is the minimum-surface workaround; the slice
-// references the in-place `h`, so callers must not retain it past the
-// end of `h`'s scope.
-//
-// The sibling helper in `internal/objfmt` (`objfmt.hashBytes`) is
-// unexported, so this duplicate keeps the dependency direction one-way
-// and avoids exporting an unsafe primitive across package boundaries.
-func hashBytes[H objfmt.Hash](h *H) []byte {
-	return unsafe.Slice((*byte)(unsafe.Pointer(h)), len(*h))
 }

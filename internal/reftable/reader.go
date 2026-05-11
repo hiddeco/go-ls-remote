@@ -44,14 +44,24 @@ import (
 type RefRecord[H objfmt.Hash] struct {
 	// Name is the ref's full name. Borrowed; see the type doc.
 	Name []byte
-	// Value is the ref's OID, or zero for symref records.
-	Value H
 	// Target is the symref target name, or empty for value records.
 	// Borrowed; see the type doc.
 	Target []byte
+	// Value is the ref's OID, or zero for symref records.
+	Value H
 	// Peeled is the annotated-tag peel target, or zero otherwise.
 	Peeled H
 }
+
+// Field order rationale (both [RefRecord] and the internal
+// [refRecord]): two slice headers (alignment 8) at the front, two
+// hash arrays (alignment 1) packed back-to-back at the end. This
+// avoids the 4 bytes of inter-field padding the natural
+// `Name/Value/Target/Peeled` order would cost between a 20-byte
+// [objfmt.SHA1Hash] and the next slice header, and saves 8 bytes per
+// record on SHA-1 (the prevalent shape in any reftable). Callers
+// should always use named-field initialization — positional
+// construction would break under this reordering.
 
 // Reader is a read-only view of a single reftable file.
 //
@@ -224,6 +234,17 @@ func (r *Reader[H]) iterAllRefs() iter.Seq2[refRecord[H], error] {
 	return func(yield func(refRecord[H], error) bool) {
 		headerLen := uint32(r.header.size())
 
+		// kb persists across block boundaries: the first record of
+		// every ref block sits at a restart point with prefix_length=0
+		// (reftable.adoc §"ref record"), so [decodeKey] ignores the
+		// hoisted `prev` from the previous block; only the `scratch`
+		// buffer is reused, and that reuse is correctness-safe — the
+		// previous block's last decoded key is no longer aliased by
+		// any live record. Hoisting the buffers out of the block loop
+		// eliminates the per-block warm-up allocations (two per block,
+		// one for each of the first two records' fresh-buffer decode).
+		var kb keyBuf
+
 		pos := uint32(0)
 		first := true
 		for pos < uint32(len(r.file)) {
@@ -251,7 +272,6 @@ func (r *Reader[H]) iterAllRefs() iter.Seq2[refRecord[H], error] {
 
 			recordsEnd := blk.header.blockLen - 2 - 3*uint32(blk.header.restartCount)
 			cur := firstByteOffset + 4
-			var kb keyBuf
 			for cur < recordsEnd {
 				prev, scratch := kb.Next()
 				rec, n, err := decodeRefRecord[H](blk.bytes[cur:recordsEnd], prev, scratch, r.header.minUpdateIndex)
@@ -349,8 +369,8 @@ func (r *Reader[H]) FindRef(name string) (RefRecord[H], bool, error) {
 func liftRefRecord[H objfmt.Hash](r refRecord[H]) RefRecord[H] {
 	return RefRecord[H]{
 		Name:   r.Name,
-		Value:  r.Value,
 		Target: r.Target,
+		Value:  r.Value,
 		Peeled: r.Peeled,
 	}
 }
