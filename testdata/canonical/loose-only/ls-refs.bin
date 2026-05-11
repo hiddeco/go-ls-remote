@@ -1,0 +1,5 @@
+0050aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HEAD symref-target:refs/heads/main
+0042bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb refs/heads/feature/x
+003daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main
+003acccccccccccccccccccccccccccccccccccccccc refs/tags/v1
+0000

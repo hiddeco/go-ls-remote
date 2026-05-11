@@ -1,0 +1,4 @@
+0050aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HEAD symref-target:refs/heads/main
+003daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/main
+006acccccccccccccccccccccccccccccccccccccccc refs/tags/v1 peeled:dddddddddddddddddddddddddddddddddddddddd
+0000

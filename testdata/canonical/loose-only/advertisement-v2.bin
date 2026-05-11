@@ -1,0 +1,7 @@
+000eversion 2
+001cagent=git/2.54.0-Darwin
+0013ls-refs=unborn
+0020fetch=shallow wait-for-done
+0012server-option
+0017object-format=sha1
+0000
