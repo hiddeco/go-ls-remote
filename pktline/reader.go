@@ -35,11 +35,12 @@ import (
 //
 // # Tracing
 //
-// A Reader wired up via [WithReaderTracer] emits a [trace.PacketEvent]
-// for every packet read. The same `*trace.PacketEvent` is reused across
-// emits — see the lifetime contract on [trace.PacketEvent] for what
-// callers may and may not retain. Without a tracer, ReadPacket performs
-// no instrumentation work.
+// A Reader wired up via [WithReaderTracer] dispatches a
+// [trace.PacketEvent] through [trace.Tracer.OnPacketEvent] for every
+// packet read. The same `*trace.PacketEvent` is reused across emits —
+// see the lifetime contract on [trace.PacketEvent] for what callers may
+// and may not retain. Without a tracer, ReadPacket performs no
+// instrumentation work.
 type Reader struct {
 	src io.Reader
 
@@ -53,10 +54,9 @@ type Reader struct {
 	// Tracer is nil unless a [WithReaderTracer] or [WithReaderTracerURL]
 	// option is applied. event is heap-allocated alongside the tracer
 	// option and reused across emits: emit mutates Time, Bytes and Kind
-	// per call, then passes the pointer to OnEvent. Pre-allocating
-	// avoids an escape that would otherwise box a fresh PacketEvent
-	// value into the Tracer.OnEvent(Event) interface argument once per
-	// pkt-line.
+	// per call, then passes the pointer to OnPacketEvent. Pre-allocating
+	// avoids an escape that would otherwise allocate a fresh PacketEvent
+	// per pkt-line.
 	tracer trace.Tracer
 	event  *trace.PacketEvent
 }
@@ -142,10 +142,10 @@ func (r *Reader) readPacket() (Packet, error) {
 // emit reports p to the configured tracer, if one is wired in.
 //
 // emit mutates the pre-allocated `r.event` rather than constructing a
-// fresh `trace.PacketEvent`: the long-lived pointer lets the
-// `Tracer.OnEvent(Event)` interface argument be boxed without a heap
-// allocation per pkt-line. The `Direction` and `URL` fields are set
-// once when the tracer option was applied and never change.
+// fresh `trace.PacketEvent`: the long-lived pointer is passed directly
+// to `Tracer.OnPacketEvent` without a heap allocation per pkt-line.
+// The `Direction` and `URL` fields are set once when the tracer option
+// was applied and never change.
 func (r *Reader) emit(p Packet) {
 	if !trace.IsEnabled(r.tracer) {
 		return
@@ -153,7 +153,7 @@ func (r *Reader) emit(p Packet) {
 	r.event.Time = time.Now()
 	r.event.Bytes = p.Data
 	r.event.Kind = kindToTracerKind(p.Kind)
-	r.tracer.OnEvent(r.event)
+	r.tracer.OnPacketEvent(r.event)
 }
 
 // parseHexLength decodes 4 ASCII hex digits to an integer. The

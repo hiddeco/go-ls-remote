@@ -14,7 +14,8 @@ import (
 // [WithTracer] stores the exact value it was handed.
 type recordingTracer struct{}
 
-func (recordingTracer) OnEvent(trace.Event) {}
+func (recordingTracer) OnPacketEvent(*trace.PacketEvent) {}
+func (recordingTracer) OnEvent(trace.Event)              {}
 
 func TestDialConfigZeroValue(t *testing.T) {
 	var c dialConfig

@@ -63,14 +63,14 @@ func BenchmarkProcessV2Request(b *testing.B) {
 	}
 }
 
-// benchDiscardTracer is a non-nil [trace.Tracer] whose [OnEvent]
-// drops every event. It exists so `BenchmarkRunCommand` can isolate
-// the cost of the active-tracer path (interface call + event copy
-// onto the heap) from the cost of the nil-tracer path (helper's
-// nil-receiver short-circuit).
+// benchDiscardTracer is a non-nil [trace.Tracer] whose methods drop
+// every event. It exists so `BenchmarkRunCommand` can isolate the cost
+// of the active-tracer path from the cost of the nil-tracer path
+// (helper's nil-receiver short-circuit).
 type benchDiscardTracer struct{}
 
-func (benchDiscardTracer) OnEvent(trace.Event) {}
+func (benchDiscardTracer) OnPacketEvent(*trace.PacketEvent) {}
+func (benchDiscardTracer) OnEvent(trace.Event)              {}
 
 // BenchmarkRunCommand measures the wrap-overhead `runCommand` adds
 // around each v2 command-handler dispatch. The handler is a no-op

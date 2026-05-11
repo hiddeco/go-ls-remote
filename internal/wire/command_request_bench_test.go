@@ -96,11 +96,11 @@ func BenchmarkEncodeV2CommandRequest(b *testing.B) {
 	}
 }
 
-// benchDiscardTracer is a non-nil [trace.Tracer] whose `OnEvent`
-// drops every event. It exists so encode-path benches can isolate
-// the cost of the active-tracer shape (interface call + event copy
-// onto the heap) from the cost of the nil-tracer shape (the
-// [pktline.Writer]'s no-tracer short-circuit).
+// benchDiscardTracer is a non-nil [trace.Tracer] whose methods drop
+// every event. It exists so encode-path benches can isolate the cost
+// of the active-tracer shape from the nil-tracer short-circuit in
+// [pktline.Writer].
 type benchDiscardTracer struct{}
 
-func (benchDiscardTracer) OnEvent(trace.Event) {}
+func (benchDiscardTracer) OnPacketEvent(*trace.PacketEvent) {}
+func (benchDiscardTracer) OnEvent(trace.Event)              {}

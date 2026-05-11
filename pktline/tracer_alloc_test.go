@@ -7,21 +7,18 @@ import (
 	"github.com/hiddeco/go-ls-remote/trace"
 )
 
-// discardingTracer is a non-nil [trace.Tracer] whose `OnEvent` returns
+// discardingTracer is a non-nil [trace.Tracer] whose methods return
 // immediately. Used to keep `trace.IsEnabled` true on the emit path so
-// every benchmark and alloc test exercises the boxing code path.
+// every benchmark and alloc test exercises the full emit code path.
 type discardingTracer struct{}
 
-func (discardingTracer) OnEvent(trace.Event) {}
+func (discardingTracer) OnPacketEvent(*trace.PacketEvent) {}
+func (discardingTracer) OnEvent(trace.Event)              {}
 
 // TestWriter_emit_zeroAllocsPerCall pins the per-emit allocation budget
 // of `Writer.emit` once a tracer is wired in. The pre-allocated
-// `*trace.PacketEvent` on the writer is reused across emits, so the
-// interface-boxing of the pointer in the `Tracer.OnEvent` argument is
-// `(itab, dataPtr)` — no fresh heap copy of the event struct.
-//
-// Pre-fix this test fails with at least one alloc per emit (the value
-// `trace.PacketEvent` literal escaping into the `Event` interface).
+// `*trace.PacketEvent` on the writer is reused across emits and passed
+// directly to `Tracer.OnPacketEvent` — no heap copy per pkt-line.
 func TestWriter_emit_zeroAllocsPerCall(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewWriter(&buf,
@@ -48,9 +45,8 @@ func TestWriter_emit_zeroAllocsPerCall(t *testing.T) {
 
 // TestReader_emit_zeroAllocsPerCall pins the per-emit allocation budget
 // of `Reader.emit`. Same contract as the writer side: a pre-allocated
-// `*trace.PacketEvent` on the reader is reused across calls, so the
-// boxing of the pointer into the `Event` interface argument does not
-// allocate.
+// `*trace.PacketEvent` on the reader is reused across calls and passed
+// directly to `Tracer.OnPacketEvent` — no heap copy per pkt-line.
 func TestReader_emit_zeroAllocsPerCall(t *testing.T) {
 	// Build a stream of identical data packets so each iteration of the
 	// benchmark loop reads one without exhausting the source.

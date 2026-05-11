@@ -3,28 +3,22 @@ package trace
 import "time"
 
 // PacketEvent is emitted by `pktline.Reader` and `pktline.Writer` for
-// every pkt-line read or written when a [Tracer] is wired in.
+// every pkt-line read or written when a [Tracer] is wired in. It is
+// dispatched through [Tracer.OnPacketEvent], not [Tracer.OnEvent].
 //
 // # Lifetime
 //
-// `pktline.Reader` and `pktline.Writer` pass a `*PacketEvent` to
-// `Tracer.OnEvent` that points at storage owned by the emitter and
-// reused across calls. The pointer and every field — including the
-// Bytes slice, which aliases the reader's or writer's internal buffer
-// — are valid only for the duration of the [Tracer.OnEvent] call.
-// Callers retaining the event across calls MUST copy the struct (and
-// the Bytes slice when non-nil), for example:
+// When emitted by `pktline.Reader` or `pktline.Writer`, the
+// `*PacketEvent` passed to [Tracer.OnPacketEvent] references storage
+// owned by the emitter and reused across calls. The pointer and every
+// field — including Bytes — are valid only for the duration of the
+// OnPacketEvent call. Callers retaining the event across calls MUST
+// copy the struct (and Bytes if needed):
 //
 //	cloned := *pe
 //	if cloned.Bytes != nil {
 //	    cloned.Bytes = bytes.Clone(cloned.Bytes)
 //	}
-//
-// Callers that emit `PacketEvent` values directly (e.g. test harnesses
-// or third-party emitters) may construct a fresh value per call and
-// pass either a pointer or a value to OnEvent — `When` is a value
-// receiver, so both forms satisfy [Event]. The reuse contract above
-// applies only to events emitted by the pktline package.
 //
 // Bytes is nil for control packets (Kind values other than [PacketData]).
 //

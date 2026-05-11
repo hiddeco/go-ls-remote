@@ -30,13 +30,13 @@ const (
 	DirectionOutbound
 )
 
-// Tracer receives [Event] values emitted by the library at significant
-// points in the wire-protocol and HTTP lifecycle.
+// Tracer receives events emitted by the library at significant points
+// in the wire-protocol and HTTP lifecycle.
 //
 // # Concurrency
 //
-// Implementations must not block; OnEvent is called synchronously on the
-// I/O hot path, and slow tracers measurably degrade throughput.
+// Implementations must not block; both methods are called synchronously
+// on the I/O hot path, and slow tracers measurably degrade throughput.
 //
 // Implementations must also be safe for concurrent use if the library is
 // used concurrently against the same Tracer (HTTP-backed sessions
@@ -50,26 +50,40 @@ const (
 // no allocation or per-call overhead beyond a single nil-pointer
 // comparison.
 type Tracer interface {
-	// OnEvent reports a single event to the tracer.
+	// OnPacketEvent reports a single pkt-line read or write to the
+	// tracer. This is the per-pkt-line hot path: every successful
+	// `pktline.Reader.ReadPacket` and `pktline.Writer.WritePacket`
+	// call invokes OnPacketEvent under a wired tracer. Implementations
+	// MUST NOT block — pkt-line throughput on the wire is gated by how
+	// fast OnPacketEvent returns.
 	//
-	// The event value's contents are valid for the duration of the call
-	// only when the event documentation says so explicitly (notably
-	// [PacketEvent.Bytes], which aliases an internal buffer). Callers
-	// retaining such state across the call must copy.
+	// The pointed-to [PacketEvent] is owned by the emitter and reused
+	// across calls. The pointer and every field — including Bytes —
+	// are valid only for the duration of the OnPacketEvent call;
+	// callers retaining state across the call MUST copy.
+	OnPacketEvent(*PacketEvent)
+
+	// OnEvent reports a single non-pkt-line event (HTTP, negotiation,
+	// command lifecycle). The event value's contents are valid for the
+	// duration of the call only when the event documentation says so
+	// explicitly. Callers retaining such state across the call must copy.
 	OnEvent(Event)
 }
 
 // Event is the common interface implemented by every value the library
 // emits through [Tracer.OnEvent].
 //
-// Event is intentionally not a sealed interface: third parties may
-// define their own event types and pass them through any [Tracer].
-// Consumers that type-switch on Event therefore must include a
-// `default` arm to remain forward-compatible if either the library or a
-// third party introduces additional event types.
+// `PacketEvent` is dispatched through [Tracer.OnPacketEvent] instead;
+// it does not flow through [Tracer.OnEvent] from library-internal
+// emitters. Third-party tracers that funnel events through OnEvent
+// for logging may still call OnEvent themselves with `*PacketEvent`,
+// but the high-frequency pktline path no longer pays the polymorphic
+// dispatch cost.
 //
-// All built-in events are defined in this package: [PacketEvent],
-// [HTTPEvent], [NegotiateEvent], and [CommandEvent].
+// Event remains an unsealed interface: third parties may define their
+// own event types and pass them through any [Tracer.OnEvent] caller.
+// Consumers that type-switch on Event must include a `default` arm to
+// remain forward-compatible.
 type Event interface {
 	// When returns the wall-clock time at which the event was generated.
 	When() time.Time

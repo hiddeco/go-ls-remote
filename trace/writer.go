@@ -25,28 +25,24 @@ type writerTracer struct {
 	w io.Writer
 }
 
+// OnPacketEvent renders a single pkt-line event to the underlying
+// writer. Implements the typed-dispatch fast path on [Tracer]; called
+// directly by `pktline.Reader` / `pktline.Writer` without going
+// through OnEvent's polymorphic switch.
+func (t *writerTracer) OnPacketEvent(e *PacketEvent) {
+	fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
+		e.Time.Format(time.RFC3339Nano),
+		directionGlyph(e.Direction),
+		kindLabel(e.Kind),
+		len(e.Bytes))
+}
+
 // OnEvent dispatches on the dynamic type of e and renders a single line
-// per event to the underlying writer.
-//
-// Both `*PacketEvent` (the form `pktline.Reader` and `pktline.Writer`
-// emit) and `PacketEvent` (the form a third-party emitter or test
-// harness may construct as a value) are accepted; they share rendering
-// logic. See the lifetime contract on [PacketEvent] for the
-// `*PacketEvent` form.
+// per event to the underlying writer. PacketEvent is handled via
+// [writerTracer.OnPacketEvent] and does not flow through this method
+// from library-internal emitters.
 func (t *writerTracer) OnEvent(e Event) {
 	switch ev := e.(type) {
-	case *PacketEvent:
-		fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
-			ev.Time.Format(time.RFC3339Nano),
-			directionGlyph(ev.Direction),
-			kindLabel(ev.Kind),
-			len(ev.Bytes))
-	case PacketEvent:
-		fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
-			ev.Time.Format(time.RFC3339Nano),
-			directionGlyph(ev.Direction),
-			kindLabel(ev.Kind),
-			len(ev.Bytes))
 	case HTTPEvent:
 		fmt.Fprintf(t.w, "%s http %s %s -> %d (%s)\n",
 			ev.Time.Format(time.RFC3339Nano),

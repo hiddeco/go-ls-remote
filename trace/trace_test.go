@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -37,7 +38,14 @@ type fakeTracer struct {
 	got []Event
 }
 
-func (f *fakeTracer) OnEvent(e Event) { f.got = append(f.got, e) }
+func (f *fakeTracer) OnPacketEvent(e *PacketEvent) {
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
+	}
+	f.got = append(f.got, cloned)
+}
+func (f *fakeTracer) OnEvent(e Event)              { f.got = append(f.got, e) }
 
 func TestTracer(t *testing.T) {
 	tr := &fakeTracer{}

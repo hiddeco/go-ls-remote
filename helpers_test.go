@@ -125,6 +125,13 @@ type recordingTracerEvents struct {
 	events []trace.Event
 }
 
+func (r *recordingTracerEvents) OnPacketEvent(e *trace.PacketEvent) {
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
+	}
+	r.events = append(r.events, cloned)
+}
 func (r *recordingTracerEvents) OnEvent(e trace.Event) { r.events = append(r.events, e) }
 
 // captureTransport is a stub `transport.Transport` that records the

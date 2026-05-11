@@ -12,9 +12,37 @@ import (
 // expected substrings for each built-in event kind. The output format
 // is documented as not stable, so tests verify presence of identifying
 // fragments rather than an exact format string.
+//
+// Packet events are dispatched through OnPacketEvent; all other events
+// flow through OnEvent. The two dispatch paths are exercised separately.
 func TestNewWriterTracer(t *testing.T) {
 	at := time.Unix(0, 0)
-	tests := []struct {
+
+	t.Run("packet-data-outbound", func(t *testing.T) {
+		var buf bytes.Buffer
+		tr := NewWriterTracer(&buf)
+		e := PacketEvent{
+			Time: at, Direction: DirectionOutbound,
+			URL:   "https://example.com/repo",
+			Bytes: []byte("hello"), Kind: PacketData,
+		}
+		tr.OnPacketEvent(&e)
+		out := buf.String()
+		for _, s := range []string{"packet", ">"} {
+			assert.Contains(t, out, s, "output: %q", out)
+		}
+	})
+
+	t.Run("packet-flush-inbound", func(t *testing.T) {
+		var buf bytes.Buffer
+		tr := NewWriterTracer(&buf)
+		e := PacketEvent{Time: at, Direction: DirectionInbound, Kind: PacketFlush}
+		tr.OnPacketEvent(&e)
+		out := buf.String()
+		assert.Contains(t, out, "flush", "output: %q", out)
+	})
+
+	onEventCases := []struct {
 		name     string
 		event    Event
 		contains []string
@@ -26,20 +54,6 @@ func TestNewWriterTracer(t *testing.T) {
 				Status: 200, Duration: 5 * time.Millisecond,
 			},
 			contains: []string{"http", "GET", "200"},
-		},
-		{
-			name: "packet-data-outbound",
-			event: PacketEvent{
-				Time: at, Direction: DirectionOutbound,
-				URL:   "https://example.com/repo",
-				Bytes: []byte("hello"), Kind: PacketData,
-			},
-			contains: []string{"packet", ">"},
-		},
-		{
-			name:     "packet-flush-inbound",
-			event:    PacketEvent{Time: at, Direction: DirectionInbound, Kind: PacketFlush},
-			contains: []string{"flush"},
 		},
 		{
 			name: "negotiate",
@@ -58,7 +72,7 @@ func TestNewWriterTracer(t *testing.T) {
 			contains: []string{"command", "ls-refs", "end"},
 		},
 	}
-	for _, tt := range tests {
+	for _, tt := range onEventCases {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			tr := NewWriterTracer(&buf)

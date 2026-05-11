@@ -104,14 +104,15 @@ type captureTracer struct {
 	events []trace.PacketEvent
 }
 
-func (c *captureTracer) OnEvent(e trace.Event) {
-	pe := e.(*trace.PacketEvent)
-	cloned := *pe
-	if pe.Bytes != nil {
-		cloned.Bytes = bytes.Clone(pe.Bytes)
+func (c *captureTracer) OnPacketEvent(e *trace.PacketEvent) {
+	cloned := *e
+	if e.Bytes != nil {
+		cloned.Bytes = bytes.Clone(e.Bytes)
 	}
 	c.events = append(c.events, cloned)
 }
+
+func (c *captureTracer) OnEvent(trace.Event) {}
 
 func TestWriter_WriteLine(t *testing.T) {
 	tests := []struct {

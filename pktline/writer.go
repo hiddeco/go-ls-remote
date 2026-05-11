@@ -17,11 +17,12 @@ import (
 //
 // # Tracing
 //
-// A Writer wired up via [WithWriterTracer] emits a [trace.PacketEvent]
-// after every successful write. The same `*trace.PacketEvent` is
-// reused across emits — see the lifetime contract on [trace.PacketEvent]
-// for what callers may and may not retain. Without a tracer, the Write
-// methods perform no instrumentation work.
+// A Writer wired up via [WithWriterTracer] dispatches a
+// [trace.PacketEvent] through [trace.Tracer.OnPacketEvent] after every
+// successful write. The same `*trace.PacketEvent` is reused across
+// emits — see the lifetime contract on [trace.PacketEvent] for what
+// callers may and may not retain. Without a tracer, the Write methods
+// perform no instrumentation work.
 type Writer struct {
 	dst io.Writer
 
@@ -33,10 +34,9 @@ type Writer struct {
 	// Tracer is nil unless a [WithWriterTracer] or [WithWriterTracerURL]
 	// option is applied. event is heap-allocated alongside the tracer
 	// option and reused across emits: emit mutates Time, Bytes and Kind
-	// per call, then passes the pointer to OnEvent. Pre-allocating
-	// avoids an escape that would otherwise box a fresh PacketEvent
-	// value into the Tracer.OnEvent(Event) interface argument once per
-	// pkt-line.
+	// per call, then passes the pointer to OnPacketEvent. Pre-allocating
+	// avoids an escape that would otherwise allocate a fresh PacketEvent
+	// per pkt-line.
 	tracer trace.Tracer
 	event  *trace.PacketEvent
 }
@@ -180,10 +180,10 @@ func (w *Writer) writeControl(s string, k Kind) error {
 // any). Called only on successful writes.
 //
 // emit mutates the pre-allocated `w.event` rather than constructing a
-// fresh `trace.PacketEvent`: the long-lived pointer lets the
-// `Tracer.OnEvent(Event)` interface argument be boxed without a heap
-// allocation per pkt-line. The `Direction` and `URL` fields are set
-// once when the tracer option was applied and never change.
+// fresh `trace.PacketEvent`: the long-lived pointer is passed directly
+// to `Tracer.OnPacketEvent` without a heap allocation per pkt-line.
+// The `Direction` and `URL` fields are set once when the tracer option
+// was applied and never change.
 func (w *Writer) emit(k Kind, payload []byte) {
 	if !trace.IsEnabled(w.tracer) {
 		return
@@ -191,7 +191,7 @@ func (w *Writer) emit(k Kind, payload []byte) {
 	w.event.Time = time.Now()
 	w.event.Bytes = payload
 	w.event.Kind = kindToTracerKind(k)
-	w.tracer.OnEvent(w.event)
+	w.tracer.OnPacketEvent(w.event)
 }
 
 // encodeHexLength writes 4 lowercase ASCII hex digits representing v

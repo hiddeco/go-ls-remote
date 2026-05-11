@@ -21,32 +21,28 @@ import (
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
-// capturingTracer records every event passed to OnEvent. It is safe
-// for concurrent use; HTTP handlers may run on goroutines distinct
-// from the caller, and `pktline.Reader` events fire on the body-read
-// goroutine.
+// capturingTracer records every event passed to OnEvent or
+// OnPacketEvent. It is safe for concurrent use; HTTP handlers may run
+// on goroutines distinct from the caller, and `pktline.Reader` events
+// fire on the body-read goroutine.
 type capturingTracer struct {
 	mu     sync.Mutex
 	events []trace.Event
 }
 
+func (c *capturingTracer) OnPacketEvent(e *trace.PacketEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
+	}
+	c.events = append(c.events, cloned)
+}
+
 func (c *capturingTracer) OnEvent(e trace.Event) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// `pktline` emits `*trace.PacketEvent` referencing storage it
-	// reuses across emits, so a captured pointer would be overwritten
-	// by the next call. Copy the struct value, then clone the Bytes
-	// slice (which aliases the reader's or writer's internal buffer)
-	// before appending. See the lifetime contract on
-	// [trace.PacketEvent].
-	if pe, ok := e.(*trace.PacketEvent); ok {
-		cloned := *pe
-		if cloned.Bytes != nil {
-			cloned.Bytes = bytes.Clone(cloned.Bytes)
-		}
-		c.events = append(c.events, cloned)
-		return
-	}
 	c.events = append(c.events, e)
 }
 

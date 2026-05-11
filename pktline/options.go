@@ -26,11 +26,11 @@ type writerOptionFunc func(*Writer)
 
 func (f writerOptionFunc) applyWriter(w *Writer) { f(w) }
 
-// WithReaderTracer wires t into the [Reader]. Each pkt-line read emits
-// a [trace.PacketEvent] with the given [trace.Direction]. The
-// `*trace.PacketEvent` passed to `Tracer.OnEvent` is reused across
-// emits, and so are its fields — see the lifetime contract on
-// [trace.PacketEvent] for what callers may and may not retain.
+// WithReaderTracer wires t into the [Reader]. Each pkt-line read
+// dispatches a [trace.PacketEvent] through `Tracer.OnPacketEvent` with
+// the given [trace.Direction]. The `*trace.PacketEvent` is reused
+// across emits — see the lifetime contract on [trace.PacketEvent] for
+// what callers may and may not retain.
 //
 // Passing a nil Tracer is equivalent to not configuring one: the
 // option becomes a no-op.
@@ -42,7 +42,7 @@ func WithReaderTracer(t trace.Tracer, dir trace.Direction) ReaderOption {
 }
 
 // WithReaderTracerURL is like [WithReaderTracer] but additionally sets
-// the [trace.PacketEvent.URL] field on emitted events. Useful when a
+// the [trace.PacketEvent.URL] field on dispatched events. Useful when a
 // Reader is associated with a known remote URL for diagnostics.
 func WithReaderTracerURL(t trace.Tracer, dir trace.Direction, url string) ReaderOption {
 	return readerOptionFunc(func(r *Reader) {
@@ -52,6 +52,8 @@ func WithReaderTracerURL(t trace.Tracer, dir trace.Direction, url string) Reader
 }
 
 // WithWriterTracer is the [Writer] counterpart to [WithReaderTracer].
+// Each pkt-line written dispatches a [trace.PacketEvent] through
+// `Tracer.OnPacketEvent`.
 func WithWriterTracer(t trace.Tracer, dir trace.Direction) WriterOption {
 	return writerOptionFunc(func(w *Writer) {
 		w.tracer = t

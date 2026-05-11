@@ -19,13 +19,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// recordingTracer captures every [trace.Event] passed through
-// [trace.Tracer.OnEvent]. The slice preserves emission order so tests
-// can assert on the start/end pairing of [trace.CommandEvent]s. The
-// concrete type is local to this test file so the server package's
-// public API is not pulled into the test contract.
+// recordingTracer captures every event passed through the [trace.Tracer]
+// interface. The slice preserves emission order so tests can assert on
+// the start/end pairing of [trace.CommandEvent]s. The concrete type is
+// local to this test file so the server package's public API is not
+// pulled into the test contract.
 type recordingTracer struct {
 	events []trace.Event
+}
+
+func (r *recordingTracer) OnPacketEvent(e *trace.PacketEvent) {
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
+	}
+	r.events = append(r.events, cloned)
 }
 
 func (r *recordingTracer) OnEvent(e trace.Event) {

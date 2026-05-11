@@ -15,20 +15,26 @@ import (
 // capturingTracer is a minimal [trace.Tracer] that records every event
 // it receives. It exists only as a test fixture in this file.
 //
-// `pktline.Reader` and `pktline.Writer` emit `*trace.PacketEvent`
-// pointing at storage they reuse across calls; the tracer dereferences
-// to a value copy on capture so each recorded event is durable. See
-// the lifetime contract on [trace.PacketEvent].
+// `pktline.Reader` and `pktline.Writer` dispatch `*trace.PacketEvent`
+// through `OnPacketEvent`, pointing at storage they reuse across calls.
+// The tracer dereferences to a value copy on capture so each recorded
+// event is durable. See the lifetime contract on [trace.PacketEvent].
 type capturingTracer struct {
 	events []trace.Event
 }
 
-func (c *capturingTracer) OnEvent(e trace.Event) {
-	if pe, ok := e.(*trace.PacketEvent); ok {
-		cloned := *pe
-		c.events = append(c.events, cloned)
-		return
+func (c *capturingTracer) OnPacketEvent(e *trace.PacketEvent) {
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
 	}
+	// Append the value (PacketEvent satisfies Event via the value
+	// receiver on When), not the pointer — the pointer would alias
+	// the emitter's reused storage.
+	c.events = append(c.events, cloned)
+}
+
+func (c *capturingTracer) OnEvent(e trace.Event) {
 	c.events = append(c.events, e)
 }
 

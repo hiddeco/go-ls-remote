@@ -16,10 +16,17 @@ import (
 	"github.com/hiddeco/go-ls-remote/trace"
 )
 
-// captureTracer collects every emitted [trace.Event] for assertion in
-// tests. It mirrors the `fakeTracer` pattern used by `trace/trace_test.go`.
+// captureTracer collects every emitted event for assertion in tests.
 type captureTracer struct {
 	events []trace.Event
+}
+
+func (c *captureTracer) OnPacketEvent(e *trace.PacketEvent) {
+	cloned := *e
+	if cloned.Bytes != nil {
+		cloned.Bytes = bytes.Clone(cloned.Bytes)
+	}
+	c.events = append(c.events, cloned)
 }
 
 func (c *captureTracer) OnEvent(e trace.Event) {
