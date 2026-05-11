@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 func TestProtocolError_Error_StatusOnly(t *testing.T) {
@@ -71,9 +73,9 @@ func TestProtocolError_Error_OmitsZeroStatus(t *testing.T) {
 }
 
 func TestSentinels_Distinct(t *testing.T) {
-	// All three sentinels share the `transport/http:` prefix but must be
+	// All four sentinels share the `transport/http:` prefix but must be
 	// distinguishable via errors.Is so callers can branch on them.
-	all := []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound}
+	all := []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound, ErrUnsupportedProtocol}
 	for i, a := range all {
 		for j, b := range all {
 			if i == j {
@@ -86,8 +88,47 @@ func TestSentinels_Distinct(t *testing.T) {
 }
 
 func TestSentinels_PrefixedWithPackage(t *testing.T) {
-	for _, e := range []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound} {
+	for _, e := range []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound, ErrUnsupportedProtocol} {
 		assert.True(t, strings.HasPrefix(e.Error(), "transport/http:"),
 			"sentinel %q must carry the package prefix for grep-friendly logs", e)
 	}
+}
+
+func TestSentinels_BridgeToTransport(t *testing.T) {
+	tests := []struct {
+		name    string
+		scheme  error
+		generic error
+	}{
+		{
+			name:    "ErrAuthRequired bridges to transport.ErrAuthRequired",
+			scheme:  ErrAuthRequired,
+			generic: transport.ErrAuthRequired,
+		},
+		{
+			name:    "ErrAuthFailed bridges to transport.ErrAuthFailed",
+			scheme:  ErrAuthFailed,
+			generic: transport.ErrAuthFailed,
+		},
+		{
+			name:    "ErrNotFound bridges to transport.ErrNotFound",
+			scheme:  ErrNotFound,
+			generic: transport.ErrNotFound,
+		},
+		{
+			name:    "ErrUnsupportedProtocol bridges to transport.ErrUnsupportedProtocol",
+			scheme:  ErrUnsupportedProtocol,
+			generic: transport.ErrUnsupportedProtocol,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.True(t, errors.Is(tt.scheme, tt.generic),
+				"errors.Is(%v, %v) must be true", tt.scheme, tt.generic)
+		})
+	}
+
+	// Negative: no cross-pollination between distinct sentinels.
+	assert.False(t, errors.Is(ErrNotFound, transport.ErrAuthRequired),
+		"ErrNotFound must not match transport.ErrAuthRequired")
 }
