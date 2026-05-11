@@ -8,6 +8,7 @@
 package gitt
 
 import (
+	"context"
 	"net"
 	"time"
 )
@@ -25,6 +26,13 @@ type Transport struct {
 	// dialer is the [net.Dialer] used for the underlying TCP dial. A nil
 	// value resolves to defaultDialer at dial time.
 	dialer *net.Dialer
+
+	// dialFn overrides the TCP dial when set. Nil means use the resolved
+	// *net.Dialer. The field is package-private and intended only for
+	// tests that need to inject a fake net.Conn (e.g. one whose Write
+	// always fails). It is never exported and must not be set in
+	// production code.
+	dialFn func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 // New returns a [Transport] configured with opts. The zero
@@ -57,4 +65,17 @@ func (t *Transport) resolvedDialer() *net.Dialer {
 		return t.dialer
 	}
 	return defaultDialer
+}
+
+// resolvedDialFn returns the dial function that [Open] uses to
+// establish a TCP connection. When `dialFn` is set (test-only
+// injection), it is returned directly. Otherwise the function wraps
+// the resolved `*net.Dialer` so all callers go through a single
+// consistent path.
+func (t *Transport) resolvedDialFn() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if t.dialFn != nil {
+		return t.dialFn
+	}
+	d := t.resolvedDialer()
+	return d.DialContext
 }

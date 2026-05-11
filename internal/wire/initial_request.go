@@ -39,6 +39,9 @@ func HTTPProtocolHeader(v *transport.ProtocolVersion) string {
 // This library is read-only, so the request-command is always
 // `git-upload-pack`.
 //
+// The payload carries no trailing LF; canonical Git strips one if
+// present (see `daemon.c:752-754`), so omitting it is the safe shape.
+//
 // The version trailer is conditional on the requested protocol being
 // strictly greater than zero: canonical Git's `version > 0` guard at
 // `connect.c:1294` means v0 is signalled by the *absence* of a trailer,
