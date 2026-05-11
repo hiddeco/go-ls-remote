@@ -105,13 +105,21 @@ func Exists(ctx context.Context, rawURL string, opts ...Option) (bool, error) {
 // DefaultBranch returns the canonical name of the branch HEAD points
 // at on the remote — `refs/heads/main`, `refs/heads/master`, etc.
 //
-// On v2 the helper issues `ls-refs` with `ref-prefix HEAD` and
-// `symrefs`, then returns the [Ref.Symref] target attached to the
-// `HEAD` entry. When the v2 server does not honour `symrefs` (or HEAD
-// is detached and so carries no symref target) the helper falls back
-// to the v0/v1-style capability scan over [Capabilities.Symrefs],
-// because some servers surface the mapping there even on a v2
-// handshake.
+// On v2 the helper issues `ls-refs` with `ref-prefix HEAD`, `symrefs`,
+// and `unborn`, then returns the [Ref.Symref] target attached to the
+// `HEAD` entry. The `unborn` argument mirrors canonical Git's
+// discovery client (`connect.c:591-592`). The wire layer silently
+// ignores it when the server has not advertised `ls-refs=unborn`, so
+// passing it here is always safe — older servers simply fall through
+// to the v0/v1-style capability-list scan below. With `unborn`, a
+// branch HEAD with no commits yet still surfaces as an unborn `HEAD`
+// entry whose `symref-target:` carries the branch name; without it
+// the server (`ls-refs.c:135-136`) would suppress HEAD entirely and
+// the helper would fall through to [ErrNoDefaultBranch]. When the v2 server does
+// not honour `symrefs` (or HEAD is detached and so carries no symref
+// target) the helper falls back to the v0/v1-style capability scan
+// over [Capabilities.Symrefs], because some servers surface the
+// mapping there even on a v2 handshake.
 //
 // On v0/v1 the wire has no `ls-refs` equivalent and the symref
 // information rides on the capability list; the helper scans
@@ -125,9 +133,11 @@ func Exists(ctx context.Context, rawURL string, opts ...Option) (bool, error) {
 // `"advertisement"` on a v0/v1 server (the mapping is sought in
 // the capability advertisement). Use `errors.Is(err,
 // ErrNoDefaultBranch)` to detect the "repository present but HEAD
-// has no symbolic target" condition. A dial failure whose chain
-// matches [ErrNotFound] means the repository itself is absent — the
-// two sentinels are mutually exclusive.
+// has no symbolic target" condition (a detached HEAD on v2, or a
+// v0/v1 server whose advertisement omits a `symref=HEAD:...`
+// capability). A dial failure whose chain matches [ErrNotFound] means
+// the repository itself is absent — the two sentinels are mutually
+// exclusive.
 func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {
@@ -140,6 +150,7 @@ func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, 
 		seq, err := s.Refs(ctx, RefsRequest{
 			Prefixes: []string{"HEAD"},
 			Symrefs:  true,
+			Unborn:   true,
 		})
 		if err != nil {
 			return "", err
