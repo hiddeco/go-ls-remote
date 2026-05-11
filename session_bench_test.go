@@ -1,11 +1,17 @@
 package lsremote
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/wire"
+	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // benchRefSink defeats dead-code elimination on the per-ref drain loop.
@@ -190,3 +196,222 @@ func benchSyntheticOID(seed uint64) string {
 	}
 	return string(out[:])
 }
+
+// BenchmarkSession_Refs_v2_emit pins the per-call cost of emitting a v2
+// `ls-refs` command end-to-end through [Session.Refs]: the slice copies,
+// string concatenations, and pkt-line framing performed by
+// [wire.EncodeLSRefs] plus the iterator scaffolding [Session.refsV2]
+// wraps around the response decoder. A discovery against an HTTP remote
+// runs this path exactly once per `ls-refs` POST; the per-call CPU shape
+// is what scales with the caller's prefix and toggle fan.
+//
+// The fixture wires a `reuseCommandConn` whose `Command` drains the
+// body callback into a reused [pktline.Writer] over a reused
+// [bytes.Buffer] and rewinds a reused [pktline.Reader] over a pre-canned
+// flush-only response (`0000`). The flush is a valid `ls-refs` response
+// per `gitprotocol-v2.adoc` §"ls-refs": zero ref-lines followed by the
+// terminating flush. The stub recycles its writer, reader, and source
+// buffers across iterations so the bench reports the encoder's
+// allocation pressure rather than the stub's setup cost. The
+// `RawCapabilities` advertises a v2 capability list realistic enough
+// for the cap-echo path in [wire.EncodeLSRefs] (`agent`,
+// `object-format`, `ls-refs=unborn`).
+//
+// The request mirrors a typical discovery filter: two prefix args
+// (`refs/heads/`, `refs/tags/`), `peel`, and `symrefs`. After the
+// root-builder removal in the prior refactor and the per-line
+// concatenation removal in the encoder migration, allocs/op should be a
+// small constant independent of prefix count — the encoder writes each
+// `ref-prefix <p>` line via [pktline.Writer.WriteLineParts] without
+// intermediate string concatenation, and the writer's scratch buffer is
+// reused across writes.
+func BenchmarkSession_Refs_v2_emit(b *testing.B) {
+	canned := flushOnlyResponse(b)
+	conn := newReuseCommandConn(canned)
+	s := &Session{
+		conn: conn,
+		caps: Capabilities{
+			Version:      ProtocolV2,
+			ObjectFormat: ObjectFormatSHA1,
+		},
+		rawCaps: wire.RawCapabilities{
+			{Name: "agent", Value: "git/2.45.0"},
+			{Name: "object-format", Value: "sha1"},
+			{Name: "ls-refs", Value: "unborn"},
+		},
+	}
+	args := RefsRequest{
+		Prefixes: []string{"refs/heads/", "refs/tags/"},
+		Peel:     true,
+		Symrefs:  true,
+	}
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		seq, err := s.Refs(ctx, args)
+		if err != nil {
+			b.Fatal(err)
+		}
+		// Drain the iterator end-to-end so the bench captures the per-call
+		// scaffolding cost (closure allocation, response decoder setup),
+		// not just the request emission. The canned response is a bare
+		// flush so the drain terminates immediately.
+		for r, err := range seq {
+			if err != nil {
+				b.Fatal(err)
+			}
+			benchRefSink = r
+		}
+	}
+}
+
+// BenchmarkSession_ObjectInfo_emit pins the per-call cost of emitting a
+// v2 `object-info` command end-to-end through [Session.ObjectInfo]: the
+// per-OID `oid <hex>` line emission performed by [wire.EncodeObjectInfo]
+// plus the response materialisation and the size-sentinel post-pass on
+// the returned slice. A batch-metadata probe runs this path once per
+// request; the per-OID emission cost is what scales with the caller's
+// OID fan.
+//
+// The fixture wires a `reuseCommandConn` whose `Command` drains the
+// body callback into a reused [pktline.Writer] over a reused
+// [bytes.Buffer] and rewinds a reused [pktline.Reader] over a pre-canned
+// flush-only response (`0000`). A bare flush is a valid `object-info`
+// response per `protocol-caps.c::send_info` lines 44-45 (the
+// zero-OID-requested shape); the decoder returns `nil, nil` and the
+// Session-level call completes with an empty slice. The stub recycles
+// its writer, reader, and source buffers across iterations so the bench
+// reports the encoder's allocation pressure rather than the stub's
+// setup cost. The `RawCapabilities` carries `object-format=sha1` so the
+// cap-echo path inside the encoder fires.
+//
+// The request enumerates 16 deterministic 40-hex-char OIDs with
+// `Size: true`. After the per-line concatenation removal in the encoder
+// migration, allocs/op should be a small constant independent of OID
+// count — the encoder writes each `oid <hex>` line via
+// [pktline.Writer.WriteLineParts] without intermediate string
+// concatenation, and the writer's scratch buffer is reused across all
+// per-OID lines.
+func BenchmarkSession_ObjectInfo_emit(b *testing.B) {
+	canned := flushOnlyResponse(b)
+	conn := newReuseCommandConn(canned)
+	s := &Session{
+		conn: conn,
+		caps: Capabilities{
+			Version:      ProtocolV2,
+			ObjectFormat: ObjectFormatSHA1,
+		},
+		rawCaps: wire.RawCapabilities{
+			{Name: "agent", Value: "git/2.45.0"},
+			{Name: "object-format", Value: "sha1"},
+			{Name: "object-info", Value: "size"},
+		},
+	}
+	oids := benchObjectInfoOIDs(16)
+	args := ObjectInfoRequest{Size: true}
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		infos, err := s.ObjectInfo(ctx, oids, args)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchObjectInfoSliceSink = infos
+	}
+}
+
+// benchObjectInfoSliceSink defeats dead-code elimination on the
+// `ObjectInfo` return value — without an observable assignment the
+// compiler can erase parts of the call the bench is meant to measure.
+var benchObjectInfoSliceSink []ObjectInfo
+
+// benchObjectInfoOIDs builds n deterministic 40-hex-char OID strings
+// keyed on index. The bytes are not a real SHA-1 over any object — the
+// encoder treats OIDs as opaque hex, so any 40-char hex run drives the
+// emission path a real OID would.
+func benchObjectInfoOIDs(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		var b [20]byte
+		b[19] = byte(i)
+		out[i] = hex.EncodeToString(b[:])
+	}
+	return out
+}
+
+// flushOnlyResponse builds a pre-canned wire response carrying nothing
+// but a flush packet. It is a valid `ls-refs` response (zero ref-lines
+// followed by the terminating flush, per `gitprotocol-v2.adoc`
+// §"ls-refs") and a valid `object-info` response (the zero-OID shape
+// per `protocol-caps.c::send_info` lines 44-45). Built once per bench
+// and handed to `reuseCommandConn` so the response side of the wire
+// exchange is constant; the bench measures the request side.
+func flushOnlyResponse(b *testing.B) []byte {
+	b.Helper()
+	var buf bytes.Buffer
+	pw := pktline.NewWriter(&buf)
+	if err := pw.WriteFlush(); err != nil {
+		b.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// reuseCommandConn is a benchmark-only [transport.Conn] stub whose
+// `Command` drains the body callback into a reused [pktline.Writer]
+// over a reused [bytes.Buffer] and returns a reused [pktline.Reader]
+// rewound onto the pre-canned response bytes. The per-call setup that
+// `fakeCommandConn` performs — allocating a fresh writer, a fresh
+// [bytes.Reader], and a fresh [pktline.Reader] — is hoisted into the
+// stub's construction so steady-state benchmarks observe only the
+// encoder's own allocation pressure, not the stub's overhead.
+//
+// The contract on [transport.Conn.Command] is preserved: the body
+// callback is invoked exactly once per call against a writer the
+// caller can drive freely, and the returned reader carries the next
+// command's response framing. Re-running `Command` rewinds the source
+// buffer to position 0 so the same canned bytes are replayed each
+// iteration; the writer's underlying buffer is reset to zero length so
+// it does not grow without bound across iterations.
+type reuseCommandConn struct {
+	canned []byte
+	src    *bytes.Reader
+	rdr    *pktline.Reader
+	bodyW  *pktline.Writer
+	bodyB  *bytes.Buffer
+}
+
+// newReuseCommandConn returns a `reuseCommandConn` whose `Command`
+// replays canned as the response stream on every call. The writer side
+// is allocated once at construction; the source buffer is pre-positioned
+// at canned so the first `Command` invocation sees the full response.
+func newReuseCommandConn(canned []byte) *reuseCommandConn {
+	src := bytes.NewReader(canned)
+	bodyB := new(bytes.Buffer)
+	return &reuseCommandConn{
+		canned: canned,
+		src:    src,
+		rdr:    pktline.NewReader(src),
+		bodyW:  pktline.NewWriter(bodyB),
+		bodyB:  bodyB,
+	}
+}
+
+func (c *reuseCommandConn) Advertisement() *pktline.Reader {
+	return pktline.NewReader(bytes.NewReader(nil))
+}
+
+func (c *reuseCommandConn) Command(_ context.Context, _ string,
+	body transport.CommandBody) (*pktline.Reader, error) {
+	c.bodyB.Reset()
+	if err := body(c.bodyW); err != nil {
+		return nil, err
+	}
+	c.src.Reset(c.canned)
+	return c.rdr, nil
+}
+
+func (c *reuseCommandConn) Close() error { return nil }
