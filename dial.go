@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -143,11 +144,12 @@ func Dial(ctx context.Context, rawURL string, opts ...Option) (*Session, error) 
 	}
 
 	return &Session{
-		conn:   conn,
-		caps:   convertCaps(adv.Caps, adv.Version),
-		refs:   convertRefs(adv.Refs),
-		config: cfg,
-		url:    redactedURL,
+		conn:    conn,
+		caps:    convertCaps(adv.Caps, adv.Version),
+		rawCaps: slices.Clone(adv.Caps),
+		refs:    convertRefs(adv.Refs),
+		config:  cfg,
+		url:     redactedURL,
 	}, nil
 }
 

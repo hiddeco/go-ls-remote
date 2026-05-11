@@ -148,62 +148,6 @@ func BenchmarkSession_Capabilities(b *testing.B) {
 	}
 }
 
-// Benchmark_buildLSRefsArgs pins the allocation profile of
-// `buildLSRefsArgs` for a typical prefix-filtered request. The C2
-// refactor introduced exact-capacity preallocation (`boolToOne` sum +
-// len(Prefixes)) so the result slice never grows. Per-prefix
-// `"ref-prefix "+p` concatenations remain per-element heap allocations
-// — the count this benchmark protects is `1 + len(Prefixes)`, not 1.
-// A regression that reintroduces append-growth copies on the result
-// slice would show as a higher allocs/op here.
-//
-// The fixture requests `Peel: true`, `Symrefs: true`, two prefixes, and
-// does not request `Unborn` (the server's `LSRefsArgs` does not include
-// `unborn`, so the gate suppresses it). The `unborn` token being absent
-// exercises the gate in `lsRefsAdvertisesUnborn`.
-func Benchmark_buildLSRefsArgs(b *testing.B) {
-	args := RefsRequest{
-		Prefixes: []string{"refs/heads/", "refs/tags/"},
-		Peel:     true,
-		Symrefs:  true,
-	}
-	caps := Capabilities{
-		LSRefsArgs: []string{"unborn"}, // present but not requested by args
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		_ = buildLSRefsArgs(args, caps)
-	}
-}
-
-// Benchmark_buildObjectInfoArgs pins the allocation profile of
-// `buildObjectInfoArgs` for a 16-OID batch. The C2 refactor preallocates
-// `len(oids) + boolToOne(args.Size)` so the result slice never grows.
-// Per-OID `"oid "+oid` concatenations remain per-element heap
-// allocations — the count this benchmark protects is `1 + len(oids)`
-// (plus one for the leading `size` token when `args.Size` is true),
-// not 1. A regression that reintroduces append-growth copies on the
-// result slice — or one that drops the prealloc and lets the slice
-// double through several capacities — would show as a higher
-// allocs/op here.
-//
-// A larger batch (e.g. 1000 OIDs) would show linear wall-time scaling
-// and linear allocs/op growth dominated by the per-OID concatenations.
-// The growth-free property of the result slice is the invariant worth
-// protecting.
-func Benchmark_buildObjectInfoArgs(b *testing.B) {
-	oids := synthOIDs(16)
-	args := ObjectInfoRequest{Size: true}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		_ = buildObjectInfoArgs(oids, args)
-	}
-}
-
 // synthRefs returns a slice of 101 synthetic Ref values: HEAD followed
 // by 90 branch refs and 10 tag refs. The OIDs are stable across runs;
 // the shape is representative of a small-to-medium repository. Symref
@@ -229,18 +173,6 @@ func synthRefs(b *testing.B) []Ref {
 		})
 	}
 	return refs
-}
-
-// synthOIDs returns n deterministic 40-hex-char OID strings keyed by
-// index. The strings are not real SHA-1 digests — they are arbitrary
-// stable hex values that drive the argument-building loop through the
-// same code path a real OID would.
-func synthOIDs(n int) []string {
-	out := make([]string, n)
-	for i := range n {
-		out[i] = benchSyntheticOID(uint64(i))
-	}
-	return out
 }
 
 // benchSyntheticOID returns a deterministic 40-hex-char string keyed on

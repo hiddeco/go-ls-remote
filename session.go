@@ -51,6 +51,15 @@ type Session struct {
 	// advertisement. [Session.Capabilities] hands callers a deep copy.
 	caps Capabilities
 
+	// rawCaps is the verbatim wire-order capability list captured at
+	// [Dial] time. It feeds the v2 command encoders
+	// ([wire.EncodeLSRefs], [wire.EncodeObjectInfo]) which need the
+	// slice shape for `caps.All("ls-refs")` (unborn-gate lookup) and
+	// `caps.Has("agent")` / `caps.Get("object-format")` (cap-echo). The
+	// public [Capabilities.Raw] map loses wire order so it cannot
+	// substitute. Allocated once at construction; never mutated.
+	rawCaps wire.RawCapabilities
+
 	// refs holds the advertisement-time ref list for v0/v1 handshakes.
 	// v2 leaves it nil — v2 callers fetch refs on demand via an
 	// `ls-refs` command. The slice is allocated by [convertRefs] so it
@@ -195,11 +204,14 @@ func (s *Session) symrefTarget(name string) string {
 // streamed response. Errors are wrapped in `*ProtocolError` with
 // `Op == "ls-refs"` and the session's negotiated version on `Version`.
 func (s *Session) refsV2(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, error], error) {
-	cmdArgs := buildLSRefsArgs(args, s.caps)
-	cmdCaps := buildCommandCaps(s.caps, s.config.userAgent)
-
+	wireArgs := wire.RefsArgs{
+		Prefixes: args.Prefixes,
+		Peel:     args.Peel,
+		Symrefs:  args.Symrefs,
+		Unborn:   args.Unborn,
+	}
 	rdr, err := s.conn.Command(ctx, "ls-refs", func(w *pktline.Writer) error {
-		return wire.EncodeV2CommandRequest(w, "ls-refs", cmdArgs, cmdCaps)
+		return wire.EncodeLSRefs(w, wireArgs, s.rawCaps, s.config.userAgent, s.config.tracer)
 	})
 	if err != nil {
 		return nil, s.protocolError("ls-refs", err)
@@ -272,11 +284,9 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 		}
 	}
 
-	cmdArgs := buildObjectInfoArgs(oids, args)
-	cmdCaps := buildCommandCaps(s.caps, s.config.userAgent)
-
+	wireArgs := wire.ObjectInfoArgs{Size: args.Size}
 	rdr, err := s.conn.Command(ctx, "object-info", func(w *pktline.Writer) error {
-		return wire.EncodeV2CommandRequest(w, "object-info", cmdArgs, cmdCaps)
+		return wire.EncodeObjectInfo(w, oids, wireArgs, s.rawCaps, s.config.userAgent)
 	})
 	if err != nil {
 		return nil, s.protocolError("object-info", err)
@@ -305,86 +315,6 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 // so a second or later call after the first returns nil.
 func (s *Session) Close() error {
 	return s.conn.Close()
-}
-
-// buildLSRefsArgs translates the public [RefsRequest] into the
-// command-args string slice the transport's `Conn.Command` expects.
-// Argument order matches `connect.c::get_remote_refs` lines 564-597:
-// `peel`, `symrefs`, `unborn` (gated by the server advertising
-// `ls-refs=unborn` per `connect.c::server_supports_feature` lines
-// 112-132), then one `ref-prefix <p>` per element of `args.Prefixes`.
-func buildLSRefsArgs(args RefsRequest, caps Capabilities) []string {
-	unbornOK := args.Unborn && lsRefsAdvertisesUnborn(caps)
-	cap := boolToOne(args.Peel) + boolToOne(args.Symrefs) + boolToOne(unbornOK) + len(args.Prefixes)
-	out := make([]string, 0, cap)
-	if args.Peel {
-		out = append(out, "peel")
-	}
-	if args.Symrefs {
-		out = append(out, "symrefs")
-	}
-	if unbornOK {
-		out = append(out, "unborn")
-	}
-	for _, p := range args.Prefixes {
-		out = append(out, "ref-prefix "+p)
-	}
-	return out
-}
-
-// buildObjectInfoArgs translates the public [ObjectInfoRequest] plus
-// the OID slice into the command-args string slice the transport's
-// `Conn.Command` expects. `size` is emitted first when requested,
-// mirroring the natural reading of `gitprotocol-v2.adoc`
-// §"object-info"; canonical Git's `protocol-caps.c::cap_object_info`
-// accepts any interleaving.
-func buildObjectInfoArgs(oids []string, args ObjectInfoRequest) []string {
-	out := make([]string, 0, len(oids)+boolToOne(args.Size))
-	if args.Size {
-		out = append(out, "size")
-	}
-	for _, oid := range oids {
-		out = append(out, "oid "+oid)
-	}
-	return out
-}
-
-// buildCommandCaps assembles the capability-echo lines the transport
-// emits in the capability-list portion of a v2 command request. The
-// shape mirrors the wire layer's `writeCapabilityEcho`
-// (`internal/wire/caps_echo.go`): `agent=<ua>` first when the server
-// advertised `agent`, then `object-format=<v>` when the server
-// advertised it with a non-empty value. `promisor-remote` is omitted —
-// the discovery surface never requests it.
-//
-// `userAgent` overrides the library default when non-empty. The
-// `wire.DefaultUserAgent` value is reused so a Session built without
-// `WithUserAgent` emits the same agent string the wire-layer encoder
-// would have emitted directly.
-func buildCommandCaps(caps Capabilities, userAgent string) []string {
-	var out []string
-	if caps.Agent != "" || len(caps.Raw["agent"]) > 0 {
-		ua := userAgent
-		if ua == "" {
-			ua = wire.DefaultUserAgent
-		}
-		out = append(out, "agent="+ua)
-	}
-	if of := string(caps.ObjectFormat); of != "" {
-		out = append(out, "object-format="+of)
-	}
-	return out
-}
-
-// lsRefsAdvertisesUnborn reports whether the server's `ls-refs`
-// capability advertisement carries the `unborn` feature token. The
-// scan mirrors `internal/wire.lsRefsSupportsUnborn` but reads the
-// public [Capabilities.LSRefsArgs] slice rather than the raw
-// capability list — the splitting has already happened in
-// [convertCaps]. A boolean `ls-refs` advertisement leaves
-// [Capabilities.LSRefsArgs] empty and so does not enable the gate.
-func lsRefsAdvertisesUnborn(caps Capabilities) bool {
-	return slices.Contains(caps.LSRefsArgs, "unborn")
 }
 
 // matchPrefixes reports whether name is admitted by the prefix filter.
@@ -421,15 +351,6 @@ func (s *Session) protocolError(op string, err error) error {
 func versionPtr(v ProtocolVersion) *ProtocolVersion {
 	out := v
 	return &out
-}
-
-// boolToOne returns 1 when b is true and 0 otherwise. Used to compute
-// exact slice capacities from flag sets without branching.
-func boolToOne(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // cloneCapabilities returns a deep copy of c. Every slice and map is
