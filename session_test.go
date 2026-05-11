@@ -137,7 +137,7 @@ func TestSession_Refs_v2(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	seq, err := s.Refs(context.Background(), RefsArgs{})
+	seq, err := s.Refs(context.Background(), RefsRequest{})
 	require.NoError(t, err)
 
 	var got []Ref
@@ -160,9 +160,9 @@ func TestSession_Refs_v2(t *testing.T) {
 	assert.True(t, sawMain, "v2 ls-refs must yield refs/heads/main")
 }
 
-// TestSession_Refs_v2_prefixesAndSymrefs pins that `RefsArgs.Prefixes`
+// TestSession_Refs_v2_prefixesAndSymrefs pins that `RefsRequest.Prefixes`
 // flows to the server as one `ref-prefix` arg per element and
-// `RefsArgs.Symrefs` populates `Ref.Symref` on HEAD. The fixture
+// `RefsRequest.Symrefs` populates `Ref.Symref` on HEAD. The fixture
 // advertises a single branch, so a prefix of `refs/heads/` admits
 // refs/heads/main but not HEAD (which is not under that namespace).
 func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
@@ -175,7 +175,7 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	// First: bound the response to `refs/heads/` only.
-	seq, err := s.Refs(context.Background(), RefsArgs{
+	seq, err := s.Refs(context.Background(), RefsRequest{
 		Prefixes: []string{"refs/heads/"},
 	})
 	require.NoError(t, err)
@@ -192,14 +192,14 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 
 	// Second: ask for symrefs and confirm HEAD carries Symref =
 	// refs/heads/main.
-	seq, err = s.Refs(context.Background(), RefsArgs{Symrefs: true})
+	seq, err = s.Refs(context.Background(), RefsRequest{Symrefs: true})
 	require.NoError(t, err)
 	var sawHEADSymref bool
 	for ref, err := range seq {
 		require.NoError(t, err)
 		if ref.Name == "HEAD" {
 			assert.Equal(t, "refs/heads/main", ref.Symref,
-				"RefsArgs.Symrefs must flow to the server and populate Ref.Symref on HEAD")
+				"RefsRequest.Symrefs must flow to the server and populate Ref.Symref on HEAD")
 			sawHEADSymref = true
 		}
 	}
@@ -207,7 +207,7 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 }
 
 // TestSession_Refs_v0_clientSideFilter pins the v0/v1 path: the cached
-// advertisement-time slice is filtered client-side by `RefsArgs.Prefixes`,
+// advertisement-time slice is filtered client-side by `RefsRequest.Prefixes`,
 // no command is issued, and no error is returned.
 func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	store, _ := openObjectInfoFixture(t)
@@ -220,7 +220,7 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
 
 	// No filter: every cached ref comes back, including HEAD.
-	seq, err := s.Refs(context.Background(), RefsArgs{})
+	seq, err := s.Refs(context.Background(), RefsRequest{})
 	require.NoError(t, err)
 	var all []Ref
 	for ref, err := range seq {
@@ -230,7 +230,7 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	require.NotEmpty(t, all)
 
 	// Filter on `refs/heads/`: HEAD is dropped, refs/heads/main survives.
-	seq, err = s.Refs(context.Background(), RefsArgs{
+	seq, err = s.Refs(context.Background(), RefsRequest{
 		Prefixes: []string{"refs/heads/"},
 	})
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestSession_ListRefs(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	refs, err := s.ListRefs(context.Background(), RefsArgs{})
+	refs, err := s.ListRefs(context.Background(), RefsRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, refs)
 
@@ -284,7 +284,7 @@ func TestSession_ObjectInfo_v2(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	got, err := s.ObjectInfo(context.Background(),
-		[]string{commitOID}, ObjectInfoArgs{Size: true})
+		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, commitOID, got[0].Hash)
@@ -306,7 +306,7 @@ func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
 
 	got, err := s.ObjectInfo(context.Background(),
-		[]string{commitOID}, ObjectInfoArgs{Size: true})
+		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	assert.Nil(t, got)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
@@ -340,7 +340,7 @@ func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	got, err := s.ObjectInfo(context.Background(),
-		[]string{commitOID}, ObjectInfoArgs{})
+		[]string{commitOID}, ObjectInfoRequest{})
 	require.NoError(t, err)
 	require.Len(t, got, 1,
 		"no-size response must surface one row per requested OID; "+
@@ -351,7 +351,7 @@ func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 }
 
 // TestSession_ObjectInfo_sizeFalseNoSizeArg confirms the request side
-// of [TestSession_ObjectInfo_sizeFalseSeam]: when `ObjectInfoArgs.Size`
+// of [TestSession_ObjectInfo_sizeFalseSeam]: when `ObjectInfoRequest.Size`
 // is false the wire request must not carry the `size` argument. The
 // public contract leaks no Size-related capability the caller did not
 // opt into. A stub `transport.Conn` pins the bytes the Session writes
@@ -377,7 +377,7 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 	}
 
 	_, err := s.ObjectInfo(context.Background(),
-		[]string{commitOID}, ObjectInfoArgs{})
+		[]string{commitOID}, ObjectInfoRequest{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "object-info", conn.lastCmdName)

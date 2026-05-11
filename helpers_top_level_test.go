@@ -79,7 +79,7 @@ func TestRefs_topLevel(t *testing.T) {
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsArgs{})
+	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
 	require.NoError(t, err)
 
 	var got []Ref
@@ -115,7 +115,7 @@ func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
 	reg, rec := newCloseRecordingRegistry(t)
 
 	seq, err := Refs(context.Background(), srv.URL+"/repo.git",
-		RefsArgs{}, WithTransports(reg))
+		RefsRequest{}, WithTransports(reg))
 	require.NoError(t, err)
 
 	var n int
@@ -139,7 +139,7 @@ func TestRefs_topLevel_closesSessionOnEarlyStop(t *testing.T) {
 	reg, rec := newCloseRecordingRegistry(t)
 
 	seq, err := Refs(context.Background(), srv.URL+"/repo.git",
-		RefsArgs{}, WithTransports(reg))
+		RefsRequest{}, WithTransports(reg))
 	require.NoError(t, err)
 
 	// Take exactly one ref and bail.
@@ -164,7 +164,7 @@ func TestRefs_topLevel_dialError(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsArgs{})
+	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
 	assert.Nil(t, seq)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound),
@@ -179,7 +179,7 @@ func TestListRefs_topLevel(t *testing.T) {
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	refs, err := ListRefs(context.Background(), srv.URL+"/repo.git", RefsArgs{})
+	refs, err := ListRefs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, refs)
 
@@ -200,7 +200,7 @@ func TestObjectInfos_topLevel(t *testing.T) {
 	defer srv.Close()
 
 	got, err := ObjectInfos(context.Background(), srv.URL+"/repo.git",
-		[]string{commitOID}, ObjectInfoArgs{Size: true})
+		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, commitOID, got[0].Hash)

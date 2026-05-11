@@ -81,21 +81,22 @@ func (s *Session) Capabilities() Capabilities {
 // Refs returns an iterator over the server's references.
 //
 // On v2 ([ProtocolV2]) Refs issues an `ls-refs` command, forwarding
-// [RefsArgs.Prefixes] verbatim as `ref-prefix` arguments and toggling
-// `peel`, `symrefs`, and `unborn` per the corresponding [RefsArgs]
-// flags. The `unborn` argument is dropped silently when the server did
-// not advertise `ls-refs=unborn` in its capability list
+// [RefsRequest.Prefixes] verbatim as `ref-prefix` arguments and
+// toggling `peel`, `symrefs`, and `unborn` per the corresponding
+// [RefsRequest] flags. The `unborn` argument is dropped silently when
+// the server did not advertise `ls-refs=unborn` in its capability list
 // (`connect.c::get_remote_refs` lines 564-597). The iterator streams
 // the response and yields one (Ref, error) pair per emission.
 //
 // On v0/v1 the wire has no `ls-refs` equivalent: the full ref
 // advertisement has already been consumed by [Dial] and cached on the
-// Session. Refs filters that cached slice by [RefsArgs.Prefixes]
-// client-side and yields the survivors. [RefsArgs.Peel],
-// [RefsArgs.Symrefs], and [RefsArgs.Unborn] are no-ops on v0/v1:
-// peeled-tag information rides inline on the v0/v1 advertisement
-// regardless, symref targets surface on [Capabilities.Symrefs] rather
-// than per-ref, and v0/v1 has no unborn-`HEAD` wire representation.
+// Session. Refs filters that cached slice by [RefsRequest.Prefixes]
+// client-side and yields the survivors. [RefsRequest.Peel],
+// [RefsRequest.Symrefs], and [RefsRequest.Unborn] are no-ops on
+// v0/v1: peeled-tag information rides inline on the v0/v1
+// advertisement regardless, symref targets surface on
+// [Capabilities.Symrefs] rather than per-ref, and v0/v1 has no
+// unborn-`HEAD` wire representation.
 //
 // The returned error is non-nil only when the v2 command request
 // itself fails before any response bytes are consumed (for example a
@@ -104,7 +105,7 @@ func (s *Session) Capabilities() Capabilities {
 // pair wrapping the cause in a `*ProtocolError` with `Op == "ls-refs"`
 // and stops. Iteration over a successful v0/v1 path never yields an
 // error.
-func (s *Session) Refs(ctx context.Context, args RefsArgs) (iter.Seq2[Ref, error], error) {
+func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, error], error) {
 	if s.caps.Version != ProtocolV2 {
 		return s.refsCached(args), nil
 	}
@@ -115,7 +116,7 @@ func (s *Session) Refs(ctx context.Context, args RefsArgs) (iter.Seq2[Ref, error
 // `args.Prefixes`. Used by the v0/v1 paths where the wire has no
 // equivalent of `ls-refs` and the full ref list was already captured
 // at [Dial] time.
-func (s *Session) refsCached(args RefsArgs) iter.Seq2[Ref, error] {
+func (s *Session) refsCached(args RefsRequest) iter.Seq2[Ref, error] {
 	return func(yield func(Ref, error) bool) {
 		for _, ref := range s.refs {
 			if !matchPrefixes(ref.Name, args.Prefixes) {
@@ -131,7 +132,7 @@ func (s *Session) refsCached(args RefsArgs) iter.Seq2[Ref, error] {
 // refsV2 issues an `ls-refs` command and returns an iterator over the
 // streamed response. Errors are wrapped in `*ProtocolError` with
 // `Op == "ls-refs"` and the session's negotiated version on `Version`.
-func (s *Session) refsV2(ctx context.Context, args RefsArgs) (iter.Seq2[Ref, error], error) {
+func (s *Session) refsV2(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, error], error) {
 	cmdArgs := buildLSRefsArgs(args, s.caps)
 	cmdCaps := buildCommandCaps(s.caps, s.config.userAgent)
 
@@ -157,7 +158,7 @@ func (s *Session) refsV2(ctx context.Context, args RefsArgs) (iter.Seq2[Ref, err
 // ListRefs collects the refs yielded by [Session.Refs] into a slice.
 // Iteration stops on the first error, which is returned alongside a
 // nil slice; otherwise every yielded ref is appended in order.
-func (s *Session) ListRefs(ctx context.Context, args RefsArgs) ([]Ref, error) {
+func (s *Session) ListRefs(ctx context.Context, args RefsRequest) ([]Ref, error) {
 	seq, err := s.Refs(ctx, args)
 	if err != nil {
 		return nil, err
@@ -190,7 +191,7 @@ func (s *Session) ListRefs(ctx context.Context, args RefsArgs) ([]Ref, error) {
 // size the server elided on a Size-requested call, so a returned
 // `Size == 0` is left as-is in the Size-requested branch.
 func (s *Session) ObjectInfo(ctx context.Context, oids []string,
-	args ObjectInfoArgs) ([]ObjectInfo, error) {
+	args ObjectInfoRequest) ([]ObjectInfo, error) {
 	if s.caps.Version != ProtocolV2 {
 		return nil, &ProtocolError{
 			URL:     s.url,
@@ -234,13 +235,13 @@ func (s *Session) Close() error {
 	return s.conn.Close()
 }
 
-// buildLSRefsArgs translates the public [RefsArgs] into the
+// buildLSRefsArgs translates the public [RefsRequest] into the
 // command-args string slice the transport's `Conn.Command` expects.
 // Argument order matches `connect.c::get_remote_refs` lines 564-597:
 // `peel`, `symrefs`, `unborn` (gated by the server advertising
 // `ls-refs=unborn` per `connect.c::server_supports_feature` lines
 // 112-132), then one `ref-prefix <p>` per element of `args.Prefixes`.
-func buildLSRefsArgs(args RefsArgs, caps Capabilities) []string {
+func buildLSRefsArgs(args RefsRequest, caps Capabilities) []string {
 	var out []string
 	if args.Peel {
 		out = append(out, "peel")
@@ -257,13 +258,13 @@ func buildLSRefsArgs(args RefsArgs, caps Capabilities) []string {
 	return out
 }
 
-// buildObjectInfoArgs translates the public [ObjectInfoArgs] plus the
-// OID slice into the command-args string slice the transport's
+// buildObjectInfoArgs translates the public [ObjectInfoRequest] plus
+// the OID slice into the command-args string slice the transport's
 // `Conn.Command` expects. `size` is emitted first when requested,
-// mirroring the natural reading of `gitprotocol-v2.adoc` §"object-info";
-// canonical Git's `protocol-caps.c::cap_object_info` accepts any
-// interleaving.
-func buildObjectInfoArgs(oids []string, args ObjectInfoArgs) []string {
+// mirroring the natural reading of `gitprotocol-v2.adoc`
+// §"object-info"; canonical Git's `protocol-caps.c::cap_object_info`
+// accepts any interleaving.
+func buildObjectInfoArgs(oids []string, args ObjectInfoRequest) []string {
 	out := make([]string, 0, len(oids)+1)
 	if args.Size {
 		out = append(out, "size")

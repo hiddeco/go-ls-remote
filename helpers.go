@@ -20,7 +20,7 @@ import (
 //
 // On a dial-time or `ls-refs`-time failure Refs returns `(nil, err)`
 // and leaves no Session open.
-func Refs(ctx context.Context, rawURL string, args RefsArgs,
+func Refs(ctx context.Context, rawURL string, args RefsRequest,
 	opts ...Option) (iter.Seq2[Ref, error], error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {
@@ -52,7 +52,7 @@ func Refs(ctx context.Context, rawURL string, args RefsArgs,
 //
 // On a dial-time or `ls-refs`-time failure ListRefs returns `(nil,
 // err)` and leaves no Session open.
-func ListRefs(ctx context.Context, rawURL string, args RefsArgs,
+func ListRefs(ctx context.Context, rawURL string, args RefsRequest,
 	opts ...Option) ([]Ref, error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {
@@ -73,7 +73,7 @@ func ListRefs(ctx context.Context, rawURL string, args RefsArgs,
 // [*ProtocolError] whose chain matches [ErrUnsupportedProtocol], per
 // [Session.ObjectInfo].
 func ObjectInfos(ctx context.Context, rawURL string, oids []string,
-	args ObjectInfoArgs, opts ...Option) ([]ObjectInfo, error) {
+	args ObjectInfoRequest, opts ...Option) ([]ObjectInfo, error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, 
 
 	caps := s.Capabilities()
 	if caps.Version == ProtocolV2 {
-		seq, err := s.Refs(ctx, RefsArgs{
+		seq, err := s.Refs(ctx, RefsRequest{
 			Prefixes: []string{"HEAD"},
 			Symrefs:  true,
 		})
@@ -176,7 +176,7 @@ func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, 
 // [Ref.Peeled].
 func Tags(ctx context.Context, rawURL string,
 	opts ...Option) (iter.Seq2[Ref, error], error) {
-	return Refs(ctx, rawURL, RefsArgs{
+	return Refs(ctx, rawURL, RefsRequest{
 		Prefixes: []string{"refs/tags/"},
 		Peel:     true,
 	}, opts...)
@@ -185,7 +185,7 @@ func Tags(ctx context.Context, rawURL string,
 // Heads is a shorthand for [Refs] restricted to `refs/heads/`.
 func Heads(ctx context.Context, rawURL string,
 	opts ...Option) (iter.Seq2[Ref, error], error) {
-	return Refs(ctx, rawURL, RefsArgs{
+	return Refs(ctx, rawURL, RefsRequest{
 		Prefixes: []string{"refs/heads/"},
 	}, opts...)
 }
