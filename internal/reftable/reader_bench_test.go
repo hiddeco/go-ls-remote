@@ -197,6 +197,46 @@ func BenchmarkReader_FindRef_AtScale(b *testing.B) {
 	}
 }
 
+// BenchmarkReader_IterRefs_AtScale measures the bulk-walk cost: a
+// fresh `IterRefs` per iteration drained to exhaustion. This is the
+// shape an `ls-remote` against a reftable-backed forge sees once per
+// dial after the advertisement. Per-record cost dominates; the
+// per-call overhead amortises across the ref count.
+func BenchmarkReader_IterRefs_AtScale(b *testing.B) {
+	for _, sc := range []struct {
+		name    string
+		fixture string
+	}{
+		{"n=1000", "many-refs-1k-sha1"},
+		{"n=10000", "many-refs-10k-sha1"},
+	} {
+		b.Run(sc.name, func(b *testing.B) {
+			r, err := OpenReader[objfmt.SHA1Hash](benchFixturePath(
+				sc.fixture + "/0001-0001-aaaaaaaa.ref"))
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Cleanup(func() { _ = r.Close() })
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				var count int
+				for rec, err := range r.IterRefs() {
+					if err != nil {
+						b.Fatal(err)
+					}
+					benchReaderRefSink = rec
+					count++
+				}
+				if count == 0 {
+					b.Fatal("no records iterated")
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkOpenReader(b *testing.B) {
 	// Open-time cost: mmap.Open + ReadAt(whole file) + parseHeader +
 	// verifyTrailer (CRC over the footer). This dominates the very
