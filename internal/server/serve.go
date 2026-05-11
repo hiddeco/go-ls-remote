@@ -72,3 +72,23 @@ func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Wri
 		return fmt.Errorf("%w: %s", ErrUnsupportedProtocol, opts.PreferredProtocol)
 	}
 }
+
+// ServeCommandLoop runs the v2 command-request loop on r/w against
+// store, without emitting the leading advertisement that [Serve]
+// would otherwise produce. It is the right entry point for the
+// smart-HTTP POST handler, which must return only the command
+// response — the advertisement is served by the GET probe. See
+// canonical Git's `http-backend.c::service_rpc` for the split.
+//
+// The function is v2-only by definition: v0 has no command loop, so
+// `opts.PreferredProtocol` is ignored. Callers may leave the field
+// unset; the response body begins with the first packet the v2
+// command handler emits, not with `version 2\n`.
+//
+// The contract for r, w, store, and the rest of opts (notably
+// [Options.Tracer]) matches [Serve]; consult that function's doc
+// for the termination paths and error shapes the loop surfaces.
+func ServeCommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
+	store *objstore.Store[H], opts Options) error {
+	return runV2CommandLoop(ctx, r, w, store, opts)
+}
