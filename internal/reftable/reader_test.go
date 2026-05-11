@@ -407,15 +407,15 @@ func TestReader_FindRef_NameStability(t *testing.T) {
 
 // TestReader_FindRef_AllocBudget pins the per-call alloc count for
 // a forge-scale single-block lookup. With the byte-typed Name and
-// scratch-buffer ping-pong, the leaf-block walk decodes records into
-// a reusable buffer that the caller (the walker) holds across the
-// scan. After the first record the scratch is sized large enough for
-// every subsequent record in the same block, so the steady-state
-// per-record cost is zero. The remaining allocs come from
-// `parseBlock`, the descent path, and the `[]byte(name)` probe
-// conversion fed to `seekToLeaf`. A ceiling of 30 leaves room for
-// Go-runtime alloc drift between point releases; a regression that
-// brings even one alloc per record back would push this to ~150.
+// scratch-buffer ping-pong, both the index descent and the leaf-block
+// walk decode keys into a single growing scratch buffer that lives for
+// the duration of one `FindRef` call. After the first comparator call
+// the buffer is sized large enough for every subsequent decode at the
+// same level (and the level below), so the steady-state per-decode
+// cost is zero. The remaining allocs come from `parseBlock`, the
+// `[]byte(name)` probe conversion, and a small fixed amount of
+// iterator harness bookkeeping. A ceiling of 11 leaves room for
+// Go-runtime alloc drift between point releases.
 func TestReader_FindRef_AllocBudget(t *testing.T) {
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))
@@ -429,8 +429,8 @@ func TestReader_FindRef_AllocBudget(t *testing.T) {
 		}
 	})
 	t.Logf("FindRef allocs/op: %.2f", avg)
-	assert.LessOrEqualf(t, avg, 30.0,
-		"FindRef allocs/op: got %.0f, want <= 30", avg)
+	assert.LessOrEqualf(t, avg, 11.0,
+		"FindRef allocs/op: got %.0f, want <= 11", avg)
 }
 
 // TestReader_IterRefs_AllocBudget pins the per-iteration cost of

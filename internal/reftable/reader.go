@@ -320,7 +320,16 @@ func (r *Reader[H]) FindRef(name string) (RefRecord[H], bool, error) {
 	probe := []byte(name)
 	indexRoot := readRefIndexPosition(r.file, r.header)
 
-	leaf, firstByteOffset, err := seekToLeaf(r.file, r.header, indexRoot, probe, nil)
+	// A single scratch buffer threaded through the descent serves
+	// every restart-table comparator probe and every in-block linear
+	// scan along the way; after the first decode the underlying array
+	// is sized for the namespace and subsequent decodes reuse it.
+	// Reusing the same buffer for the leaf walk below is unsafe —
+	// the leaf walk needs the two-buffer [keyBuf] ping-pong because
+	// it threads `prevKey` through prefix-compressed (non-restart)
+	// records — so the descent's buffer is dropped on return.
+	var descentScratch []byte
+	leaf, firstByteOffset, err := seekToLeaf(r.file, r.header, indexRoot, probe, nil, &descentScratch)
 	if err != nil {
 		return RefRecord[H]{}, false, err
 	}

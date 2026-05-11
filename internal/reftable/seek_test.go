@@ -22,7 +22,7 @@ func Test_seekToLeaf(t *testing.T) {
 		// (HEAD < refs/heads/branch-* < refs/heads/main); a fast seek
 		// must descend through the index rather than walking every
 		// ref block.
-		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("refs/heads/branch-50"), &c)
+		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("refs/heads/branch-50"), &c, nil)
 		require.NoError(t, err)
 		require.NotNil(t, leaf)
 		assert.Equal(t, byte('r'), leaf[firstByte])
@@ -41,7 +41,7 @@ func Test_seekToLeaf(t *testing.T) {
 		require.Zero(t, idxPos, "fixture must omit the ref index")
 
 		var c blockProbeCounter
-		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("refs/heads/main"), &c)
+		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("refs/heads/main"), &c, nil)
 		require.NoError(t, err)
 		require.NotNil(t, leaf)
 		assert.Equal(t, byte('r'), leaf[firstByte])
@@ -64,7 +64,7 @@ func Test_seekToLeaf(t *testing.T) {
 		// shares its frame with the file header), so firstByte equals
 		// the v1 header size.
 		var c blockProbeCounter
-		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("AAA"), &c)
+		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("AAA"), &c, nil)
 		require.NoError(t, err)
 		require.NotNil(t, leaf)
 		assert.Equal(t, byte('r'), leaf[firstByte])
@@ -85,7 +85,7 @@ func Test_seekToLeaf(t *testing.T) {
 		// search; the absence is signalled by an empty intra-block
 		// search rather than by an error here.
 		var c blockProbeCounter
-		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("~~~"), &c)
+		leaf, firstByte, err := seekToLeaf(file, h, idxPos, []byte("~~~"), &c, nil)
 		require.NoError(t, err)
 		require.NotNil(t, leaf)
 		assert.Equal(t, byte('r'), leaf[firstByte])

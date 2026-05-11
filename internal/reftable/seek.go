@@ -63,20 +63,31 @@ func readRefIndexPosition(file []byte, h header) uint64 {
 // constructing a Reader pass their own counter only in tests; a nil
 // pointer skips the bookkeeping.
 //
+// scratch, if non-nil, points to a caller-owned key buffer that the
+// descent threads through every [decodeKey] call so the same array is
+// reused across the O(log restartCount) restart-table comparator
+// probes, the short linear scan inside each index block, and the
+// first-key decode in the no-index linear walk. The buffer grows
+// monotonically: each decode that needs more capacity replaces the
+// pointee with a freshly allocated slice; subsequent decodes whose
+// keys fit reuse the underlying array without allocating. Pass nil
+// from call sites where the descent is rare enough that allocation
+// is in the noise (e.g. tests).
+//
 // Mirrors the descent in `reftable/table.c::table_iter_seek_indexed`
 // and the per-block seek in `reftable/block.c::block_iter_seek_key`.
-func seekToLeaf(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter) ([]byte, uint32, error) {
+func seekToLeaf(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter, scratch *[]byte) ([]byte, uint32, error) {
 	if indexRoot == 0 {
-		return seekLinear(file, h, probe, counter)
+		return seekLinear(file, h, probe, counter, scratch)
 	}
-	return seekIndexed(file, h, indexRoot, probe, counter)
+	return seekIndexed(file, h, indexRoot, probe, counter, scratch)
 }
 
 // seekIndexed walks from indexRoot — an `i` block — through any
 // further index levels and returns the leaf `r` block whose first key
 // is the smallest known key ≥ probe. See [seekToLeaf] for the public
 // contract.
-func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter) ([]byte, uint32, error) {
+func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter, scratch *[]byte) ([]byte, uint32, error) {
 	// Cap the descent at a sensible bound. reftable.adoc §"Ref index"
 	// allows multi-level indexes, but a healthy file converges to a
 	// leaf in a handful of steps. The cap stops a malformed file from
@@ -119,7 +130,7 @@ func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter 
 			if counter != nil {
 				counter.indexBlocks++
 			}
-			next, err := descendIndex(&blk, probe)
+			next, err := descendIndex(&blk, probe, scratch)
 			if err != nil {
 				return nil, 0, fmt.Errorf("reftable: index at %d: %w", pos, err)
 			}
@@ -143,7 +154,11 @@ func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter 
 // `reftable/block.c::block_iter_seek_key`). If probe sorts after
 // every index_record, descendIndex falls through to the last record's
 // block_position so callers always get a leaf back.
-func descendIndex(blk *block, probe []byte) (uint64, error) {
+//
+// scratch, if non-nil, points to a caller-owned key buffer reused
+// across every key decode in this descent and across the recursion to
+// the next-level index block. See [seekToLeaf] for the contract.
+func descendIndex(blk *block, probe []byte, scratch *[]byte) (uint64, error) {
 	// Records live in bytes[startOff:restartOff). startOff is 4 (block
 	// header) for every block but the first ref block in the file —
 	// which is never an index block, so we do not need that branch
@@ -153,10 +168,13 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 
 	// Binary-search restart points for the largest restart key ≤ probe.
 	// Restart records carry prefix_length=0, so each cmp() call decodes
-	// a self-contained key; no running prevKey is needed.
+	// a self-contained key; no running prevKey is needed. The decoded
+	// key is consumed by the immediate `bytes.Compare` below and is
+	// not retained past the comparator call, so reusing a single
+	// scratch buffer across all comparator invocations is safe.
 	idx := blk.seekRestart(func(i int) int {
 		off := blk.restart(i)
-		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil, nil)
+		key, _, _, err := decodeKey(blk.bytes[off:restartOff], nil, derefScratch(scratch))
 		if err != nil {
 			// Returning +1 makes seekRestart skip this restart; the
 			// chosen earlier restart still anchors the linear scan,
@@ -164,6 +182,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 			// the format error to the caller.
 			return +1
 		}
+		storeScratch(scratch, key)
 		return bytes.Compare(key, probe)
 	})
 
@@ -177,12 +196,19 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 	}
 
 	cur := scanFrom
+	// prevKey aliases the same backing array as `scratch` once
+	// the first decode runs: subsequent decodes pass that array as
+	// both `prevKey` (read of prefix bytes) and the destination
+	// `scratch` (write of full key). `decodeKey` copies prev[:prefixLen]
+	// into the destination first; when destination aliases prev that
+	// copy is a self-copy and a no-op, after which the suffix is
+	// written past `prefixLen`. No overlap, no corruption.
 	var prevKey []byte
 	var lastBlockPos uint64 // descent target if probe sorts after every record
 	haveLast := false
 
 	for cur < restartOff {
-		key, _, n, err := decodeKey(blk.bytes[cur:restartOff], prevKey, nil)
+		key, _, n, err := decodeKey(blk.bytes[cur:restartOff], prevKey, derefScratch(scratch))
 		if err != nil {
 			return 0, fmt.Errorf("reftable: decode index key at offset %d: %w", cur, err)
 		}
@@ -193,6 +219,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 			return 0, fmt.Errorf("reftable: decode index block_position at offset %d: %w", cur, err)
 		}
 
+		storeScratch(scratch, key)
 		cmp := bytes.Compare(key, probe)
 		if cmp >= 0 {
 			return blockPos, nil
@@ -228,7 +255,7 @@ func descendIndex(blk *block, probe []byte) (uint64, error) {
 // The block-walk shape (first-block firstByteOffset, blockSize round-up,
 // stop-on-non-ref) matches [Reader.iterAllRefs]; see that function's
 // note on the deliberate non-factoring.
-func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter) ([]byte, uint32, error) {
+func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter, scratch *[]byte) ([]byte, uint32, error) {
 	headerSize := uint32(h.size())
 	pos := uint32(0)
 	first := true
@@ -276,11 +303,15 @@ func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter)
 		// On the first iteration, or when the new block's first record
 		// sorts ≤ probe, this block is a candidate. We compare against
 		// the new block's first key to decide whether to keep walking.
+		// The first record of every ref block sits at a restart point
+		// with prefix_length=0, so `prevKey` is always nil here and a
+		// single growing scratch buffer suffices.
 		firstKeyOff := firstByteOffset + 4
-		firstKey, _, _, err := decodeKey(blk.bytes[firstKeyOff:], nil, nil)
+		firstKey, _, _, err := decodeKey(blk.bytes[firstKeyOff:], nil, derefScratch(scratch))
 		if err != nil {
 			return nil, 0, fmt.Errorf("reftable: decode first key in block at %d: %w", readPos, err)
 		}
+		storeScratch(scratch, firstKey)
 
 		if !first && bytes.Compare(firstKey, probe) > 0 {
 			// The probe lives no later than the previous block.
@@ -312,4 +343,24 @@ func seekLinear(file []byte, h header, probe []byte, counter *blockProbeCounter)
 // roundUp rounds v up to the next multiple of m. m must be > 0.
 func roundUp(v, m uint32) uint32 {
 	return ((v + m - 1) / m) * m
+}
+
+// derefScratch returns the slice pointed to by sp, or nil if sp is
+// nil. It exists to keep the descent's [decodeKey] call sites readable
+// when the caller may pass either a real buffer pointer or nil.
+func derefScratch(sp *[]byte) []byte {
+	if sp == nil {
+		return nil
+	}
+	return *sp
+}
+
+// storeScratch writes key back through sp so future decodes see the
+// (possibly grown) underlying array. A nil sp is a no-op for the
+// fileless/tests path where the caller did not opt into reuse.
+func storeScratch(sp *[]byte, key []byte) {
+	if sp == nil {
+		return
+	}
+	*sp = key
 }
