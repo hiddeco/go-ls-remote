@@ -122,7 +122,7 @@ func testMatrixEmpty(t *testing.T) {
 	// (`ls-refs.c::send_possibly_unborn_head` returns early), so the
 	// response is a flush-only stream with no data packets.
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	pkts := readAllPackets(t, rdr)
@@ -140,7 +140,8 @@ func testMatrixLooseOnly(t *testing.T) {
 	assertHasCap(t, caps, "object-format=sha1")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel", "symrefs"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs",
+			[]string{"peel", "symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)
@@ -158,7 +159,7 @@ func testMatrixPackedOnly(t *testing.T) {
 	c, _ := openMatrixConn(t, gitdir)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)
@@ -176,7 +177,7 @@ func testMatrixMixed(t *testing.T) {
 	c, _ := openMatrixConn(t, gitdir)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)
@@ -199,7 +200,8 @@ func testMatrixUnbornHead(t *testing.T) {
 	assertHasCap(t, caps, "ls-refs=unborn")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"symrefs", "unborn"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs",
+			[]string{"symrefs", "unborn"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)
@@ -234,7 +236,7 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 	// command path so the encoder + dispatcher are fully drained
 	// before the next command on the same Conn.
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -246,8 +248,9 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 	// goroutine.
 	const threeCommitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 	rdr, err = c.Command(context.Background(), "object-info",
-		[]string{"size", "oid " + threeCommitOID},
-		[]string{"object-format=sha1"})
+		cmdBody("object-info",
+			[]string{"size", "oid " + threeCommitOID},
+			[]string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)
@@ -278,7 +281,7 @@ func testMatrixWithAlternatesChain(t *testing.T) {
 	// `ErrCorruptObject`. A clean ls-refs flush proves the server
 	// goroutine reached its command loop on the chained store.
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	pkts := readAllPackets(t, rdr)
 	require.NotEmpty(t, pkts)
@@ -291,7 +294,7 @@ func testMatrixWithReftableContent(t *testing.T) {
 	assertHasCap(t, caps, "object-format=sha1")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"symrefs"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	lines := dataLines(t, rdr)

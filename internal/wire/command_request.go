@@ -1,8 +1,6 @@
 package wire
 
 import (
-	"fmt"
-
 	"github.com/hiddeco/go-ls-remote/pktline"
 )
 
@@ -27,8 +25,11 @@ import (
 //
 // EncodeV2CommandRequest does not flush the underlying writer beyond
 // the closing pkt-line flush — wrapping or `bytes.Buffer` finalisation
-// is left to the caller. When the sink is a `bytes.Buffer` no write
-// can fail and the returned error is always nil.
+// is left to the caller. When the sink is a `bytes.Buffer` write
+// itself cannot fail, but the encoder may still return a wrapped
+// [pktline.ErrPayloadTooLarge] if any value (command name, capability,
+// or argument) exceeds the canonical cap from `pkt-line.h:234` once
+// the trailing LF is appended.
 func EncodeV2CommandRequest(w *pktline.Writer, name string, args, caps []string) error {
 	if err := writeLine(w, "command="+name); err != nil {
 		return err
@@ -47,37 +48,4 @@ func EncodeV2CommandRequest(w *pktline.Writer, name string, args, caps []string)
 		}
 	}
 	return w.WriteFlush()
-}
-
-// ValidateV2CommandPayloads rejects command-name, capability, and arg
-// inputs whose pkt-line framing would exceed [pktline.MaxPayload] (the
-// canonical cap defined at `pkt-line.h:234`). Each pkt-line carries
-// the input value plus a trailing LF (and the `command=` prefix for
-// the command name); a value above the cap cannot be framed as a
-// single packet, so refuse before constructing the frame.
-//
-// Returns an error wrapping [pktline.ErrPayloadTooLarge] so callers
-// can match with [errors.Is]. The wrap message is unprefixed by any
-// scheme: callers may re-wrap with their own transport diagnostic if
-// they want a scheme-tagged log line, but the underlying sentinel
-// match is the load-bearing contract.
-func ValidateV2CommandPayloads(name string, args, caps []string) error {
-	const commandPrefix = "command="
-	if n := len(commandPrefix) + len(name) + 1; n > pktline.MaxPayload {
-		return fmt.Errorf("wire: command %q payload %d bytes: %w",
-			name, n, pktline.ErrPayloadTooLarge)
-	}
-	for _, c := range caps {
-		if n := len(c) + 1; n > pktline.MaxPayload {
-			return fmt.Errorf("wire: capability payload %d bytes: %w",
-				n, pktline.ErrPayloadTooLarge)
-		}
-	}
-	for _, a := range args {
-		if n := len(a) + 1; n > pktline.MaxPayload {
-			return fmt.Errorf("wire: argument payload %d bytes: %w",
-				n, pktline.ErrPayloadTooLarge)
-		}
-	}
-	return nil
 }

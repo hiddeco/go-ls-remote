@@ -75,7 +75,7 @@ func testMatrixSmartV2Happy(t *testing.T) {
 	drainAdvertisement(t, c)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
 	pkts := readAllPackets(t, rdr)
@@ -177,7 +177,7 @@ func testMatrixDumbHTTP(t *testing.T) {
 	}
 	assert.True(t, sawMain, "the synthesised v0 stream must surface refs/heads/main")
 
-	cmdRdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	cmdRdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, cmdRdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
@@ -343,7 +343,7 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError

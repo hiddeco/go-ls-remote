@@ -31,7 +31,7 @@ type fakeConn struct{}
 
 func (fakeConn) Advertisement() *pktline.Reader { return nil }
 
-func (fakeConn) Command(context.Context, string, []string, []string) (*pktline.Reader, error) {
+func (fakeConn) Command(context.Context, string, CommandBody) (*pktline.Reader, error) {
 	return nil, nil
 }
 

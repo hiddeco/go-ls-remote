@@ -220,7 +220,7 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 	drainAdvertisement(t, c)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -299,7 +299,7 @@ func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 	drainAdvertisement(t, c)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -465,7 +465,7 @@ func TestTracer_PacketEvent_BytesAreCopySafe(t *testing.T) {
 	drainAdvertisement(t, c)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -611,7 +611,7 @@ func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 	drainAdvertisement(t, c)
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -665,8 +665,8 @@ func TestTracer_PacketEvent_NoEmissionsWhenNoTracer(t *testing.T) {
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil,
-		[]string{"object-format=sha1"})
+	rdr, err := c.Command(context.Background(), "ls-refs",
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 }

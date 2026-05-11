@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
@@ -65,12 +64,9 @@ const commandAcceptType = "application/x-git-upload-pack-result"
 // Unlike the probe path, the command path does NOT retry on `401`
 // past the resolver-supplied credentials; the discovery probe owns
 // that retry per `remote-curl.c::http_request_reauth`.
-func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error) {
+func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody) (*pktline.Reader, error) {
 	if c.dumb {
 		return nil, ErrUnsupportedProtocol
-	}
-	if err := wire.ValidateV2CommandPayloads(name, args, caps); err != nil {
-		return nil, err
 	}
 
 	postURL, err := commandPostURL(c.url)
@@ -79,13 +75,16 @@ func (c *Conn) Command(ctx context.Context, name string, args, caps []string) (*
 	}
 	redacted := transport.RedactURL(postURL.String())
 
-	body := encodeCommandBody(name, args, caps, c.tracer, redacted)
+	reqBody, err := encodeCommandBody(body, c.tracer, redacted)
+	if err != nil {
+		return nil, err
+	}
 
 	creds, err := resolveCommandCreds(ctx, c.creds, postURL, redacted)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := doCommandPOST(ctx, c.client, postURL, body, c.userAgent, c.gitProtocolHeader, creds, c.tracer)
+	resp, err := doCommandPOST(ctx, c.client, postURL, reqBody, c.userAgent, c.gitProtocolHeader, creds, c.tracer)
 	if err != nil {
 		// `client.Do` may return both a non-nil response and a non-nil
 		// error — most notably when `CheckRedirect` rejects a 3xx hop.
@@ -154,11 +153,11 @@ func commandPostURL(base *url.URL) (*url.URL, error) {
 	return &out, nil
 }
 
-// encodeCommandBody serialises a v2 command-request to a byte buffer
-// by driving [wire.EncodeV2CommandRequest] over a fresh
-// [pktline.Writer] backed by a [bytes.Buffer]. The buffer never fails
-// a write, so the encoder's error return is intentionally discarded —
-// `bytes.Buffer.Write` is documented to always return `(len(p), nil)`.
+// encodeCommandBody drains the [transport.CommandBody] callback into a
+// fresh [bytes.Buffer] through a [pktline.Writer]. The HTTP transport
+// must hand `net/http` a finite byte slice so the POST request can
+// announce its `Content-Length`; the callback's pkt-lines are
+// collected here before dispatch.
 //
 // When tracer is non-nil the writer carries the redacted POST URL so
 // each pkt-line written emits a [trace.PacketEvent] with
@@ -167,11 +166,18 @@ func commandPostURL(base *url.URL) (*url.URL, error) {
 // POST may resend the body against a different URL, but the body is
 // constructed once here and a single tracer URL must apply to every
 // pkt-line in it.
-func encodeCommandBody(name string, args, caps []string, tracer trace.Tracer, redactedURL string) []byte {
+//
+// A non-nil error from body — typically a wrapped
+// [pktline.ErrPayloadTooLarge] from a [pktline.Writer.WritePacket] cap
+// rejection — short-circuits the encode and surfaces unchanged so
+// callers can match the sentinel via [errors.Is].
+func encodeCommandBody(body transport.CommandBody, tracer trace.Tracer, redactedURL string) ([]byte, error) {
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf, outboundWriterOpts(tracer, redactedURL)...)
-	_ = wire.EncodeV2CommandRequest(w, name, args, caps)
-	return buf.Bytes()
+	if err := body(w); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // resolveCommandCreds consults the resolver (if any) for the POST

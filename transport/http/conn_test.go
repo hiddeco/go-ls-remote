@@ -63,7 +63,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 
 func TestConn_Command_DumbReturnsUnsupportedProtocol(t *testing.T) {
 	c := &Conn{dumb: true}
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),

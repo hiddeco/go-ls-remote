@@ -96,54 +96,6 @@ func BenchmarkEncodeV2CommandRequest(b *testing.B) {
 	}
 }
 
-// BenchmarkValidateV2CommandPayloads measures the cost of the
-// pkt-line cap-check that runs on every [transport.Conn.Command] call
-// before the encoder. The check is a per-input length comparison
-// against [pktline.MaxPayload]; the benchmark exists to pin the
-// allocation-free contract — a future refactor that surfaces a
-// per-call allocation here would scale linearly with command
-// throughput, so the regression must be quantitative rather than an
-// unnoticed drift.
-//
-// The shape distribution mirrors [BenchmarkEncodeV2CommandRequest] so
-// the encode + validate path costs can be summed for an end-to-end
-// per-command estimate.
-func BenchmarkValidateV2CommandPayloads(b *testing.B) {
-	const oid = "0123456789abcdef0123456789abcdef01234567"
-	manyOIDs := make([]string, 100)
-	for i := range manyOIDs {
-		manyOIDs[i] = "oid " + oid
-	}
-
-	cases := []struct {
-		name       string
-		cmd        string
-		args, caps []string
-	}{
-		{"ls-refs/plain", "ls-refs", nil, nil},
-		{"ls-refs/peel", "ls-refs", nil, []string{"peel"}},
-		{
-			"ls-refs/peel+prefixes",
-			"ls-refs",
-			[]string{"ref-prefix refs/heads/", "ref-prefix refs/tags/"},
-			[]string{"peel"},
-		},
-		{"object-info/100-oids", "object-info", manyOIDs, []string{"object-format=sha1"}},
-	}
-
-	for _, tc := range cases {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				if err := ValidateV2CommandPayloads(tc.cmd, tc.args, tc.caps); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 // benchDiscardTracer is a non-nil [trace.Tracer] whose `OnEvent`
 // drops every event. It exists so encode-path benches can isolate
 // the cost of the active-tracer shape (interface call + event copy

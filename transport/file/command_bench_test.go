@@ -111,7 +111,7 @@ func BenchmarkConn_Command(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					rdr, err := c.Command(ctx, sh.cmd, sh.args, sh.caps)
+					rdr, err := c.Command(ctx, sh.cmd, cmdBody(sh.cmd, sh.args, sh.caps))
 					if err != nil {
 						b.Fatal(err)
 					}

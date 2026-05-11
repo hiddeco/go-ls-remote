@@ -158,7 +158,7 @@ type stubConn struct {
 }
 
 func (s *stubConn) Advertisement() *pktline.Reader { return s.adv }
-func (s *stubConn) Command(context.Context, string, []string, []string) (*pktline.Reader, error) {
+func (s *stubConn) Command(context.Context, string, transport.CommandBody) (*pktline.Reader, error) {
 	return nil, errors.New("stubConn: Command not implemented")
 }
 func (s *stubConn) Close() error {
@@ -282,9 +282,17 @@ type commandStubConn struct {
 }
 
 func (c *commandStubConn) Advertisement() *pktline.Reader { return c.adv }
-func (c *commandStubConn) Command(_ context.Context, _ string, _, _ []string) (*pktline.Reader, error) {
+func (c *commandStubConn) Command(_ context.Context, _ string,
+	body transport.CommandBody) (*pktline.Reader, error) {
 	if c.cmdRdr == nil {
 		return nil, errors.New("commandStubConn: no more Command responses")
+	}
+	// Drive the body callback against a discarded writer so the contract
+	// "callback runs once per call" is honoured even though the stub
+	// fakes the response side. A real transport would write the bytes
+	// onto its wire; the unit tests only care about the response stream.
+	if err := body(pktline.NewWriter(io.Discard)); err != nil {
+		return nil, err
 	}
 	r := c.cmdRdr
 	c.cmdRdr = nil

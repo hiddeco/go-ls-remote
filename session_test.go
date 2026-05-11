@@ -473,8 +473,23 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "object-info", conn.lastCmdName)
-	for _, a := range conn.lastCmdArgs {
-		assert.NotEqual(t, "size", a,
+
+	// Parse the captured request body as pkt-lines and assert no `size`
+	// line appears in the argument section. The wire shape pinned by
+	// `gitprotocol-v2.adoc` §"Command Request" places arguments after
+	// the delim packet; pre-delim data lines carry the command name and
+	// capabilities, neither of which can equal `size` in this fixture.
+	pr := pktline.NewReader(bytes.NewReader(conn.lastCmdBody.Bytes()))
+	for {
+		pkt, err := pr.ReadPacket()
+		require.NoError(t, err)
+		if pkt.Kind == pktline.Flush {
+			break
+		}
+		if pkt.Kind != pktline.Data {
+			continue
+		}
+		assert.NotEqual(t, "size\n", string(pkt.Data),
 			"Size: false must not send the `size` argument on the wire")
 	}
 }
@@ -482,22 +497,26 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 // fakeCommandConn is a `transport.Conn` that records the last
 // `Command` invocation and returns a pre-canned response. Used by
 // Session unit tests that need to pin both sides of the wire exchange
-// without standing up the in-process server.
+// without standing up the in-process server. `lastCmdBody` captures
+// the bytes the callback wrote so a test can parse the on-wire request
+// shape and assert against it.
 type fakeCommandConn struct {
 	cmdResp     []byte
 	lastCmdName string
-	lastCmdArgs []string
-	lastCmdCaps []string
+	lastCmdBody bytes.Buffer
 }
 
 func (f *fakeCommandConn) Advertisement() *pktline.Reader {
 	return pktline.NewReader(bytes.NewReader(nil))
 }
 
-func (f *fakeCommandConn) Command(_ context.Context, name string, args, caps []string) (*pktline.Reader, error) {
+func (f *fakeCommandConn) Command(_ context.Context, name string,
+	body transport.CommandBody) (*pktline.Reader, error) {
 	f.lastCmdName = name
-	f.lastCmdArgs = append([]string(nil), args...)
-	f.lastCmdCaps = append([]string(nil), caps...)
+	f.lastCmdBody.Reset()
+	if err := body(pktline.NewWriter(&f.lastCmdBody)); err != nil {
+		return nil, err
+	}
 	return pktline.NewReader(bytes.NewReader(f.cmdResp)), nil
 }
 

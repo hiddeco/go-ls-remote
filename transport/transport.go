@@ -105,12 +105,12 @@ type Conn interface {
 	// response. The returned reader streams the response pkt-lines.
 	//
 	// Returns the protocol-mismatch sentinel (defined at the lsremote
-	// layer) when the negotiated version is not v2. caps are the
-	// capabilities the client wants to enable for this command (for
-	// example `agent` or `object-format`), echoed back to the server
-	// in the capability-list portion of the request. args are the
-	// command-specific arguments.
-	Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error)
+	// layer) when the negotiated version is not v2. body encodes the
+	// v2 command-request frame onto the transport's [pktline.Writer];
+	// it is invoked exactly once per call, before any response bytes
+	// are read. name is forwarded for diagnostics and tracing only —
+	// the body callback writes the on-wire `command=` line itself.
+	Command(ctx context.Context, name string, body CommandBody) (*pktline.Reader, error)
 
 	// Close releases any underlying resources.
 	//
@@ -120,3 +120,18 @@ type Conn interface {
 	// races with an explicit Close from the caller.
 	Close() error
 }
+
+// CommandBody encodes the body of a v2 command-request onto w. A
+// transport invokes the callback exactly once per [Conn.Command] call
+// and supplies a [pktline.Writer] positioned at the start of the
+// request frame; the writer must not be retained past the callback's
+// return.
+//
+// The callback writes the complete frame — the `command=` line, every
+// capability line, the `delim-pkt`, every argument line, and the
+// closing `flush-pkt` — as documented in `gitprotocol-v2.adoc`
+// §"Command Request". Returning a non-nil error aborts the call
+// without dispatching a request; the transport surfaces the error to
+// its caller unchanged or wrapped in its own diagnostic envelope per
+// the transport's contract.
+type CommandBody func(w *pktline.Writer) error

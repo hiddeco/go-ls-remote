@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -122,46 +121,6 @@ func TestEncodeV2CommandRequest_PropagatesWriterError_OnArg(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, io.ErrShortWrite),
 		"argument-loop write error must propagate; got %v", err)
-}
-
-// TestValidateV2CommandPayloads_Accepts checks that a payload exactly at
-// the [pktline.MaxPayload] boundary is accepted: the framing is
-// `command=` + name + LF for the command line, and value + LF for cap
-// and arg lines, so the largest accepted name is `MaxPayload-len("command=")-1`.
-func TestValidateV2CommandPayloads_Accepts(t *testing.T) {
-	largestName := strings.Repeat("a", pktline.MaxPayload-len("command=")-1)
-	largestValue := strings.Repeat("a", pktline.MaxPayload-1)
-
-	require.NoError(t, ValidateV2CommandPayloads(largestName, nil, nil))
-	require.NoError(t, ValidateV2CommandPayloads("ls-refs",
-		[]string{largestValue}, nil))
-	require.NoError(t, ValidateV2CommandPayloads("ls-refs",
-		nil, []string{largestValue}))
-}
-
-// TestValidateV2CommandPayloads_RejectsOversize covers each axis of
-// the validator: command name, capability, and argument. Every error
-// must wrap [pktline.ErrPayloadTooLarge] for [errors.Is] matching.
-func TestValidateV2CommandPayloads_RejectsOversize(t *testing.T) {
-	overlong := strings.Repeat("a", pktline.MaxPayload)
-	tests := []struct {
-		name string
-		cmd  string
-		args []string
-		caps []string
-	}{
-		{name: "oversize command name", cmd: overlong},
-		{name: "oversize capability", cmd: "ls-refs", caps: []string{overlong}},
-		{name: "oversize argument", cmd: "ls-refs", args: []string{overlong}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateV2CommandPayloads(tc.cmd, tc.args, tc.caps)
-			require.Error(t, err)
-			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
-				"oversize input must wrap pktline.ErrPayloadTooLarge; got %v", err)
-		})
-	}
 }
 
 // errorWriter is an [io.Writer] that always fails with err. Minimal

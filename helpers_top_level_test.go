@@ -63,8 +63,8 @@ type closeRecordingConn struct {
 
 func (c *closeRecordingConn) Advertisement() *pktline.Reader { return c.inner.Advertisement() }
 func (c *closeRecordingConn) Command(ctx context.Context, name string,
-	args, caps []string) (*pktline.Reader, error) {
-	return c.inner.Command(ctx, name, args, caps)
+	body transport.CommandBody) (*pktline.Reader, error) {
+	return c.inner.Command(ctx, name, body)
 }
 func (c *closeRecordingConn) Close() error {
 	c.count.Add(1)

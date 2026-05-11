@@ -28,6 +28,17 @@ import (
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
+// cmdBody is the v2-command body callback the per-test boilerplate
+// uses. It mirrors what `*lsremote.Session` builds at the call site:
+// a closure over `cmd, args, caps` that hands those to
+// [wire.EncodeV2CommandRequest] when the transport's
+// [pktline.Writer] is supplied.
+func cmdBody(cmd string, args, caps []string) transport.CommandBody {
+	return func(w *pktline.Writer) error {
+		return wire.EncodeV2CommandRequest(w, cmd, args, caps)
+	}
+}
+
 // openFixtureStore materialises the named fixture, ensures a
 // `objects/pack/` directory exists (some ref-only fixtures ship
 // without one), and returns an opened [objstore.Store[objfmt.SHA1Hash]] that closes
@@ -156,7 +167,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 	c := openSmartTestConn(t, srv, "/repo.git")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
 
@@ -201,7 +212,8 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	// the request and emits its `size\n` attrs line.
 	oid := strings.Repeat("a", 40)
 	rdr, err := c.Command(context.Background(), "object-info",
-		[]string{"size", "oid " + oid}, []string{"object-format=sha1"})
+		cmdBody("object-info",
+			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
 
@@ -252,7 +264,7 @@ func TestConn_Command_Headers(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git", WithUserAgent("ua-from-tr/1"))
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -297,7 +309,8 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 
 	c := openSmartTestConn(t, srv, "/repo.git")
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel", "symrefs"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs",
+			[]string{"peel", "symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -354,7 +367,7 @@ func TestConn_Command_404(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound),
@@ -382,7 +395,7 @@ func TestConn_Command_500(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
@@ -417,7 +430,7 @@ func TestConn_Command_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	// the 401 surfaces as ErrAuthRequired (the caller may now plug in
 	// credentials and retry at the Session layer).
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrAuthRequired),
@@ -455,7 +468,7 @@ func TestConn_Command_401_WithCreds_ReturnsErrAuthFailed(t *testing.T) {
 	c := openSmartTestConn(t, srv, "/repo.git",
 		WithCredentials(Static(Basic("alice", "secret"))))
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrAuthFailed),
@@ -484,7 +497,7 @@ func TestRedirect_OnPost_Initial_Rejects(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
@@ -525,7 +538,7 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
@@ -570,8 +583,8 @@ func TestRedirect_OnPost_Always_Follows(t *testing.T) {
 	c := openSmartTestConn(t, srv, "/repo.git",
 		WithFollowRedirects(FollowRedirectsAlways))
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil,
-		[]string{"object-format=sha1"})
+	rdr, err := c.Command(context.Background(), "ls-refs",
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err, "FollowRedirectsAlways must let a POST follow a 307 hop")
 	require.NotNil(t, rdr)
 	pkts := readAllPackets(t, rdr)
@@ -623,9 +636,10 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 // pkt-line size cap. Each input is framed as a single pkt-line whose
 // payload is the value plus a trailing LF (and `command=` for the
 // command name); a value above the cap cannot be framed at all and
-// would otherwise produce a malformed request body. The check
-// rejects such inputs with an error wrapping
-// [pktline.ErrPayloadTooLarge].
+// would otherwise produce a malformed request body. The
+// [pktline.Writer.WritePacket] cap check surfaces a wrapped
+// [pktline.ErrPayloadTooLarge] through the body callback, which
+// [Conn.Command] propagates unchanged.
 func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	overlong := strings.Repeat("a", pktline.MaxPayload)
 	tests := []struct {
@@ -648,7 +662,8 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 				gitProtocolHeader: "version=2",
 			}
 
-			rdr, err := c.Command(context.Background(), tc.cmd, tc.args, tc.caps)
+			rdr, err := c.Command(context.Background(), tc.cmd,
+				cmdBody(tc.cmd, tc.args, tc.caps))
 			assert.Nil(t, rdr)
 			require.Error(t, err)
 			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
@@ -728,7 +743,7 @@ func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
@@ -771,7 +786,7 @@ func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
 		return nil, sentinel
 	})
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, sentinel),
@@ -846,7 +861,7 @@ func TestConn_Command_RedirectRejected_ClosesBody(t *testing.T) {
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, cmdErr := c.Command(context.Background(), "ls-refs", nil, nil)
+	rdr, cmdErr := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, cmdErr)
 	var pe *ProtocolError
@@ -957,19 +972,19 @@ func TestConn_Command_ClosesPreviousBody(t *testing.T) {
 		gitProtocolHeader: "version=2",
 	}
 
-	_, err := c.Command(context.Background(), "ls-refs", nil, nil)
+	_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 	assert.Equal(t, 0, bodies[0].closes,
 		"first body remains in-flight until superseded")
 
-	_, err = c.Command(context.Background(), "ls-refs", nil, nil)
+	_, err = c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 	assert.Equal(t, 1, bodies[0].closes,
 		"first body closed when second Command takes over")
 	assert.Equal(t, 0, bodies[1].closes,
 		"second body in-flight after second Command")
 
-	_, err = c.Command(context.Background(), "ls-refs", nil, nil)
+	_, err = c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 	assert.Equal(t, 1, bodies[0].closes)
 	assert.Equal(t, 1, bodies[1].closes,

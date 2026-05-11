@@ -14,9 +14,21 @@ import (
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
+
+// cmdBody is the v2-command body callback the per-test boilerplate
+// uses. It mirrors what `*lsremote.Session` builds at the call site:
+// a closure over `cmd, args, caps` that hands those to
+// [wire.EncodeV2CommandRequest] when the transport's
+// [pktline.Writer] is supplied.
+func cmdBody(cmd string, args, caps []string) transport.CommandBody {
+	return func(w *pktline.Writer) error {
+		return wire.EncodeV2CommandRequest(w, cmd, args, caps)
+	}
+}
 
 // drainAdvertisement reads the v2 advertisement off the [Conn]'s reader
 // up to and including the trailing flush so the test is positioned to
@@ -101,7 +113,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 	c := openTestConn(t, "loose-only")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
-		[]string{"peel"}, []string{"object-format=sha1"})
+		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
 	assert.Same(t, c.Advertisement(), rdr,
@@ -137,7 +149,8 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	// and emits its `size\n` attrs line.
 	oid := strings.Repeat("a", 40)
 	rdr, err := c.Command(context.Background(), "object-info",
-		[]string{"size", "oid " + oid}, []string{"object-format=sha1"})
+		cmdBody("object-info",
+			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
 
@@ -163,7 +176,7 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 
 	// First command: ls-refs.
 	rdr1, err := c.Command(context.Background(), "ls-refs",
-		nil, []string{"object-format=sha1"})
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr1)
 
@@ -172,7 +185,8 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 	// next request is dispatched; the helper above does that.
 	oid := strings.Repeat("a", 40)
 	rdr2, err := c.Command(context.Background(), "object-info",
-		[]string{"size", "oid " + oid}, []string{"object-format=sha1"})
+		cmdBody("object-info",
+			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
 	assert.Same(t, rdr1, rdr2,
@@ -183,8 +197,6 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 }
 
 func TestConn_Command_RejectsOversizePayload(t *testing.T) {
-	c := openTestConn(t, "loose-only")
-
 	overlong := strings.Repeat("a", pktline.MaxPayload)
 	tests := []struct {
 		name string
@@ -198,7 +210,18 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rdr, err := c.Command(context.Background(), tc.cmd, tc.args, tc.caps)
+			// Fresh [Conn] per subtest. Once the [pktline.Writer.WritePacket]
+			// cap check trips mid-frame, any partially-emitted bytes have
+			// already crossed the pipe (only the failing packet itself is
+			// elided); the in-process server's command parser sees a
+			// truncated request and the Conn's single-flight contract
+			// considers the [Conn] dead. Reusing the [Conn] across
+			// subtests would then surface as a server-side framing
+			// mismatch on the next call rather than as the cap-rejection
+			// the test is pinning.
+			c := openTestConn(t, "loose-only")
+			rdr, err := c.Command(context.Background(), tc.cmd,
+				cmdBody(tc.cmd, tc.args, tc.caps))
 			assert.Nil(t, rdr)
 			require.Error(t, err)
 			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
@@ -221,8 +244,8 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 
 	require.NoError(t, conn.Close())
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil,
-		[]string{"object-format=sha1"})
+	rdr, err := c.Command(context.Background(), "ls-refs",
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
@@ -246,14 +269,15 @@ func TestConn_Lifecycle_OpenDrainCommandsClose(t *testing.T) {
 
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", nil,
-		[]string{"object-format=sha1"})
+	rdr, err := c.Command(context.Background(), "ls-refs",
+		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
 	oid := strings.Repeat("a", 40)
 	rdr, err = c.Command(context.Background(), "object-info",
-		[]string{"size", "oid " + oid}, []string{"object-format=sha1"})
+		cmdBody("object-info",
+			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 

@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
+	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // BenchmarkEncodeCommandBody measures the cost of serialising a v2
@@ -61,11 +63,18 @@ func BenchmarkEncodeCommandBody(b *testing.B) {
 	const redacted = "https://example.com/repo.git/git-upload-pack"
 
 	for _, tc := range cases {
+		body := func(cmd string, args, caps []string) transport.CommandBody {
+			return func(w *pktline.Writer) error {
+				return wire.EncodeV2CommandRequest(w, cmd, args, caps)
+			}
+		}(tc.cmd, tc.args, tc.caps)
 		b.Run(tc.name+"/tracer=nil", func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_ = encodeCommandBody(tc.cmd, tc.args, tc.caps, nil, redacted)
+				if _, err := encodeCommandBody(body, nil, redacted); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 		b.Run(tc.name+"/tracer=discard", func(b *testing.B) {
@@ -73,7 +82,9 @@ func BenchmarkEncodeCommandBody(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_ = encodeCommandBody(tc.cmd, tc.args, tc.caps, tr, redacted)
+				if _, err := encodeCommandBody(body, tr, redacted); err != nil {
+					b.Fatal(err)
+				}
 			}
 		})
 	}
@@ -132,10 +143,15 @@ func BenchmarkConn_Command(b *testing.B) {
 			}
 			ctx := context.Background()
 
+			body := func(cmd string, args, caps []string) transport.CommandBody {
+				return func(w *pktline.Writer) error {
+					return wire.EncodeV2CommandRequest(w, cmd, args, caps)
+				}
+			}(tc.cmd, tc.args, tc.caps)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				rdr, err := c.Command(ctx, tc.cmd, tc.args, tc.caps)
+				rdr, err := c.Command(ctx, tc.cmd, body)
 				if err != nil {
 					b.Fatal(err)
 				}

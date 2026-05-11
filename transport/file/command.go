@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 
-	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
+	"github.com/hiddeco/go-ls-remote/transport"
 )
 
 // Command issues a v2 command and returns a [pktline.Reader] over the
@@ -30,13 +30,12 @@ import (
 //
 // # Errors
 //
-// Per-input validation rejects payloads whose pkt-line framing would
-// exceed [pktline.MaxPayload] before any byte hits the pipe (the
-// canonical cap defined at `pkt-line.h:234`). Such errors wrap
-// [pktline.ErrPayloadTooLarge] for [errors.Is].
-//
-// Pipe-write failures during request emission map to
-// `*ProtocolError{Op: "command"}`. A write that fails with
+// body is invoked exactly once against the [Conn]'s [pktline.Writer]
+// and must encode the canonical v2 command-request frame. A non-nil
+// return aborts the call: errors from a [pktline.Writer.WritePacket]
+// payload-cap rejection wrap [pktline.ErrPayloadTooLarge] (the
+// canonical cap defined at `pkt-line.h:234`); pipe-write failures
+// surface as `*ProtocolError{Op: "command"}`. A write that fails with
 // [io.ErrClosedPipe] indicates the server goroutine has exited; the
 // returned error wraps the goroutine's own error (captured by the
 // open-time `Serve` shutdown sequence) so callers can match the root
@@ -44,7 +43,7 @@ import (
 // effectively dead — the goroutine is gone or about to be — and
 // callers must invoke [Conn.Close] to release the pipes and the
 // underlying object store.
-func (c *Conn[H]) Command(ctx context.Context, name string, args, caps []string) (*pktline.Reader, error) {
+func (c *Conn[H]) Command(ctx context.Context, _ string, body transport.CommandBody) (*pktline.Reader, error) {
 	// Honour cancellation up-front: the in-process server reads from a
 	// memory pipe so a `ctx` deadline cannot be plumbed through the
 	// write itself, but a caller who has already cancelled before
@@ -52,11 +51,7 @@ func (c *Conn[H]) Command(ctx context.Context, name string, args, caps []string)
 	if err := ctx.Err(); err != nil {
 		return nil, &ProtocolError{Op: "command", Err: err}
 	}
-	if err := wire.ValidateV2CommandPayloads(name, args, caps); err != nil {
-		return nil, err
-	}
-
-	if err := wire.EncodeV2CommandRequest(c.writer, name, args, caps); err != nil {
+	if err := body(c.writer); err != nil {
 		return nil, c.wrapWriteError(err)
 	}
 	return c.reader, nil

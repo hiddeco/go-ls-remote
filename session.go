@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
+	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
@@ -197,7 +198,9 @@ func (s *Session) refsV2(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, 
 	cmdArgs := buildLSRefsArgs(args, s.caps)
 	cmdCaps := buildCommandCaps(s.caps, s.config.userAgent)
 
-	rdr, err := s.conn.Command(ctx, "ls-refs", cmdArgs, cmdCaps)
+	rdr, err := s.conn.Command(ctx, "ls-refs", func(w *pktline.Writer) error {
+		return wire.EncodeV2CommandRequest(w, "ls-refs", cmdArgs, cmdCaps)
+	})
 	if err != nil {
 		return nil, s.protocolError("ls-refs", err)
 	}
@@ -272,7 +275,9 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 	cmdArgs := buildObjectInfoArgs(oids, args)
 	cmdCaps := buildCommandCaps(s.caps, s.config.userAgent)
 
-	rdr, err := s.conn.Command(ctx, "object-info", cmdArgs, cmdCaps)
+	rdr, err := s.conn.Command(ctx, "object-info", func(w *pktline.Writer) error {
+		return wire.EncodeV2CommandRequest(w, "object-info", cmdArgs, cmdCaps)
+	})
 	if err != nil {
 		return nil, s.protocolError("object-info", err)
 	}
