@@ -70,3 +70,102 @@ func Test_maskAgent_preservesControlPackets(t *testing.T) {
 			got, in)
 	}
 }
+
+// Test_maskV2Advertisement_dropsCapsAndMasksAgent pins the
+// per-advertisement mask: agent values are normalised (as maskAgent
+// does) and additionally the data pkt-lines for the capabilities
+// the two implementations legitimately diverge on are dropped from
+// the stream. The remaining bytes — version line, framing, and the
+// `agent` / `ls-refs` / `object-format` cap lines — must survive
+// byte-identical so the harness asserts substantive equivalence on
+// the common cap subset.
+func Test_maskV2Advertisement_dropsCapsAndMasksAgent(t *testing.T) {
+	// Canonical-shape input: `version 2\n` + `agent=git/X\n` +
+	// `ls-refs=unborn\n` + `fetch=shallow\n` + `server-option\n` +
+	// `object-format=sha1\n` + flush.
+	//
+	// `version 2\n`           = 10 → 0x000e
+	// `agent=git/X\n`         = 12 → 0x0010
+	// `ls-refs=unborn\n`      = 15 → 0x0013
+	// `fetch=shallow\n`       = 14 → 0x0012
+	// `server-option\n`       = 14 → 0x0012
+	// `object-format=sha1\n`  = 19 → 0x0017
+	in := []byte(
+		"000eversion 2\n" +
+			"0010agent=git/X\n" +
+			"0013ls-refs=unborn\n" +
+			"0012fetch=shallow\n" +
+			"0012server-option\n" +
+			"0017object-format=sha1\n" +
+			"0000",
+	)
+	// Want: agent substituted, fetch/server-option dropped, rest
+	// preserved.
+	// `agent=$AGENT$\n` = 14 → 0x0012
+	want := []byte(
+		"000eversion 2\n" +
+			"0012agent=$AGENT$\n" +
+			"0013ls-refs=unborn\n" +
+			"0017object-format=sha1\n" +
+			"0000",
+	)
+	got := maskV2Advertisement(in)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("maskV2Advertisement mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// Test_maskV2Advertisement_dropsObjectInfo confirms `object-info` is
+// dropped from the our-side stream too. This emulator advertises
+// `object-info` because it implements the command; canonical Git
+// 2.54 emits it only under `feature.experimental` and the corpus is
+// captured without that gate. Dropping the line from both sides
+// (via the same idempotent mask) lets the harness still pass when
+// either side carries it.
+func Test_maskV2Advertisement_dropsObjectInfo(t *testing.T) {
+	// `version 2\n`         = 10 → 0x000e
+	// `agent=lsremote/0\n`  = 17 → 0x0015
+	// `ls-refs=unborn\n`    = 15 → 0x0013
+	// `object-format=sha1\n` = 19 → 0x0017
+	// `object-info\n`       = 12 → 0x0010
+	in := []byte(
+		"000eversion 2\n" +
+			"0015agent=lsremote/0\n" +
+			"0013ls-refs=unborn\n" +
+			"0017object-format=sha1\n" +
+			"0010object-info\n" +
+			"0000",
+	)
+	// `agent=$AGENT$\n` = 14 → 0x0012
+	want := []byte(
+		"000eversion 2\n" +
+			"0012agent=$AGENT$\n" +
+			"0013ls-refs=unborn\n" +
+			"0017object-format=sha1\n" +
+			"0000",
+	)
+	got := maskV2Advertisement(in)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("maskV2Advertisement mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// Test_maskV2Advertisement_idempotent locks the documented contract.
+// The harness applies the mask to both sides regardless of which
+// one is canonical bytes off-disk and which is freshly-emitted
+// from this package; idempotence makes that order-independent.
+func Test_maskV2Advertisement_idempotent(t *testing.T) {
+	in := []byte(
+		"000eversion 2\n" +
+			"0010agent=git/X\n" +
+			"0013ls-refs=unborn\n" +
+			"0012fetch=shallow\n" +
+			"0000",
+	)
+	once := maskV2Advertisement(in)
+	twice := maskV2Advertisement(once)
+	if !bytes.Equal(once, twice) {
+		t.Fatalf("maskV2Advertisement not idempotent:\n once: %q\ntwice: %q",
+			once, twice)
+	}
+}
