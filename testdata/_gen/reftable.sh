@@ -43,6 +43,14 @@
 #   testdata/reftable/without-index-sha1/
 #       0001-0001-aaaaaaaa.ref          tiny reftable, no ref index
 #       tables.list
+#   testdata/reftable/many-refs-1k-sha1/
+#       0001-0001-aaaaaaaa.ref          single-table SHA-1 stack with
+#                                       1000 refs (`refs/heads/branch-N`),
+#                                       batched via `update-ref --stdin -z`
+#       tables.list
+#   testdata/reftable/many-refs-10k-sha1/
+#       0001-0001-aaaaaaaa.ref          same shape, 10000 refs
+#       tables.list
 #   testdata/reftable/corrupt-trailer-sha1.ref
 #                                       copy of single-sha1 reftable
 #                                       with the last CRC byte flipped
@@ -168,6 +176,74 @@ print(bs)
 PY
 }
 
+# generate_many_refs <out-dir> <count> <hash-algo>
+#   Build a single-table reftable fixture with <count> refs, all named
+#   `refs/heads/branch-<i>` for `i` in `[0, count)`. Records land via a
+#   single `update-ref --stdin -z` transaction so the entire batch
+#   produces one `.ref` file rather than a stack. The `-z` form uses
+#   NUL terminators per `git-update-ref(1)`, which avoids whitespace
+#   ambiguity on ref names.
+#
+#   No preliminary commit runs in the temp repo, so the only non-
+#   branch record in the final reftable is the HEAD symref written by
+#   `init`; auto-compaction folds the init-time table and the batch
+#   table into a single output. The homogeneous `refs/heads/branch-*`
+#   namespace plus one HEAD entry isolates the index-descent path from
+#   the small-table shapes the script's other fixtures already cover.
+generate_many_refs() {
+    local out_dir="$1"
+    local count="$2"
+    local hash_algo="$3"
+
+    local tmp_repo="$work/many-refs-${count}-${hash_algo}"
+    init_reftable_repo "$tmp_repo" "$hash_algo"
+
+    # The empty-tree OID is well-known and stable per hash algorithm;
+    # using it sidesteps an extra `git hash-object`/`git write-tree`
+    # round-trip and keeps the fixture-commit bytes deterministic.
+    local empty_tree
+    if [ "$hash_algo" = "sha1" ]; then
+        empty_tree="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    else
+        empty_tree="6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321"
+    fi
+    local commit_oid
+    commit_oid=$(git -C "$tmp_repo" commit-tree "$empty_tree" \
+        -m 'fixture commit' </dev/null)
+
+    # NUL-separated `update <ref>\0<new>\0\0` records per
+    # `Documentation/git-update-ref.txt` (--stdin -z form). The trailing
+    # empty `<old>` field omits the existence check.
+    {
+        i=0
+        while [ "$i" -lt "$count" ]; do
+            printf 'update refs/heads/branch-%d\0%s\0\0' "$i" "$commit_oid"
+            i=$((i + 1))
+        done
+    } | git -C "$tmp_repo" update-ref --stdin -z
+
+    # Auto-compaction yields a single .ref file for the batch; the
+    # leading HEAD-only table from `init` is also folded in. Pick the
+    # largest table (the one with the refs) and copy it across under
+    # the stable basename. If for some reason multiple tables remain,
+    # the largest is still the one carrying the ref records.
+    local biggest=""
+    local biggest_size=0
+    local sz
+    for f in "$tmp_repo"/.git/reftable/*.ref; do
+        sz=$(wc -c <"$f")
+        if [ "$sz" -gt "$biggest_size" ]; then
+            biggest_size=$sz
+            biggest=$f
+        fi
+    done
+    [ -n "$biggest" ] \
+        || { echo "many-refs-${count}-${hash_algo}: no reftable found" >&2; exit 1; }
+    mkdir -p "$out_dir"
+    cp "$biggest" "$out_dir/0001-0001-aaaaaaaa.ref"
+    printf '%s\n' "0001-0001-aaaaaaaa.ref" >"$out_dir/tables.list"
+}
+
 # commit_in <repo>
 #   Create one deterministic commit on the current branch and echo its
 #   OID. Each invocation should be paired with a distinct file content
@@ -283,6 +359,15 @@ single=$(ls "$noidx_repo"/.git/reftable/*.ref | head -1)
 [ "$(footer_ref_index_position "$single")" = "0" ] \
     || { echo "without-index-sha1: ref_index_position!=0 in $single" >&2; exit 1; }
 rename_reftable_dir "$noidx_repo/.git/reftable" "$out/without-index-sha1"
+
+# --- many-refs-1k-sha1, many-refs-10k-sha1 -----------------------------------
+# At-scale single-table fixtures for characterising the Reader's
+# index-descent path. 1k and 10k refs land in one `update-ref --stdin -z`
+# transaction each, producing a single `.ref` file. Naming pattern is
+# `refs/heads/branch-<i>` for `i` in `[0, N)`; all refs point at a
+# common fixture-commit OID derived from the empty tree.
+generate_many_refs "$out/many-refs-1k-sha1" 1000 sha1
+generate_many_refs "$out/many-refs-10k-sha1" 10000 sha1
 
 # --- corrupt-trailer-sha1.ref -----------------------------------------------
 # Copy the single-sha1 reftable and flip the last byte (which sits

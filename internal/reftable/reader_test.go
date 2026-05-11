@@ -207,6 +207,45 @@ func TestReader_IterRefs(t *testing.T) {
 		}
 		assert.Greater(t, total, seen)
 	})
+
+	// at_scale_fixtures_yield_exact_counts smoke-tests the
+	// `many-refs-{1k,10k}-sha1` fixtures: each is a single-table
+	// reftable produced by a batched `update-ref --stdin -z` plus
+	// the init-created HEAD symref. The branch count is exact (1000
+	// or 10000) because the fixture generator uses a fixed loop; HEAD
+	// adds one symref record on top.
+	t.Run("at_scale_fixtures_yield_exact_counts", func(t *testing.T) {
+		for _, sc := range []struct {
+			fixture      string
+			wantBranches int
+		}{
+			{"many-refs-1k-sha1", 1000},
+			{"many-refs-10k-sha1", 10000},
+		} {
+			t.Run(sc.fixture, func(t *testing.T) {
+				r, err := OpenReader[objfmt.SHA1Hash](
+					fixturePath(t, sc.fixture+"/0001-0001-aaaaaaaa.ref"))
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = r.Close() })
+
+				var (
+					branches int
+					seenHEAD bool
+				)
+				for rec, err := range r.IterRefs() {
+					require.NoError(t, err)
+					if rec.Name == "HEAD" {
+						seenHEAD = true
+						continue
+					}
+					branches++
+				}
+				assert.Equal(t, sc.wantBranches, branches,
+					"branch count for %s", sc.fixture)
+				assert.True(t, seenHEAD, "HEAD missing in %s", sc.fixture)
+			})
+		}
+	})
 }
 
 func TestReader_FindRef(t *testing.T) {
