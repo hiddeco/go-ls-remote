@@ -376,7 +376,7 @@ func joinHostPort(u *transport.URL) string {
 // `OpenOptions.UserAgent` (non-empty) wins; otherwise the
 // per-Transport value; otherwise the package default.
 func resolveUserAgent(transportUA, openUA string) string {
-	return cmp.Or(openUA, transportUA, defaultUserAgent)
+	return cmp.Or(openUA, transportUA, wire.DefaultUserAgent)
 }
 
 // drainCap bounds how much body data the package will consume before

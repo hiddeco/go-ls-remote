@@ -7,10 +7,6 @@ import (
 	"github.com/hiddeco/go-ls-remote/transport"
 )
 
-// defaultUserAgent is the User-Agent header value the HTTP transport
-// sends when no per-Transport or per-call override applies.
-const defaultUserAgent = "lsremote/0"
-
 // defaultMaxRedirects bounds the number of HTTP redirects the probe
 // follows when [WithMaxRedirects] is not configured. Ten matches both
 // `net/http`'s built-in cap and canonical Git's default behaviour;

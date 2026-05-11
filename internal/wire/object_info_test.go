@@ -99,7 +99,7 @@ func TestEncodeObjectInfo(t *testing.T) {
 			wantBody: func(t *testing.T) []byte {
 				var b bytes.Buffer
 				b.Write(pkt(t, "command=object-info\n"))
-				b.Write(pkt(t, "agent=go-ls-remote\n"))
+				b.Write(pkt(t, "agent="+DefaultUserAgent+"\n"))
 				b.WriteString("0001")
 				b.Write(pkt(t, "oid "+oidA+"\n"))
 				b.WriteString("0000")
@@ -162,7 +162,7 @@ func TestEncodeObjectInfo(t *testing.T) {
 			wantBody: func(t *testing.T) []byte {
 				var b bytes.Buffer
 				b.Write(pkt(t, "command=object-info\n"))
-				b.Write(pkt(t, "agent=go-ls-remote\n"))
+				b.Write(pkt(t, "agent="+DefaultUserAgent+"\n"))
 				b.Write(pkt(t, "object-format=sha1\n"))
 				b.WriteString("0001")
 				b.Write(pkt(t, "oid "+oidA+"\n"))

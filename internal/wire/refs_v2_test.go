@@ -66,7 +66,7 @@ func TestEncodeLSRefs(t *testing.T) {
 			wantBody: func(t *testing.T) []byte {
 				var b bytes.Buffer
 				b.Write(pkt(t, "command=ls-refs\n"))
-				b.Write(pkt(t, "agent=go-ls-remote\n"))
+				b.Write(pkt(t, "agent="+DefaultUserAgent+"\n"))
 				b.WriteString("0001")
 				b.WriteString("0000")
 				return b.Bytes()
@@ -93,7 +93,7 @@ func TestEncodeLSRefs(t *testing.T) {
 			wantBody: func(t *testing.T) []byte {
 				var b bytes.Buffer
 				b.Write(pkt(t, "command=ls-refs\n"))
-				b.Write(pkt(t, "agent=go-ls-remote\n"))
+				b.Write(pkt(t, "agent="+DefaultUserAgent+"\n"))
 				b.WriteString("0001")
 				b.WriteString("0000")
 				return b.Bytes()
@@ -134,7 +134,7 @@ func TestEncodeLSRefs(t *testing.T) {
 			wantBody: func(t *testing.T) []byte {
 				var b bytes.Buffer
 				b.Write(pkt(t, "command=ls-refs\n"))
-				b.Write(pkt(t, "agent=go-ls-remote\n"))
+				b.Write(pkt(t, "agent="+DefaultUserAgent+"\n"))
 				b.Write(pkt(t, "object-format=sha1\n"))
 				b.WriteString("0001")
 				b.WriteString("0000")

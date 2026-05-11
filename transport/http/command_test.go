@@ -23,6 +23,7 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/server"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -643,7 +644,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 				body:              &closeCounter{Reader: bytes.NewReader(nil)},
 				reader:            pktline.NewReader(bytes.NewReader(nil)),
 				url:               mustParseURL(t, "https://example.com/repo.git/info/refs"),
-				userAgent:         defaultUserAgent,
+				userAgent:         wire.DefaultUserAgent,
 				gitProtocolHeader: "version=2",
 			}
 
@@ -952,7 +953,7 @@ func TestConn_Command_ClosesPreviousBody(t *testing.T) {
 		reader:            pktline.NewReader(bytes.NewReader(nil)),
 		client:            &http.Client{Transport: rt},
 		url:               mustParseURL(t, "https://example.com/repo.git/info/refs"),
-		userAgent:         defaultUserAgent,
+		userAgent:         wire.DefaultUserAgent,
 		gitProtocolHeader: "version=2",
 	}
 

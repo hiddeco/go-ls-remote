@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/trace"
 )
 
@@ -126,7 +127,7 @@ func BenchmarkConn_Command(b *testing.B) {
 			c := &Conn{
 				client:            &http.Client{Transport: benchOKRoundTripper{}},
 				url:               u,
-				userAgent:         defaultUserAgent,
+				userAgent:         wire.DefaultUserAgent,
 				gitProtocolHeader: "version=2",
 			}
 			ctx := context.Background()

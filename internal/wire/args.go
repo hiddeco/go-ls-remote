@@ -40,7 +40,6 @@ type ObjectInfoArgs struct {
 }
 
 // DefaultUserAgent is the agent string the encoder advertises when
-// the caller passes an empty userAgent. The version suffix is not
-// appended yet; the root package will override this at session-build
-// time once it exists.
-const DefaultUserAgent = "go-ls-remote"
+// the caller passes an empty userAgent. It follows Git's
+// `<name>/<major>` agent convention (see `git-user-agent.c:1`).
+const DefaultUserAgent = "lsremote/0"

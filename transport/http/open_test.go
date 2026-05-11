@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -154,7 +155,7 @@ func TestOpen_Smart200_UserAgent_TransportFallsBackToPackageDefault(t *testing.T
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, defaultUserAgent, r.Header.Get("User-Agent"),
+		assert.Equal(t, wire.DefaultUserAgent, r.Header.Get("User-Agent"),
 			"with no override, the package default applies")
 		w.Header().Set("Content-Type", smartAdvHeader)
 		_, _ = w.Write(body)
