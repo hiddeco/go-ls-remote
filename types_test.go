@@ -36,6 +36,7 @@ func TestRef(t *testing.T) {
 			Symref: "refs/heads/main",
 		}
 		assert.Equal(t, "HEAD", r.Name)
+		assert.Equal(t, "cccccccccccccccccccccccccccccccccccccccc", r.Hash)
 		assert.Equal(t, "refs/heads/main", r.Symref)
 		assert.Equal(t, "", r.Peeled)
 	})
@@ -53,6 +54,7 @@ func TestObjectInfo(t *testing.T) {
 			Hash: "dddddddddddddddddddddddddddddddddddddddd",
 			Size: -1,
 		}
+		assert.Equal(t, "dddddddddddddddddddddddddddddddddddddddd", o.Hash)
 		assert.Equal(t, int64(-1), o.Size,
 			"Size of -1 indicates the field was not requested or not returned")
 	})
@@ -122,6 +124,7 @@ func TestCapabilities(t *testing.T) {
 		assert.Equal(t, ObjectFormatSHA1, c.ObjectFormat)
 		assert.Contains(t, c.Commands, "object-info")
 		assert.Contains(t, c.LSRefsArgs, "symrefs")
+		assert.Contains(t, c.ObjectInfoArgs, "size")
 		assert.Empty(t, c.Symrefs,
 			"v2 servers do not advertise symrefs at the capability level")
 	})
@@ -133,6 +136,7 @@ func TestCapabilities(t *testing.T) {
 				{Name: "HEAD", Target: "refs/heads/main"},
 			},
 		}
+		assert.Equal(t, ProtocolV0, c.Version)
 		require.Len(t, c.Symrefs, 1)
 		assert.Equal(t, "HEAD", c.Symrefs[0].Name)
 		assert.Equal(t, "refs/heads/main", c.Symrefs[0].Target)

@@ -79,7 +79,7 @@ func buildBenchLSRefsStream(b *testing.B, n int) *bytes.Buffer {
 
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		line := buildBenchRefLine(i)
 		if err := w.WritePacket([]byte(line)); err != nil {
 			b.Fatal(err)

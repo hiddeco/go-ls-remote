@@ -292,7 +292,7 @@ func (s *Store[H]) verifyPackCRC(pack *objfmt.Pack[H], oid H, at int64) error {
 			idx.Path(), at, ErrCorruptObject)
 	}
 
-	gotCRC, err := crc32Range[H](pack, at, end)
+	gotCRC, err := crc32Range(pack, at, end)
 	if err != nil {
 		return fmt.Errorf(
 			"objstore: pack %s offset %d crc32 read: %w: %w",

@@ -88,8 +88,7 @@ func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 	const chainLen = 9
 
 	mux := http.NewServeMux()
-	for i := 0; i < chainLen; i++ {
-		i := i
+	for i := range chainLen {
 		from := fmt.Sprintf("/hop-%d/info/refs", i)
 		next := fmt.Sprintf("/hop-%d/info/refs?service=git-upload-pack", i+1)
 		mux.HandleFunc(from, func(w http.ResponseWriter, r *http.Request) {

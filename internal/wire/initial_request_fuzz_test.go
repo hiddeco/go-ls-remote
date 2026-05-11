@@ -65,7 +65,7 @@ func FuzzWriteStreamRequest(f *testing.F) {
 // returns a non-empty string — irrespective of whether the integer
 // value is one of the three documented constants.
 func FuzzHTTPProtocolHeader(f *testing.F) {
-	for vSel := 0; vSel < 5; vSel++ {
+	for vSel := range 5 {
 		f.Add(vSel)
 	}
 

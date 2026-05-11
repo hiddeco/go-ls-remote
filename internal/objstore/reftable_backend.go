@@ -66,7 +66,7 @@ func openReftableBackend[H objfmt.Hash](gitDir, commonDir, location string) (*re
 		stack:     stack,
 	}
 
-	head, err := resolveReftableHead[H](stack)
+	head, err := resolveReftableHead(stack)
 	if err != nil {
 		_ = stack.Close()
 		return nil, err

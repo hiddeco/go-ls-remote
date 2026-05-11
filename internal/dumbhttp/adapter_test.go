@@ -108,7 +108,7 @@ func TestNewAdapter_MalformedLine(t *testing.T) {
 	pr := dumbhttp.NewAdapter(strings.NewReader(body))
 
 	var sawErr error
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		_, err := pr.ReadPacket()
 		if err != nil {
 			// stop scanning at the first error
@@ -142,7 +142,7 @@ func TestNewAdapter_OverlongRefLine(t *testing.T) {
 	pr := dumbhttp.NewAdapter(strings.NewReader(body))
 
 	var sawErr error
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		_, err := pr.ReadPacket()
 		if err != nil {
 			// stop scanning at the first error
@@ -248,7 +248,7 @@ func TestNewAdapter_ReadErrorPropagation(t *testing.T) {
 	pr := dumbhttp.NewAdapter(src)
 
 	var lastErr error
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		_, err := pr.ReadPacket()
 		if err != nil {
 			lastErr = err

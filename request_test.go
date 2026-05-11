@@ -36,23 +36,23 @@ func TestRefsRequest(t *testing.T) {
 
 	t.Run("exported field set is exactly the documented one", func(t *testing.T) {
 		want := []string{"Peel", "Prefixes", "Symrefs", "Unborn"}
-		got := exportedFieldNames(reflect.TypeOf(RefsRequest{}))
+		got := exportedFieldNames(reflect.TypeFor[RefsRequest]())
 		assert.Equal(t, want, got)
 	})
 
 	t.Run("field types are as documented", func(t *testing.T) {
-		typ := reflect.TypeOf(RefsRequest{})
-		assertFieldType(t, typ, "Prefixes", reflect.SliceOf(reflect.TypeOf("")))
-		assertFieldType(t, typ, "Peel", reflect.TypeOf(false))
-		assertFieldType(t, typ, "Symrefs", reflect.TypeOf(false))
-		assertFieldType(t, typ, "Unborn", reflect.TypeOf(false))
+		typ := reflect.TypeFor[RefsRequest]()
+		assertFieldType(t, typ, "Prefixes", reflect.SliceOf(reflect.TypeFor[string]()))
+		assertFieldType(t, typ, "Peel", reflect.TypeFor[bool]())
+		assertFieldType(t, typ, "Symrefs", reflect.TypeFor[bool]())
+		assertFieldType(t, typ, "Unborn", reflect.TypeFor[bool]())
 	})
 
 	t.Run("no methods on the type", func(t *testing.T) {
 		// RefsRequest is a plain data carrier — no methods on the
 		// value or pointer receiver.
-		assert.Equal(t, 0, reflect.TypeOf(RefsRequest{}).NumMethod())
-		assert.Equal(t, 0, reflect.PointerTo(reflect.TypeOf(RefsRequest{})).NumMethod())
+		assert.Equal(t, 0, reflect.TypeFor[RefsRequest]().NumMethod())
+		assert.Equal(t, 0, reflect.PointerTo(reflect.TypeFor[RefsRequest]()).NumMethod())
 	})
 }
 
@@ -69,18 +69,18 @@ func TestObjectInfoRequest(t *testing.T) {
 
 	t.Run("exported field set is exactly the documented one", func(t *testing.T) {
 		want := []string{"Size"}
-		got := exportedFieldNames(reflect.TypeOf(ObjectInfoRequest{}))
+		got := exportedFieldNames(reflect.TypeFor[ObjectInfoRequest]())
 		assert.Equal(t, want, got)
 	})
 
 	t.Run("field types are as documented", func(t *testing.T) {
-		typ := reflect.TypeOf(ObjectInfoRequest{})
-		assertFieldType(t, typ, "Size", reflect.TypeOf(false))
+		typ := reflect.TypeFor[ObjectInfoRequest]()
+		assertFieldType(t, typ, "Size", reflect.TypeFor[bool]())
 	})
 
 	t.Run("no methods on the type", func(t *testing.T) {
-		assert.Equal(t, 0, reflect.TypeOf(ObjectInfoRequest{}).NumMethod())
-		assert.Equal(t, 0, reflect.PointerTo(reflect.TypeOf(ObjectInfoRequest{})).NumMethod())
+		assert.Equal(t, 0, reflect.TypeFor[ObjectInfoRequest]().NumMethod())
+		assert.Equal(t, 0, reflect.PointerTo(reflect.TypeFor[ObjectInfoRequest]()).NumMethod())
 	})
 }
 

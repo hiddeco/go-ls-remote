@@ -44,7 +44,9 @@ func TestEvents_When(t *testing.T) {
 }
 
 // TestCommandEvent_Err verifies that a non-nil Err on the End phase
-// round-trips losslessly through the struct.
+// round-trips losslessly through the struct alongside Phase and
+// Duration, the other fields a consumer reads to distinguish End
+// frames from Start frames.
 func TestCommandEvent_Err(t *testing.T) {
 	boom := errors.New("boom")
 	e := CommandEvent{
@@ -52,6 +54,8 @@ func TestCommandEvent_Err(t *testing.T) {
 		Duration: 5 * time.Millisecond,
 		Err:      boom,
 	}
+	assert.Equal(t, CommandEnd, e.Phase)
+	assert.Equal(t, 5*time.Millisecond, e.Duration)
 	require.ErrorIs(t, e.Err, boom)
 }
 

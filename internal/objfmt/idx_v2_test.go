@@ -84,7 +84,7 @@ func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	buf := new(bytes.Buffer)
 	buf.Write([]byte{0xff, 't', 'O', 'c'})
 	_ = binary.Write(buf, binary.BigEndian, uint32(2))
-	for n := 0; n < 256; n++ {
+	for n := range 256 {
 		var count uint32
 		for _, e := range entries {
 			if e.oid[0] <= byte(n) {

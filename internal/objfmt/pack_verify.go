@@ -45,10 +45,7 @@ func (p *Pack[H]) VerifyChecksum() error {
 	const chunk = 1 << 20
 	buf := make([]byte, chunk)
 	for off := int64(0); off < bodyEnd; {
-		end := off + chunk
-		if end > bodyEnd {
-			end = bodyEnd
-		}
+		end := min(off+chunk, bodyEnd)
 		n, err := p.r.ReadAt(buf[:end-off], off)
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("objfmt: read at %d: %w", off, err)
