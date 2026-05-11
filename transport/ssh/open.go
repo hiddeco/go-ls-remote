@@ -152,8 +152,10 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 	// Best-effort env channel. A server whose `AcceptEnv` does not list
 	// `GIT_PROTOCOL` rejects the request and `Setenv` returns
 	// non-nil. The transport swallows it silently — the in-band channel
-	// below is the safety net. Explicit tracer wiring lands in the
-	// follow-up task; the swallow here is intentional, not a TODO.
+	// below is the safety net. The swallow is intentional and does not
+	// surface on the tracer either: env rejection is normal on
+	// restrictive servers and the [trace.PacketEvent] stream from the
+	// fallback pkt-line is the canonical signal.
 	//
 	// Canonical Git's analog is `push_ssh_options` at `connect.c:1311-1321`,
 	// which appends `SendEnv=GIT_PROTOCOL` to the spawned `ssh` command.
@@ -182,7 +184,7 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 		return nil, &ProtocolError{URL: redacted, Op: "session", Err: fmt.Errorf("ssht: exec: %w", err)}
 	}
 
-	writer := pktline.NewWriter(stdin)
+	writer := pktline.NewWriter(stdin, outboundWriterOpts(opts.Tracer, redacted)...)
 	if err := wire.WriteStreamRequest(writer, u, opts.PreferredProtocol); err != nil {
 		return nil, &ProtocolError{URL: redacted, Op: "session", Err: fmt.Errorf("ssht: write initial pkt-line: %w", err)}
 	}
@@ -190,7 +192,7 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 	c := &Conn{
 		client:      client,
 		session:     session,
-		reader:      pktline.NewReader(stdout),
+		reader:      pktline.NewReader(stdout, inboundReaderOpts(opts.Tracer, redacted)...),
 		writer:      writer,
 		redactedURL: redacted,
 		done:        make(chan struct{}),
