@@ -99,11 +99,13 @@ var (
 // callers are nevertheless encouraged to populate the field with an
 // already-redacted value.
 //
-// [ProtocolError.Server] is bounded to at most 1 KiB. The library
-// truncates server-supplied diagnostics at every construction site;
-// the type itself does not re-truncate, so a caller who constructs a
-// [ProtocolError] from a server response body should cap the message
-// at 1 KiB before storing it.
+// [ProtocolError.Server] is bounded to approximately 1 KiB: the
+// transport layer caps the server-supplied excerpt at 1 KiB and
+// appends a trailing `"..."` marker when the original body was
+// longer, so the surfaced string can be up to 1 KiB plus the
+// three-byte ellipsis. The marker lets callers tell a short body
+// from one that was truncated; the public surface preserves it
+// verbatim and does not re-truncate.
 //
 // # Format
 //
@@ -132,8 +134,11 @@ type ProtocolError struct {
 	Version *ProtocolVersion
 
 	// Server is the server-supplied error message (a `ERR` pkt-line
-	// payload, an HTTP body excerpt, or similar). Bounded to at most
-	// 1 KiB; library construction sites truncate before storing.
+	// payload, an HTTP body excerpt, or similar). Bounded by the
+	// transport layer to approximately 1 KiB; when the original body
+	// exceeded that bound the excerpt ends in `"..."` so callers can
+	// detect truncation. The public surface preserves the bytes the
+	// transport emitted verbatim and does not re-truncate.
 	Server string
 
 	// Err is the wrapped cause. It typically matches one of the
@@ -182,17 +187,3 @@ func (e *ProtocolError) Error() string {
 // Unwrap returns the wrapped cause so [errors.Is] and [errors.As]
 // walk through e to the underlying sentinel or transport error.
 func (e *ProtocolError) Unwrap() error { return e.Err }
-
-// truncateServer caps s at 1 KiB so a server-supplied diagnostic
-// payload cannot bloat a [ProtocolError]. The library applies it at
-// every construction site that copies bytes from a server response
-// into [ProtocolError.Server]; callers outside the library do not
-// need to invoke it because they do not construct [ProtocolError]
-// values directly.
-func truncateServer(s string) string {
-	const max = 1024
-	if len(s) <= max {
-		return s
-	}
-	return s[:max]
-}

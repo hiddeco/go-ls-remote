@@ -160,28 +160,3 @@ func TestProtocolError_Error(t *testing.T) {
 		})
 	})
 }
-
-func TestTruncateServer(t *testing.T) {
-	t.Run("leaves a short string unchanged", func(t *testing.T) {
-		const in = "upload-pack: not our ref"
-		assert.Equal(t, in, truncateServer(in))
-	})
-
-	t.Run("leaves an exactly-1024-byte string unchanged", func(t *testing.T) {
-		in := strings.Repeat("x", 1024)
-		out := truncateServer(in)
-		assert.Equal(t, 1024, len(out))
-		assert.Equal(t, in, out)
-	})
-
-	t.Run("truncates a longer string to 1024 bytes", func(t *testing.T) {
-		in := strings.Repeat("y", 2048)
-		out := truncateServer(in)
-		assert.Equal(t, 1024, len(out))
-		assert.Equal(t, strings.Repeat("y", 1024), out)
-	})
-
-	t.Run("empty stays empty", func(t *testing.T) {
-		assert.Equal(t, "", truncateServer(""))
-	})
-}

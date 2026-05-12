@@ -281,6 +281,54 @@ func TestDial_transportErrorPreservesSentinels(t *testing.T) {
 		"the failure happened during the dial (transport open), not advertisement parsing")
 }
 
+// TestDial_transportOpenError_propagatesServerExcerpt pins the
+// session-layer aggregation contract: when `Transport.Open` returns an
+// `*httpt.ProtocolError` carrying a `Server` excerpt and HTTP status,
+// Dial must lift both fields onto the outer `*lsremote.ProtocolError`
+// it wraps the cause in. The library's public `ProtocolError.Server`
+// is the documented surface for server-supplied diagnostic bytes; an
+// empty outer field while the inner error carries the excerpt would
+// force callers to reach into transport internals via `errors.As`
+// just to read a value the public contract already promises.
+//
+// The transport-level fix lives in `transport/http`'s `handleSmart`;
+// this test exercises the session-layer propagation by driving the
+// same path end-to-end through Dial.
+func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
+	const garbage = "this is definitely not a pkt-line stream\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type",
+			"application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte(garbage))
+	}))
+	defer srv.Close()
+
+	_, err := Dial(context.Background(), srv.URL+"/repo.git")
+	require.Error(t, err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"want *lsremote.ProtocolError; got %T: %v", err, err)
+	assert.Equal(t, "dial", pe.Op)
+	assert.Equal(t, http.StatusOK, pe.Status,
+		"the HTTP status from the inner *httpt.ProtocolError must "+
+			"propagate onto the public *lsremote.ProtocolError")
+	require.NotEmpty(t, pe.Server,
+		"the inner *httpt.ProtocolError.Server excerpt must "+
+			"propagate onto the public *lsremote.ProtocolError.Server")
+	assert.LessOrEqual(t, len(pe.Server), 1024+len("..."),
+		"Server is bounded to 1 KiB plus a possible ellipsis marker")
+
+	// The inner transport error must remain reachable via `errors.As`
+	// so callers who already match on `*httpt.ProtocolError` keep
+	// working — the propagation is additive, not a replacement.
+	var inner *httpt.ProtocolError
+	require.True(t, errors.As(err, &inner),
+		"the inner *httpt.ProtocolError must remain reachable")
+	assert.Equal(t, pe.Server, inner.Server,
+		"the outer Server must mirror the inner Server verbatim")
+}
+
 // TestDial_transportOpenError_genericWrapping pins the generic
 // transport-error wrap: when `Transport.Open` returns an error that
 // matches none of the public sentinels, Dial must still wrap it as a

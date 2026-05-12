@@ -8,6 +8,7 @@ import (
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/transport"
+	httpt "github.com/hiddeco/go-ls-remote/transport/http"
 )
 
 // Dial opens a discovery-time connection to the Git repository at
@@ -111,11 +112,20 @@ func Dial(ctx context.Context, rawURL string, opts ...Option) (*Session, error) 
 		// chain, so `errors.As` against the transport's own
 		// `*ProtocolError` continues to work for callers who want the
 		// HTTP status code or server message.
-		return nil, &ProtocolError{
+		//
+		// The transport's own `Server` (and `Status`, when the
+		// transport is HTTP) is lifted onto the outer
+		// `*ProtocolError` so the public surface honours the contract
+		// on `ProtocolError.Server`: callers should not have to walk
+		// the wrapped chain via `errors.As` to read a diagnostic
+		// excerpt the library already captured.
+		pe := &ProtocolError{
 			URL: redactedURL,
 			Op:  "dial",
 			Err: bridgeOpenError(err),
 		}
+		populateFromTransportError(pe, err)
+		return nil, pe
 	}
 
 	adv, err := wire.ParseAdvertisement(conn.Advertisement(), cfg.protocol)
@@ -184,5 +194,41 @@ func bridgeOpenError(err error) error {
 		return errors.Join(ErrUnsupportedProtocol, err)
 	default:
 		return err
+	}
+}
+
+// populateFromTransportError lifts a transport-level
+// `*ProtocolError`'s diagnostic fields (`Server`, and `Status` when the
+// underlying transport is HTTP) onto the outer `*ProtocolError` so
+// callers can read them off the public surface without a manual
+// `errors.As` walk.
+//
+// Each scheme-specific transport package defines its own
+// `*ProtocolError` shape; the helper fishes them out via `errors.As`
+// rather than via a shared interface so adding new transports does not
+// drag a new package-level dependency into the root package. New
+// transports that should propagate further fields plug a case in here.
+//
+// `Server` is copied verbatim from the transport-level excerpt: the
+// HTTP transport already caps the body at ~1 KiB plus a trailing
+// `"..."` truncation marker in `readServerExcerpt`. A second
+// truncation here would strip the marker the transport emitted to
+// flag that more bytes were dropped, leaving callers unable to tell a
+// short body from a long-and-truncated one.
+func populateFromTransportError(dst *ProtocolError, src error) {
+	// Add a case here when another transport package gains a
+	// Server-carrying excerpt that should surface on the public
+	// `*ProtocolError`. The type-switch is deliberate: each
+	// transport's `*ProtocolError` shape is its own type, and a shared
+	// interface would expand the public surface without payback.
+	var httpErr *httpt.ProtocolError
+	if errors.As(src, &httpErr) {
+		if httpErr.Server != "" {
+			dst.Server = httpErr.Server
+		}
+		if httpErr.Status != 0 {
+			dst.Status = httpErr.Status
+		}
+		return
 	}
 }
