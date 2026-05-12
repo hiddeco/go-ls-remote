@@ -8,7 +8,9 @@ import (
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/transport"
+	filet "github.com/hiddeco/go-ls-remote/transport/file"
 	httpt "github.com/hiddeco/go-ls-remote/transport/http"
+	ssht "github.com/hiddeco/go-ls-remote/transport/ssh"
 )
 
 // Dial opens a discovery-time connection to the Git repository at
@@ -228,6 +230,20 @@ func populateFromTransportError(dst *ProtocolError, src error) {
 		}
 		if httpErr.Status != 0 {
 			dst.Status = httpErr.Status
+		}
+		return
+	}
+	var sshErr *ssht.ProtocolError
+	if errors.As(src, &sshErr) {
+		if sshErr.Server != "" {
+			dst.Server = sshErr.Server
+		}
+		return
+	}
+	var fileErr *filet.ProtocolError
+	if errors.As(src, &fileErr) {
+		if fileErr.Server != "" {
+			dst.Server = fileErr.Server
 		}
 		return
 	}

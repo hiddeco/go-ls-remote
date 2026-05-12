@@ -15,6 +15,7 @@ import (
 	"github.com/hiddeco/go-ls-remote/transport"
 	filet "github.com/hiddeco/go-ls-remote/transport/file"
 	httpt "github.com/hiddeco/go-ls-remote/transport/http"
+	ssht "github.com/hiddeco/go-ls-remote/transport/ssh"
 )
 
 // TestDial_invalidURL pins the `transport.ParseURL` failure mode: a
@@ -490,4 +491,72 @@ func TestDial_bridgeOpenError_userTransport(t *testing.T) {
 		"a user-defined SchemeError must bridge through transport.ErrNotFound; got %v", err)
 	assert.True(t, errors.Is(err, userSentinel),
 		"the user-defined sentinel identity must stay reachable; got %v", err)
+}
+
+// stubTransport is a test fake whose `Open` always returns the
+// preconfigured error. It exists so each per-scheme branch of
+// `populateFromTransportError` can be exercised without standing up
+// a real ssh/file backend.
+type stubTransport struct {
+	schemes []string
+	err     error
+}
+
+func (s stubTransport) Schemes() []string { return s.schemes }
+func (s stubTransport) Open(_ context.Context, _ *transport.URL,
+	_ transport.OpenOptions) (transport.Conn, error) {
+	return nil, s.err
+}
+
+// TestPopulateFromTransportError_SSH pins that an SSH dial failure
+// whose underlying `*ssht.ProtocolError` carries a `Server` excerpt
+// lifts that excerpt onto the outer `*lsremote.ProtocolError.Server`.
+func TestPopulateFromTransportError_SSH(t *testing.T) {
+	want := "ssh: handshake failed: server rejected every offered method"
+	stub := stubTransport{
+		schemes: []string{"ssh"},
+		err: &ssht.ProtocolError{
+			URL:    "ssh://git@example.com/repo.git",
+			Op:     "dial",
+			Server: want,
+			Err:    ssht.ErrAuthFailed,
+		},
+	}
+	reg := transport.NewRegistry(stub)
+
+	_, err := Dial(context.Background(), "ssh://git@example.com/repo.git",
+		WithTransports(reg))
+	require.Error(t, err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe))
+	assert.Equal(t, want, pe.Server,
+		"SSH transport Server excerpt must surface on the public ProtocolError")
+	assert.True(t, errors.Is(err, ErrAuthFailed),
+		"the SSH ErrAuthFailed sentinel must bridge to the public sentinel")
+}
+
+// TestPopulateFromTransportError_File pins the same lift for the
+// `file://` transport's corrupt-object branch (transport/file/open.go).
+func TestPopulateFromTransportError_File(t *testing.T) {
+	want := "objstore: corrupt object 0123abcd..."
+	stub := stubTransport{
+		schemes: []string{"file"},
+		err: &filet.ProtocolError{
+			URL:    "file:///tmp/repo",
+			Op:     "dial",
+			Server: want,
+			Err:    errors.New("objstore: corrupt object"),
+		},
+	}
+	reg := transport.NewRegistry(stub)
+
+	_, err := Dial(context.Background(), "file:///tmp/repo",
+		WithTransports(reg))
+	require.Error(t, err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe))
+	assert.Equal(t, want, pe.Server,
+		"file transport Server excerpt must surface on the public ProtocolError")
 }
