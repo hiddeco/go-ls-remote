@@ -411,6 +411,39 @@ func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 	assert.Equal(t, "object-info", pe.Op)
 }
 
+// TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent pins the v2
+// capability-set gate: even when the negotiated version is v2, a server
+// that did not advertise `object-info` in its capability set must
+// short-circuit on the client side with a `*ProtocolError` whose chain
+// matches `ErrUnsupportedProtocol`. Mainstream Git hosts (GitHub,
+// Codeberg, Bitbucket, Gitea, most of `gitlab.com`) advertise v2 with
+// `commands=[ls-refs fetch]` only, so issuing `object-info` would
+// otherwise elicit a raw transport-level failure rather than a
+// public-typed error.
+func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
+	const commitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
+
+	s := &Session{
+		caps: Capabilities{
+			Version:      ProtocolV2,
+			ObjectFormat: ObjectFormatSHA1,
+			Commands:     []string{"ls-refs", "fetch"},
+		},
+	}
+
+	got, err := s.ObjectInfo(context.Background(),
+		[]string{commitOID}, ObjectInfoRequest{Size: true})
+	assert.Nil(t, got)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		"object-info on a v2 session lacking the capability must match "+
+			"ErrUnsupportedProtocol; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe))
+	assert.Equal(t, "object-info", pe.Op)
+}
+
 // TestSession_ObjectInfo_sizeFalseSeam pins the wire-server seam on a
 // no-`size` `object-info` request. Canonical Git's
 // `protocol-caps.c::send_info` lines 47-48 skip the attrs PKT-LINE
@@ -466,6 +499,7 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 		caps: Capabilities{
 			Version:      ProtocolV2,
 			ObjectFormat: ObjectFormatSHA1,
+			Commands:     []string{"ls-refs", "fetch", "object-info"},
 			Raw:          map[string][]string{"object-info": {""}},
 		},
 	}

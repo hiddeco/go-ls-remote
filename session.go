@@ -254,9 +254,14 @@ func (s *Session) ListRefs(ctx context.Context, args RefsRequest) ([]Ref, error)
 // metadata the server replied with.
 //
 // `object-info` is a v2-only command. A Session whose
-// [Capabilities.Version] is not [ProtocolV2] returns a [*ProtocolError]
-// with `Op == "object-info"` whose error chain matches
-// [ErrUnsupportedProtocol].
+// [Capabilities.Version] is not [ProtocolV2], or whose v2
+// [Capabilities.Commands] set does not include `object-info`, returns
+// a [*ProtocolError] with `Op == "object-info"` whose error chain
+// matches [ErrUnsupportedProtocol]. The capability-set guard mirrors
+// canonical Git's pre-issue check: mainstream hosts advertise v2 with
+// only `ls-refs` and `fetch`, so a client-side short-circuit is the
+// only way to surface a public-typed error rather than a raw
+// transport failure.
 //
 // The `oids` slice is forwarded verbatim as one `oid <hex>` argument
 // per element. When `args.Size` is true the request also carries the
@@ -281,6 +286,15 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 			Op:      "object-info",
 			Version: versionPtr(s.caps.Version),
 			Server:  "object-info requires protocol v2",
+			Err:     ErrUnsupportedProtocol,
+		}
+	}
+	if !slices.Contains(s.caps.Commands, "object-info") {
+		return nil, &ProtocolError{
+			URL:     s.url,
+			Op:      "object-info",
+			Version: versionPtr(s.caps.Version),
+			Server:  "server did not advertise object-info",
 			Err:     ErrUnsupportedProtocol,
 		}
 	}
