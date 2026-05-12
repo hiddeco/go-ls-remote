@@ -219,6 +219,42 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 	assert.Equal(t, 200, pe.Status)
 }
 
+// TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt covers the
+// 200-with-malformed-body branch of [handleSmart]: a server replies with
+// the smart-HTTP content type but a body whose first bytes are not a
+// valid pkt-line. The resulting [*ProtocolError] must carry the
+// server-sent bytes in its `Server` field, the same way the `5xx`
+// branch already does — the doc comment on [ProtocolError.Server]
+// promises an excerpt is provided whenever one is available.
+//
+// `stripSmartPreamble` may have already consumed some bytes by the
+// time it returns the error, so the excerpt covers whatever remains on
+// the body — the SPEC §7 contract names "a truncated excerpt", not
+// "the full body verbatim".
+func TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt(t *testing.T) {
+	const garbage = "this is definitely not a pkt-line stream\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		_, _ = w.Write([]byte(garbage))
+	}))
+	defer srv.Close()
+
+	tr := New()
+	u := parseTestURL(t, srv, "/repo.git")
+
+	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	assert.Nil(t, conn)
+	require.Error(t, err)
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe), "want *ProtocolError, got %T: %v", err, err)
+	assert.Equal(t, http.StatusOK, pe.Status)
+	assert.Equal(t, "probe", pe.Op)
+	require.NotEmpty(t, pe.Server,
+		"ProtocolError.Server must carry an excerpt of the malformed body")
+	assert.LessOrEqual(t, len(pe.Server), 1024+len("..."),
+		"Server is bounded to 1 KiB plus a possible ellipsis marker")
+}
+
 func TestOpen_Dumb200_AdapterWired(t *testing.T) {
 	// A minimal but realistic dumb-HTTP `info/refs` body: one ref
 	// per line, fields HTAB-separated, terminated by LF. The adapter

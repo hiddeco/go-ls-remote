@@ -230,11 +230,20 @@ func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.C
 func handleSmart(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
 	rdr := pktline.NewReader(resp.Body, inboundReaderOpts(cfg.tracer, finalRespURL(resp))...)
 	if err := stripSmartPreamble(rdr); err != nil {
-		drainAndClose(resp.Body)
+		// `stripSmartPreamble` may have consumed up to two pkt-lines
+		// before failing, so the excerpt covers whatever bytes remain
+		// on the body — enough, in the common case of a non-pkt-line
+		// reply, to surface the server's actual error text. Mirrors
+		// the 5xx and unknown-status branches above, which both route
+		// the body through [readServerExcerpt] before formatting the
+		// returned [*ProtocolError].
+		server := readServerExcerpt(resp.Body)
+		_ = resp.Body.Close()
 		return nil, &ProtocolError{
 			URL:    redacted,
 			Op:     "probe",
 			Status: http.StatusOK,
+			Server: server,
 			Err:    err,
 		}
 	}
