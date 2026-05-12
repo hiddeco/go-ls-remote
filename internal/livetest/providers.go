@@ -84,8 +84,8 @@ var Providers = []Provider{
 	},
 	{
 		Name:           "gitlab",
-		PublicHTTPS:    "https://gitlab.com/gitlab-org/gitlab.git",
-		PublicSSH:      "git@gitlab.com:gitlab-org/gitlab.git",
+		PublicHTTPS:    "https://gitlab.com/gitlab-org/cli.git",
+		PublicSSH:      "git@gitlab.com:gitlab-org/cli.git",
 		HTTPSBasicUser: "oauth2",
 		AuthTokenEnv:   "LSREMOTE_GITLAB_TOKEN",
 		PrivateRepoEnv: "LSREMOTE_GITLAB_PRIVATE_REPO",
