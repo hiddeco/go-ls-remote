@@ -104,8 +104,8 @@ var Providers = []Provider{
 	},
 	{
 		Name:           "bitbucket",
-		PublicHTTPS:    "https://bitbucket.org/atlassian/python-bitbucket.git",
-		PublicSSH:      "git@bitbucket.org:atlassian/python-bitbucket.git",
+		PublicHTTPS:    "https://bitbucket.org/snakeyaml/snakeyaml.git",
+		PublicSSH:      "git@bitbucket.org:snakeyaml/snakeyaml.git",
 		HTTPSBasicUser: "x-token-auth",
 		AuthTokenEnv:   "LSREMOTE_BITBUCKET_TOKEN",
 		PrivateRepoEnv: "LSREMOTE_BITBUCKET_PRIVATE_REPO",
