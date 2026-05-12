@@ -11,6 +11,7 @@ import (
 )
 
 func TestNew_zeroValueDefaults(t *testing.T) {
+	t.Parallel()
 	tr := New()
 	require.NotNil(t, tr)
 
@@ -24,6 +25,7 @@ func TestNew_zeroValueDefaults(t *testing.T) {
 }
 
 func TestWithClient(t *testing.T) {
+	t.Parallel()
 	want := &http.Client{}
 	tr := New(WithClient(want))
 
@@ -31,6 +33,7 @@ func TestWithClient(t *testing.T) {
 }
 
 func TestWithClient_nilPermitted(t *testing.T) {
+	t.Parallel()
 	// Passing nil is a documented "use http.DefaultClient" signal; the
 	// constructor must accept it without panicking.
 	tr := New(WithClient(nil))
@@ -38,6 +41,7 @@ func TestWithClient_nilPermitted(t *testing.T) {
 }
 
 func TestWithCredentials(t *testing.T) {
+	t.Parallel()
 	resolverCalls := 0
 	want := credentialResolverFunc(func(_ context.Context, _ *url.URL) (Credentials, error) {
 		resolverCalls++
@@ -53,16 +57,19 @@ func TestWithCredentials(t *testing.T) {
 }
 
 func TestWithCredentials_nilPermitted(t *testing.T) {
+	t.Parallel()
 	tr := New(WithCredentials(nil))
 	assert.Nil(t, tr.creds, "WithCredentials(nil) means no auth")
 }
 
 func TestWithUserAgent(t *testing.T) {
+	t.Parallel()
 	tr := New(WithUserAgent("test-agent/1.0"))
 	assert.Equal(t, "test-agent/1.0", tr.userAgent)
 }
 
 func TestWithFollowRedirects(t *testing.T) {
+	t.Parallel()
 	tr := New(WithFollowRedirects(FollowRedirectsAlways))
 	assert.Equal(t, FollowRedirectsAlways, tr.followRedirects)
 
@@ -71,6 +78,7 @@ func TestWithFollowRedirects(t *testing.T) {
 }
 
 func TestWithFollowRedirects_zeroValueIsInitial(t *testing.T) {
+	t.Parallel()
 	// The zero value of FollowRedirects MUST be Initial per
 	// Documentation/config/http.adoc:359-365.
 	assert.Equal(t, FollowRedirects(0), FollowRedirectsInitial,
@@ -79,6 +87,7 @@ func TestWithFollowRedirects_zeroValueIsInitial(t *testing.T) {
 }
 
 func TestWithMaxRedirects(t *testing.T) {
+	t.Parallel()
 	tr := New(WithMaxRedirects(5))
 	assert.Equal(t, 5, tr.maxRedirects)
 
@@ -91,6 +100,7 @@ func TestWithMaxRedirects(t *testing.T) {
 }
 
 func TestNew_appliesAllOptions(t *testing.T) {
+	t.Parallel()
 	client := &http.Client{}
 	resolver := credentialResolverFunc(func(_ context.Context, _ *url.URL) (Credentials, error) {
 		return nil, nil
@@ -112,6 +122,7 @@ func TestNew_appliesAllOptions(t *testing.T) {
 }
 
 func TestFollowRedirects_String(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   FollowRedirects
@@ -124,6 +135,7 @@ func TestFollowRedirects_String(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, tc.in.String())
 		})
 	}

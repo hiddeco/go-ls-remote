@@ -45,6 +45,7 @@ import (
 //   - redirect_on_post_rejected_by_default: 302 on POST → rejected.
 //   - redirect_cross_origin_auth_stripped: A→B with creds for A only.
 func TestFixtureMatrix(t *testing.T) {
+	t.Parallel()
 	t.Run("smart_v2_happy", testMatrixSmartV2Happy)
 	t.Run("smart_v0_fallback", testMatrixSmartV0Fallback)
 	t.Run("dumb_http", testMatrixDumbHTTP)
@@ -58,6 +59,7 @@ func TestFixtureMatrix(t *testing.T) {
 }
 
 func testMatrixSmartV2Happy(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
@@ -92,6 +94,7 @@ func testMatrixSmartV2Happy(t *testing.T) {
 }
 
 func testMatrixSmartV0Fallback(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// `info/refs?service=git-upload-pack` with a v0 advertisement.
@@ -148,6 +151,7 @@ func testMatrixSmartV0Fallback(t *testing.T) {
 }
 
 func testMatrixDumbHTTP(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(
@@ -187,6 +191,7 @@ func testMatrixDumbHTTP(t *testing.T) {
 }
 
 func testMatrixAuth401Then200(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 
 	var calls int32
@@ -223,6 +228,7 @@ func testMatrixAuth401Then200(t *testing.T) {
 }
 
 func testMatrixAuth401Then401(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -239,6 +245,7 @@ func testMatrixAuth401Then401(t *testing.T) {
 }
 
 func testMatrixStatus404(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -254,6 +261,7 @@ func testMatrixStatus404(t *testing.T) {
 }
 
 func testMatrixStatus5xx(t *testing.T) {
+	t.Parallel()
 	const body = "upload-pack on fire"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -276,6 +284,7 @@ func testMatrixStatus5xx(t *testing.T) {
 }
 
 func testMatrixRedirectChainInitial(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hop-0/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -315,6 +324,7 @@ func testMatrixRedirectChainInitial(t *testing.T) {
 }
 
 func testMatrixRedirectOnPostRejected(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -357,6 +367,7 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 }
 
 func testMatrixRedirectCrossOriginAuthStripped(t *testing.T) {
+	t.Parallel()
 	var bAuth string
 	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bAuth = r.Header.Get("Authorization")

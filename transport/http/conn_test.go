@@ -38,6 +38,7 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 }
 
 func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
+	t.Parallel()
 	body := &closeCounter{Reader: bytes.NewReader(nil)}
 	rdr := pktline.NewReader(body)
 
@@ -48,6 +49,7 @@ func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 }
 
 func TestConn_Close_Idempotent(t *testing.T) {
+	t.Parallel()
 	body := &closeCounter{Reader: strings.NewReader("leftover bytes")}
 	rdr := pktline.NewReader(body)
 
@@ -62,6 +64,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 }
 
 func TestConn_Command_DumbReturnsUnsupportedProtocol(t *testing.T) {
+	t.Parallel()
 	c := &Conn{dumb: true}
 	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)

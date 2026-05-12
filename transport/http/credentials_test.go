@@ -18,6 +18,7 @@ import (
 )
 
 func TestBasic(t *testing.T) {
+	t.Parallel()
 	creds := Basic("alice", "s3cr3t")
 	require.NotNil(t, creds)
 
@@ -36,6 +37,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestBearer(t *testing.T) {
+	t.Parallel()
 	creds := Bearer("tok-abc")
 	require.NotNil(t, creds)
 
@@ -48,6 +50,7 @@ func TestBearer(t *testing.T) {
 }
 
 func TestStatic_Resolve(t *testing.T) {
+	t.Parallel()
 	want := Basic("alice", "s3cr3t")
 	resolver := Static(want)
 	require.NotNil(t, resolver)
@@ -58,6 +61,7 @@ func TestStatic_Resolve(t *testing.T) {
 }
 
 func TestStatic_Resolve_Nil(t *testing.T) {
+	t.Parallel()
 	resolver := Static(nil)
 	require.NotNil(t, resolver)
 
@@ -74,6 +78,7 @@ func TestStatic_Resolve_Nil(t *testing.T) {
 // the resolver directly.
 
 func TestNetrc_Resolve_MachineMatch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	body := strings.Join([]string{
@@ -99,6 +104,7 @@ func TestNetrc_Resolve_MachineMatch(t *testing.T) {
 }
 
 func TestNetrc_Resolve_FirstMatchWins(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	body := strings.Join([]string{
@@ -122,6 +128,7 @@ func TestNetrc_Resolve_FirstMatchWins(t *testing.T) {
 }
 
 func TestNetrc_Resolve_DefaultFallthrough(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	body := strings.Join([]string{
@@ -147,6 +154,7 @@ func TestNetrc_Resolve_DefaultFallthrough(t *testing.T) {
 }
 
 func TestNetrc_Resolve_NoMatch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	body := "machine other.example.org login bob password hunter2\n"
@@ -160,6 +168,7 @@ func TestNetrc_Resolve_NoMatch(t *testing.T) {
 }
 
 func TestNetrc_Resolve_MissingFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "does-not-exist")
 
@@ -171,6 +180,7 @@ func TestNetrc_Resolve_MissingFile(t *testing.T) {
 }
 
 func TestNetrc_Resolve_Comments(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	body := strings.Join([]string{
@@ -189,6 +199,7 @@ func TestNetrc_Resolve_Comments(t *testing.T) {
 }
 
 func TestNetrc_Resolve_Malformed(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	// `machine` with no following token is malformed.
@@ -203,6 +214,7 @@ func TestNetrc_Resolve_Malformed(t *testing.T) {
 }
 
 func TestNetrc_Resolve_WorldReadableWarns(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mode bits are not meaningful on Windows")
 	}
@@ -227,6 +239,7 @@ func TestNetrc_Resolve_WorldReadableWarns(t *testing.T) {
 }
 
 func TestNetrc_Resolve_RestrictiveModeNoWarn(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mode bits are not meaningful on Windows")
 	}
@@ -262,6 +275,7 @@ func TestNetrc_PublicConstructor(t *testing.T) {
 // netrc-error sentinel, so callers can tell parse errors from I/O
 // errors.
 func TestNetrc_ParseError_Is(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".netrc")
 	require.NoError(t, os.WriteFile(path, []byte("machine\n"), 0o600))
@@ -277,6 +291,7 @@ func TestNetrc_ParseError_Is(t *testing.T) {
 // warning. A world-writable netrc is more dangerous than a
 // world-readable one: any local user can substitute credentials.
 func TestNetrc_Resolve_WorldWritableWarns(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mode bits are not meaningful on Windows")
 	}

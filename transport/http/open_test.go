@@ -62,6 +62,7 @@ func parseTestURL(t *testing.T, srv *httptest.Server, repoPath string) *transpor
 }
 
 func TestOpen_Smart200_Success(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +97,7 @@ func TestOpen_Smart200_Success(t *testing.T) {
 }
 
 func TestOpen_Smart200_ContentTypeWithCharset(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +115,7 @@ func TestOpen_Smart200_ContentTypeWithCharset(t *testing.T) {
 }
 
 func TestOpen_Smart200_PreferredProtocolPinned(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +136,7 @@ func TestOpen_Smart200_PreferredProtocolPinned(t *testing.T) {
 }
 
 func TestOpen_Smart200_UserAgent_OpenOptionsWins(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +156,7 @@ func TestOpen_Smart200_UserAgent_OpenOptionsWins(t *testing.T) {
 }
 
 func TestOpen_Smart200_UserAgent_TransportFallsBackToPackageDefault(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +176,7 @@ func TestOpen_Smart200_UserAgent_TransportFallsBackToPackageDefault(t *testing.T
 }
 
 func TestOpen_Smart200_BadPreambleService(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, w.WritePacket([]byte("# service=git-receive-pack\n")))
@@ -195,6 +201,7 @@ func TestOpen_Smart200_BadPreambleService(t *testing.T) {
 }
 
 func TestOpen_Smart200_MissingFlush(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, w.WritePacket([]byte("# service=git-upload-pack\n")))
@@ -232,6 +239,7 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 // the body — the SPEC §7 contract names "a truncated excerpt", not
 // "the full body verbatim".
 func TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt(t *testing.T) {
+	t.Parallel()
 	const garbage = "this is definitely not a pkt-line stream\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -256,6 +264,7 @@ func TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt(t *testing.T) {
 }
 
 func TestOpen_Dumb200_AdapterWired(t *testing.T) {
+	t.Parallel()
 	// A minimal but realistic dumb-HTTP `info/refs` body: one ref
 	// per line, fields HTAB-separated, terminated by LF. The adapter
 	// synthesises a v0-shaped pkt-line stream over this body; the
@@ -292,6 +301,7 @@ func TestOpen_Dumb200_AdapterWired(t *testing.T) {
 }
 
 func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -309,6 +319,7 @@ func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 }
 
 func TestOpen_401_StaticResolver_AcceptsOnRetry(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 
@@ -344,6 +355,7 @@ func TestOpen_401_StaticResolver_AcceptsOnRetry(t *testing.T) {
 }
 
 func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
+	t.Parallel()
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -365,6 +377,7 @@ func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
 }
 
 func TestOpen_401_StaticResolver_NilCred_ReturnsErrAuthRequired(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -394,6 +407,7 @@ func (r errResolver) Resolve(_ context.Context, _ *url.URL) (Credentials, error)
 }
 
 func TestOpen_401_ResolverError_Propagated(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -412,6 +426,7 @@ func TestOpen_401_ResolverError_Propagated(t *testing.T) {
 }
 
 func TestOpen_403_ReturnsErrAuthFailed(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -428,6 +443,7 @@ func TestOpen_403_ReturnsErrAuthFailed(t *testing.T) {
 }
 
 func TestOpen_404_ReturnsErrNotFound(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -444,6 +460,7 @@ func TestOpen_404_ReturnsErrNotFound(t *testing.T) {
 }
 
 func TestOpen_500_ReturnsProtocolError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("the server is on fire"))
@@ -466,6 +483,7 @@ func TestOpen_500_ReturnsProtocolError(t *testing.T) {
 }
 
 func TestOpen_500_TruncatesServerBody(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("x", 4096)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -487,6 +505,7 @@ func TestOpen_500_TruncatesServerBody(t *testing.T) {
 }
 
 func TestOpen_UnexpectedStatus_418(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -505,6 +524,7 @@ func TestOpen_UnexpectedStatus_418(t *testing.T) {
 }
 
 func TestBuildInfoRefsURL_IPv6_WithPort(t *testing.T) {
+	t.Parallel()
 	u := &transport.URL{
 		Scheme: "https",
 		Host:   "fe80::1",
@@ -519,6 +539,7 @@ func TestBuildInfoRefsURL_IPv6_WithPort(t *testing.T) {
 }
 
 func TestBuildInfoRefsURL_IPv6_NoPort(t *testing.T) {
+	t.Parallel()
 	u := &transport.URL{
 		Scheme: "https",
 		Host:   "fe80::1",
@@ -536,6 +557,7 @@ func TestBuildInfoRefsURL_IPv6_NoPort(t *testing.T) {
 }
 
 func TestOpen_URL_StripsTrailingSlash(t *testing.T) {
+	t.Parallel()
 	body := smartAdvBody(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -555,6 +577,7 @@ func TestOpen_URL_StripsTrailingSlash(t *testing.T) {
 }
 
 func TestOpen_URL_RedactsCredentialsInProtocolError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

@@ -33,6 +33,7 @@ func smartHandler(t *testing.T) http.HandlerFunc {
 }
 
 func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -57,6 +58,7 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 }
 
 func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
+	t.Parallel()
 	var hops int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +86,7 @@ func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 }
 
 func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
+	t.Parallel()
 	// A chain of 9 redirects fits inside the package default of 10 hops.
 	const chainLen = 9
 
@@ -110,6 +113,7 @@ func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 }
 
 func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusFound)
@@ -132,6 +136,7 @@ func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
 }
 
 func TestRedirect_Always_FollowsLikeInitial(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -150,6 +155,7 @@ func TestRedirect_Always_FollowsLikeInitial(t *testing.T) {
 }
 
 func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
+	t.Parallel()
 	// The flow tests the strip path: server A demands auth, the retry
 	// carries `Authorization`, and a 302 hops to server B where the
 	// header must NOT survive. The resolver returns nil for B so the
@@ -201,6 +207,7 @@ func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 }
 
 func TestRedirect_CrossOrigin_ReConsultsResolver(t *testing.T) {
+	t.Parallel()
 	// The companion test to the strip case. Same flow, except the
 	// resolver returns DIFFERENT credentials for server B so the
 	// re-consult-and-apply step is observable end-to-end.
@@ -311,6 +318,7 @@ func schemeRedirectStub(t *testing.T, locationURL string) *stubRoundTripper {
 }
 
 func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
+	t.Parallel()
 	rt := schemeRedirectStub(t, "http://example.com/repo.git/info/refs?service=git-upload-pack")
 
 	// A scheme-aware resolver: returns Basic on the original https
@@ -347,6 +355,7 @@ func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
 }
 
 func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
+	t.Parallel()
 	rt := schemeRedirectStub(t, "https://example.com/repo.git/info/refs?service=git-upload-pack")
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 
@@ -371,6 +380,7 @@ func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
 }
 
 func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/a.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/b.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -396,6 +406,7 @@ func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 }
 
 func Test_resolveMaxRedirects(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   int
@@ -409,12 +420,14 @@ func Test_resolveMaxRedirects(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, resolveMaxRedirects(tc.in))
 		})
 	}
 }
 
 func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
+	t.Parallel()
 	// `WithMaxRedirects(-1)` clamps to zero, meaning the very first
 	// 3xx must be rejected. The integration matters: a typo in
 	// configuration should not let the probe silently fall back to
@@ -442,6 +455,7 @@ func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
 }
 
 func TestRedirect_Auth401Retry_UsesRedirectedURL(t *testing.T) {
+	t.Parallel()
 	// Track the requests that hit Server B (the redirect target). The
 	// flow under test:
 	//   1. probe `/old.git/info/refs` on A → 302 to B

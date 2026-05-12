@@ -22,6 +22,7 @@ import (
 // at once, each backed by its own HTTP POST. Two readers obtained
 // without draining either must both yield correct payloads.
 func TestConn_Command_ConcurrentInFlight(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
@@ -75,6 +76,7 @@ func TestConn_Command_ConcurrentInFlight(t *testing.T) {
 // reader; with the multi-flight contract no caller needs external
 // synchronisation against the others.
 func TestConn_Command_ConcurrentGoroutines(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
@@ -126,6 +128,7 @@ func TestConn_Command_ConcurrentGoroutines(t *testing.T) {
 // exactly once and discards the remaining bytes; the underlying
 // connection is otherwise indistinguishable from a leaked one.
 func TestConn_Close_DrainsAbandonedInflightBody(t *testing.T) {
+	t.Parallel()
 	var bodyClosed atomic.Int32
 
 	rt := &countingRoundTripper{respond: func(_ *http.Request, _ int) *http.Response {
