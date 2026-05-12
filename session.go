@@ -2,9 +2,11 @@ package lsremote
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -75,6 +77,15 @@ type Session struct {
 	// with. It is stored once so each subsequent [ProtocolError] does
 	// not need to re-derive the redaction.
 	url string
+
+	// deadMu guards `deadErr`. A non-nil `deadErr` marks the
+	// session unusable: subsequent commands return a
+	// `*ProtocolError` whose chain includes [ErrSessionDead] and
+	// the original cause. The underlying [transport.Conn] is
+	// closed eagerly on the markDead path so the resource is
+	// released even if the caller never calls [Session.Close].
+	deadMu  sync.Mutex
+	deadErr error
 }
 
 // Capabilities returns a deep copy of the capability snapshot captured
@@ -130,6 +141,9 @@ func (s *Session) Capabilities() Capabilities {
 //
 // [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, error], error) {
+	if err := s.checkAlive("ls-refs"); err != nil {
+		return nil, err
+	}
 	if s.caps.Version != ProtocolV2 {
 		return s.refsCached(args), nil
 	}
@@ -250,7 +264,9 @@ func (s *Session) refsV2(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, 
 				// drain. Skip the drain — the session is effectively
 				// dead and callers should [Session.Close] it.
 				drained = true
-				yield(Ref{}, s.protocolError("ls-refs", err))
+				bridged := s.protocolError("ls-refs", err)
+				s.markDead(bridged)
+				yield(Ref{}, bridged)
 				return
 			}
 			if !yield(convertRef(rr), nil) {
@@ -344,6 +360,9 @@ func (s *Session) ListRefs(ctx context.Context, args RefsRequest) ([]Ref, error)
 // be streamed rather than buffered.
 func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 	args ObjectInfoRequest) ([]ObjectInfo, error) {
+	if err := s.checkAlive("object-info"); err != nil {
+		return nil, err
+	}
 	if s.caps.Version != ProtocolV2 {
 		return nil, &ProtocolError{
 			URL:     s.url,
@@ -373,7 +392,9 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 
 	raw, err := wire.DecodeObjectInfo(rdr)
 	if err != nil {
-		return nil, s.protocolError("object-info", err)
+		bridged := s.protocolError("object-info", err)
+		s.markDead(bridged)
+		return nil, bridged
 	}
 
 	out := convertObjectInfos(raw)
@@ -414,6 +435,41 @@ func matchPrefixes(name string, prefixes []string) bool {
 		}
 	}
 	return false
+}
+
+// markDead transitions the session to the unusable state. Safe to
+// call from multiple goroutines and from a deferred path; only the
+// first call wins. The underlying [transport.Conn] is closed
+// eagerly (its Close is idempotent per the contract on
+// [transport.Conn.Close]), but the close error is discarded — the
+// caller already has a more relevant error in `cause`.
+func (s *Session) markDead(cause error) {
+	s.deadMu.Lock()
+	defer s.deadMu.Unlock()
+	if s.deadErr != nil {
+		return
+	}
+	s.deadErr = cause
+	_ = s.conn.Close()
+}
+
+// checkAlive returns a [*ProtocolError] joining [ErrSessionDead]
+// with the original cause when the session has been marked dead;
+// otherwise nil. Callers in command-dispatch positions consult
+// this at entry.
+func (s *Session) checkAlive(op string) error {
+	s.deadMu.Lock()
+	cause := s.deadErr
+	s.deadMu.Unlock()
+	if cause == nil {
+		return nil
+	}
+	return &ProtocolError{
+		URL:     s.url,
+		Op:      op,
+		Version: versionPtr(s.caps.Version),
+		Err:     errors.Join(ErrSessionDead, cause),
+	}
 }
 
 // protocolError wraps err in a [*ProtocolError] tagged with the

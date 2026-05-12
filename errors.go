@@ -60,6 +60,20 @@ var (
 	// this from [ErrNotFound], which means the repository itself is
 	// absent.
 	ErrNoDefaultBranch = errors.New("lsremote: remote has no default branch")
+
+	// ErrSessionDead signals that the [Session] is no longer usable
+	// because a previous command encountered a mid-stream wire error
+	// that left the underlying byte stream in an undefined position.
+	// The Session marks itself dead, closes its [transport.Conn]
+	// eagerly, and rejects subsequent commands with this sentinel
+	// wrapped in a [*ProtocolError]. The original cause is preserved
+	// on the `errors.Is` chain so callers can match against both.
+	//
+	// Returned only by [Session.Refs], [Session.ListRefs], and
+	// [Session.ObjectInfo] — [Session.Capabilities] continues to work
+	// on a dead session because it reads cached state.
+	// [Session.Close] remains idempotent.
+	ErrSessionDead = errors.New("lsremote: session is no longer usable")
 )
 
 // ProtocolError carries diagnostic context for a protocol-level

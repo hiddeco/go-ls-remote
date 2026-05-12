@@ -585,6 +585,28 @@ func (c *sharedStreamConn) Command(_ context.Context, _ string,
 
 func (c *sharedStreamConn) Close() error { return nil }
 
+// closeRecordingStubConn wraps a commandStubConn and records how many
+// times [Close] is called. It is used to verify that [markDead] eagerly
+// closes the connection when a mid-stream wire error occurs.
+type closeRecordingStubConn struct {
+	inner      *commandStubConn
+	closeCalls int
+}
+
+func (c *closeRecordingStubConn) Advertisement() *pktline.Reader {
+	return c.inner.Advertisement()
+}
+
+func (c *closeRecordingStubConn) Command(ctx context.Context, name string,
+	body transport.CommandBody) (*pktline.Reader, error) {
+	return c.inner.Command(ctx, name, body)
+}
+
+func (c *closeRecordingStubConn) Close() error {
+	c.closeCalls++
+	return c.inner.Close()
+}
+
 // TestSession_Refs_v2_DrainsOnEarlyBreak pins that abandoning the
 // iterator returned by [Session.Refs] before the underlying response
 // reaches its trailing flush leaves the [transport.Conn] in the
@@ -671,6 +693,77 @@ func TestSession_Close_idempotent(t *testing.T) {
 
 	assert.NoError(t, s.Close(), "first Close must succeed")
 	assert.NoError(t, s.Close(), "second Close must also return nil")
+}
+
+// TestSession_rejectsCommandsAfterMidStreamError pins that a
+// Session whose `Refs` iterator yielded a mid-stream wire error
+// refuses to dispatch a subsequent `ObjectInfo` command. The
+// underlying byte stream is in an undefined position on
+// file/git/ssh transports; canonical Git handles this by
+// process-exit, but as a library we must surface a typed error
+// instead of dispatching into a misaligned stream.
+func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
+	// Build a `commandStubConn` whose ls-refs response carries an
+	// in-stream `ERR <msg>` pkt-line. `wire.DecodeLSRefs` surfaces
+	// this as `wire.ErrServerRefused` mid-stream, which is exactly
+	// the shape the dead-state machinery is meant to guard against.
+	var buf bytes.Buffer
+	pw := pktline.NewWriter(&buf)
+	require.NoError(t, pw.WritePacket([]byte("ERR session-dead test\n")))
+	require.NoError(t, pw.WriteFlush())
+	cmdRdr := pktline.NewReader(bytes.NewReader(buf.Bytes()))
+
+	// Wrap the commandStubConn in a closeRecordingStubConn to track
+	// Close calls. This pins that markDead eagerly closes the
+	// underlying connection.
+	stubConn := &commandStubConn{cmdRdr: cmdRdr}
+	recorder := &closeRecordingStubConn{inner: stubConn}
+
+	s := &Session{
+		url:     "http://example.test/repo.git",
+		caps:    Capabilities{Version: ProtocolV2, Commands: []string{"ls-refs", "object-info"}},
+		rawCaps: nil, // EncodeLSRefs tolerates nil raw caps when no echo is needed
+		conn:    recorder,
+	}
+
+	// Consume the iterator; the mid-stream error must surface.
+	seq, err := s.Refs(context.Background(), RefsRequest{})
+	require.NoError(t, err)
+	var sawErr error
+	for _, e := range seq {
+		if e == nil {
+			continue
+		}
+		sawErr = e
+		break
+	}
+	require.Error(t, sawErr, "iterator must surface the mid-stream error")
+	require.True(t, errors.Is(sawErr, ErrServerRefused),
+		"mid-stream ERR pkt-line bridges to ErrServerRefused")
+
+	// After the mid-stream error, markDead must have eagerly closed
+	// the underlying connection. This guards against the mid-stream
+	// error path failing to disconnect.
+	require.GreaterOrEqual(t, recorder.closeCalls, 1,
+		"markDead must eagerly close the conn")
+
+	// Subsequent commands must now reject with ErrSessionDead.
+	_, err = s.ObjectInfo(context.Background(), []string{"deadbeef"}, ObjectInfoRequest{})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSessionDead),
+		"second command on dead session must wrap ErrSessionDead")
+	require.True(t, errors.Is(err, ErrServerRefused),
+		"original cause must remain reachable on the dead-session chain")
+
+	// A repeated call on a dead session must return the same typed
+	// error consistently — the dead-state machinery is set-once and
+	// every subsequent dispatch goes through checkAlive.
+	_, err2 := s.ObjectInfo(context.Background(), []string{"deadbeef"}, ObjectInfoRequest{})
+	require.Error(t, err2)
+	require.True(t, errors.Is(err2, ErrSessionDead),
+		"repeated dispatch on dead session must consistently return ErrSessionDead")
+	require.True(t, errors.Is(err2, ErrServerRefused),
+		"original cause must remain reachable on repeated dispatches")
 }
 
 // TestSession_protocolError_bridgesServerRefused pins the public-bridge
