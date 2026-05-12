@@ -3,6 +3,7 @@
 package livetest
 
 import (
+	"context"
 	"net"
 	"net/url"
 	"os"
@@ -148,4 +149,35 @@ func (p Provider) skipIfOffline(t testing.TB) {
 		return
 	}
 	_ = conn.Close()
+}
+
+// forEachProviderMode runs body for every (provider, auth-mode) cell in
+// the live-test matrix. The outer [Providers] loop wraps each provider
+// in `t.Run(p.Name, ...)` and calls [Provider.skipIfOffline] once at the
+// top so an offline provider skips the whole subtree in one go. The
+// inner loop iterates [Provider.authModes] under `t.Run(m.name, ...)`,
+// bounding every cell with a 30-second [context.WithTimeout]. The
+// resulting sub-test paths read e.g. `TestX/github/none` and
+// `TestX/gitlab/ssh-key`, matching the matrix dimensions one-to-one so
+// a `-run` filter can target a single cell.
+//
+// body receives the per-cell `*testing.T`, the live [Provider], the
+// active [authMode], and the bounded `context.Context`. Each test
+// function's per-cell body is what differs; the iteration scaffold is
+// shared here so a new live test only writes the assertion body.
+func forEachProviderMode(t *testing.T, body func(t *testing.T, p Provider, m authMode, ctx context.Context)) {
+	t.Helper()
+	for _, p := range Providers {
+		t.Run(p.Name, func(t *testing.T) {
+			p.skipIfOffline(t)
+			for _, m := range p.authModes(t) {
+				t.Run(m.name, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(
+						context.Background(), 30*time.Second)
+					defer cancel()
+					body(t, p, m, ctx)
+				})
+			}
+		})
+	}
 }
