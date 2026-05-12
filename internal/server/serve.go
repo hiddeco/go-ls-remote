@@ -55,9 +55,10 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // Any other value of opts.PreferredProtocol returns
 // [ErrUnsupportedProtocol] without emitting any bytes on w.
 //
-// The store argument sources the `object-format` capability value
-// today and will source ref enumeration and object metadata in later
-// iterations. Passing a nil store is not permitted.
+// The store argument supplies the `object-format` capability value,
+// the ref set the advertisement and `ls-refs` handler enumerate, and
+// the object metadata the `object-info` handler resolves. Passing a
+// nil store is not permitted.
 func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	switch opts.PreferredProtocol {
