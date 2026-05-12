@@ -395,6 +395,40 @@ func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
 	return 0
 }
 
+// TestMidx_parsePackNames_rejectsOversizedNumPacks confirms that a
+// crafted header whose `num_packs` far exceeds the PNAM chunk's
+// actual entry count does not trigger an attacker-controlled
+// allocation inside `parsePackNames`. Before the cap was added, the
+// `make([]string, 0, m.numPacks)` call would request up to 64 GiB of
+// string headers before the post-loop cross-check could reject the
+// file. Canonical Git's `midx.c:198` has the same shape but relies
+// on `xcalloc`/`die()` on allocation failure; Go's `make` panics the
+// host process instead.
+func TestMidx_parsePackNames_rejectsOversizedNumPacks(t *testing.T) {
+	oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
+	require.NoError(t, err)
+
+	// Build a valid one-pack midx so the header and chunk table are
+	// well-formed; only `num_packs` will be patched to a bogus value.
+	path := writeMidx(t, t.TempDir(), midxFixture{
+		algo:  SHA1,
+		packs: []string{"a.idx"},
+		objs:  []midxObj{{oid: oid, packIdx: 0, offset: 12}},
+	})
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	// Inflate num_packs (header bytes 8–11) to 1<<24. The PNAM chunk
+	// still contains exactly one entry so the count cross-check must
+	// surface ErrCorrupt without first attempting a ~64 GiB allocation.
+	binary.BigEndian.PutUint32(raw[8:12], 1<<24)
+	require.NoError(t, os.WriteFile(path, raw, 0o600))
+
+	_, err = OpenMidx[SHA1Hash](path, SHA1)
+	require.ErrorIs(t, err, ErrCorrupt,
+		"oversized num_packs must surface as ErrCorrupt, not OOM")
+}
+
 func TestMidx_PackNames(t *testing.T) {
 	t.Run("returned slice is a copy", func(t *testing.T) {
 		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)

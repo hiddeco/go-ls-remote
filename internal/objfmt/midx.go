@@ -279,7 +279,23 @@ func (id chunkID) String() string { return string(id[:]) }
 func (m *Midx[H]) parsePackNames() error {
 	ext := m.chunks[chunkPNAM]
 	body := m.data[ext.off : ext.off+ext.len]
-	names := make([]string, 0, m.numPacks)
+	// Bound capacity against the PNAM chunk extent before allocating.
+	// Every PNAM entry is at least 1 byte (the trailing `\0`), so
+	// the chunk extent in bytes is an upper bound on the entry count.
+	// Using `ext.len / 2` is a conservative floor — a name plus its
+	// terminator is at least 2 bytes for any non-empty name — and
+	// keeps the bound tight enough to refuse pathological headers
+	// without rejecting legitimate ones. A header claiming `num_packs`
+	// higher than this floor is corrupt regardless of any later check,
+	// and the unbounded `make` against header bytes is an
+	// attacker-controlled allocation. Canonical Git's `midx.c:198`
+	// has the same shape but relies on `xcalloc`'s `die()` for OOM;
+	// we cannot, because `make` panics the host process.
+	allocCap := uint64(m.numPacks)
+	if maxFromExtent := uint64(ext.len) / 2; allocCap > maxFromExtent {
+		allocCap = maxFromExtent
+	}
+	names := make([]string, 0, allocCap)
 	for len(body) > 0 && uint32(len(names)) < m.numPacks {
 		// Each name is NUL-terminated; the chunk is zero-padded to a
 		// 4-byte boundary so a successful `IndexByte` is the only way
