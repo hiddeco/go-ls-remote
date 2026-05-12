@@ -25,11 +25,14 @@ import (
 // reader before issuing the next command, nor to serialise calls
 // against the same [Conn] across goroutines.
 //
-// Well-behaved callers drain each returned reader to release its
-// underlying HTTP body back to the [http.Client] connection pool.
-// A caller that abandons a reader without draining leaks the body
-// into the [Conn]'s in-flight set; [Conn.Close] drains and releases
-// every still-tracked body so a long-lived [Conn] remains bounded.
+// Well-behaved callers drain each returned reader; the wrapper
+// registered for tracking removes itself from the [Conn]'s
+// in-flight set on the read-side terminal outcome (EOF or any
+// other error) so the set's size tracks only commands whose
+// reader is still live. A caller that abandons a reader without
+// draining leaves its entry in the set until [Conn.Close], which
+// drains and releases every still-tracked body so a long-lived
+// [Conn] remains bounded.
 //
 // The advertisement reader returned from [Conn.Advertisement] runs
 // over a separate response body owned by the [Conn] itself; reading
@@ -110,16 +113,15 @@ type Conn struct {
 	// do not serialise on each other.
 	inflightMu sync.Mutex
 
-	// inflight is the set of command-response bodies the [Conn] still
-	// tracks. Each successful command POST registers its response
-	// body here; [Conn.Close] drains and closes every entry. Bodies
-	// remain in the set for the lifetime of the [Conn]: the
-	// [pktline.Reader] handed to the caller does not expose a Close
-	// method, so the [Conn] cannot observe a natural drain to
-	// deregister an entry. Memory cost is one map entry per command
-	// issued on the [Conn]; well-behaved callers cap their issue rate
-	// against [Conn.Close] cadence to keep this bounded.
-	inflight map[io.ReadCloser]struct{}
+	// inflight is the set of in-flight [trackedBody] wrappers the
+	// [Conn] still tracks. Each successful command POST registers its
+	// wrapper here; the wrapper's cleanup callback deregisters when
+	// the caller drains the response reader to EOF (or closes the
+	// body explicitly), so the map's size reflects only commands
+	// whose reader has not yet been finished. [Conn.Close] drains
+	// and closes every still-tracked wrapper so an abandoned reader
+	// is recovered at the latest by [Conn.Close].
+	inflight map[*trackedBody]struct{}
 }
 
 // Advertisement returns the cached pkt-line reader. On the smart
@@ -156,7 +158,11 @@ func (c *Conn) Close() error {
 		c.inflight = nil
 		c.inflightMu.Unlock()
 		for body := range bodies {
-			drainAndClose(body)
+			// `body.Close` runs the cleanup (a no-op here because we
+			// already cleared the map snapshot) and closes the inner
+			// body. Drain first so the connection returns to the pool.
+			_, _ = io.Copy(io.Discard, io.LimitReader(body, drainCap))
+			_ = body.Close()
 		}
 	})
 	if !first {
@@ -165,16 +171,23 @@ func (c *Conn) Close() error {
 	return c.closeErr
 }
 
-// trackCommandBody registers body in the in-flight set so
-// [Conn.Close] can release it if the caller abandons its reader
-// without draining. The body is registered before [Conn.Command]
-// returns to the caller so a Close that races with the caller's
-// receive of the reader still cleans up.
-func (c *Conn) trackCommandBody(body io.ReadCloser) {
+// trackCommandBody registers body in the in-flight set. The
+// [trackedBody]'s cleanup callback (configured at construction in
+// `Conn.Command`) removes the entry when the caller drains the
+// reader to EOF or closes the body explicitly.
+func (c *Conn) trackCommandBody(body *trackedBody) {
 	c.inflightMu.Lock()
 	if c.inflight == nil {
-		c.inflight = make(map[io.ReadCloser]struct{})
+		c.inflight = make(map[*trackedBody]struct{})
 	}
 	c.inflight[body] = struct{}{}
+	c.inflightMu.Unlock()
+}
+
+// untrackCommandBody removes body from the in-flight set. Called
+// from the [trackedBody] cleanup once per body.
+func (c *Conn) untrackCommandBody(body *trackedBody) {
+	c.inflightMu.Lock()
+	delete(c.inflight, body)
 	c.inflightMu.Unlock()
 }

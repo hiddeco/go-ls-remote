@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -107,15 +108,22 @@ func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody
 		return nil, &ProtocolError{URL: redacted, Op: "command", Err: err}
 	}
 
-	rdr, err := handleCommandResponse(resp, redacted, creds != nil, c.tracer)
+	respBody, err := handleCommandResponse(resp, redacted, creds != nil)
 	if err != nil {
 		return nil, err
 	}
-	// Register the response body in the in-flight set BEFORE handing
-	// the reader to the caller. A caller that drops `rdr` on the floor
-	// — or a [Conn.Close] that races with the receive on the return
-	// path — still finds the body in the set and drains it.
-	c.trackCommandBody(resp.Body)
+	// Bind cleanup via a forward reference so the closure captures the
+	// fully-constructed wrapper. `tracked` is set before any Read or
+	// Close can fire — those happen only after the caller receives the
+	// returned reader — so the closure is always invoked against a
+	// non-nil pointer.
+	var tracked *trackedBody
+	tracked = &trackedBody{
+		inner:   respBody,
+		cleanup: func() { c.untrackCommandBody(tracked) },
+	}
+	c.trackCommandBody(tracked)
+	rdr := pktline.NewReader(tracked, inboundReaderOpts(c.tracer, finalRespURL(resp))...)
 	return rdr, nil
 }
 
@@ -226,18 +234,19 @@ func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, b
 	return resp, err
 }
 
-// handleCommandResponse maps the server's status code to either a
-// [pktline.Reader] over the response body (the success case) or the
-// matching package sentinel / [*ProtocolError]. It mirrors the probe
-// path's status table at the [Conn.Command] doc comment, with the
-// single auth-retry semantics inverted: command POSTs do not retry,
-// because the probe has already paid the anonymous-then-creds round
-// trip and the server's challenge state is not expected to change
-// between the probe and the first command.
-func handleCommandResponse(resp *http.Response, redacted string, credsApplied bool, tracer trace.Tracer) (*pktline.Reader, error) {
+// handleCommandResponse maps the server's status code to either the
+// raw response body (the success case) or the matching package
+// sentinel / [*ProtocolError]. The caller wraps the body in the
+// per-Conn tracking before handing a reader to its own caller. It
+// mirrors the probe path's status table at the [Conn.Command] doc
+// comment, with the single auth-retry semantics inverted: command
+// POSTs do not retry, because the probe has already paid the
+// anonymous-then-creds round trip and the server's challenge state
+// is not expected to change between the probe and the first command.
+func handleCommandResponse(resp *http.Response, redacted string, credsApplied bool) (io.ReadCloser, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return pktline.NewReader(resp.Body, inboundReaderOpts(tracer, finalRespURL(resp))...), nil
+		return resp.Body, nil
 	case http.StatusUnauthorized:
 		server := readServerExcerpt(resp.Body)
 		_ = resp.Body.Close()

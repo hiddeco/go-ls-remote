@@ -930,8 +930,12 @@ func TestConn_Close_ReleasesAllInflightBodies(t *testing.T) {
 		reader: pktline.NewReader(probe),
 		url:    mustParseURL(t, "https://example.com/repo.git/info/refs"),
 	}
-	c.trackCommandBody(cmd1)
-	c.trackCommandBody(cmd2)
+	// Wrap each inner body in a [trackedBody] as [Conn.Command] would,
+	// so [Conn.Close] exercises the wrapper's drain-and-close path.
+	w1 := &trackedBody{inner: cmd1}
+	w2 := &trackedBody{inner: cmd2}
+	c.trackCommandBody(w1)
+	c.trackCommandBody(w2)
 
 	require.NoError(t, c.Close(), "Close must not error")
 	assert.Equal(t, 1, probe.closes, "probe body must be closed exactly once")
