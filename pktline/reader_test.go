@@ -10,6 +10,7 @@ import (
 )
 
 func TestReader_ReadPacket(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -70,6 +71,7 @@ func TestReader_ReadPacket(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			r := NewReader(strings.NewReader(tt.input))
 			pkt, err := r.ReadPacket()
 			if tt.wantErr != nil {
@@ -89,7 +91,9 @@ func TestReader_ReadPacket(t *testing.T) {
 // previous packet's Data slice (buffer aliasing); this test only
 // inspects each packet before the next read.
 func TestReader_ReadPacket_consecutive(t *testing.T) {
+	t.Parallel()
 	t.Run("data then data", func(t *testing.T) {
+		t.Parallel()
 		r := NewReader(strings.NewReader("0007hi\n0008foo\n"))
 
 		p1, err := r.ReadPacket()
@@ -104,6 +108,7 @@ func TestReader_ReadPacket_consecutive(t *testing.T) {
 	})
 
 	t.Run("delim then data", func(t *testing.T) {
+		t.Parallel()
 		r := NewReader(strings.NewReader("00010007hi\n"))
 
 		p1, err := r.ReadPacket()
@@ -123,6 +128,7 @@ func TestReader_ReadPacket_consecutive(t *testing.T) {
 // non-nil error. 0000, 0001, and 0002 are reserved for control
 // packets; 0003 is reserved per canonical Git's `pkt-line.c`.
 func TestReader_ReadPacket_invalidLength(t *testing.T) {
+	t.Parallel()
 	r := NewReader(strings.NewReader("0003"))
 	_, err := r.ReadPacket()
 	require.ErrorIs(t, err, ErrInvalidLength)
@@ -133,6 +139,7 @@ func TestReader_ReadPacket_invalidLength(t *testing.T) {
 // prefix is rejected. The canonical implementation in `pkt-line.c`
 // also rejects non-hex on read.
 func TestReader_ReadPacket_invalidHex(t *testing.T) {
+	t.Parallel()
 	r := NewReader(strings.NewReader("zzzzhello"))
 	_, err := r.ReadPacket()
 	require.ErrorIs(t, err, ErrInvalidHex)
@@ -143,6 +150,7 @@ func TestReader_ReadPacket_invalidHex(t *testing.T) {
 // any payload byte is read. On-wire `fff1` decodes to length 65521
 // and a payload of 65517 bytes (= MaxPayload + 1).
 func TestReader_ReadPacket_payloadTooLarge(t *testing.T) {
+	t.Parallel()
 	r := NewReader(strings.NewReader("fff1"))
 	_, err := r.ReadPacket()
 	require.ErrorIs(t, err, ErrPayloadTooLarge)
@@ -152,6 +160,7 @@ func TestReader_ReadPacket_payloadTooLarge(t *testing.T) {
 // the format permits, exactly [MaxPayload] bytes. The on-wire length
 // prefix is `fff0` (= 65520 = MaxPayload + 4).
 func TestReader_ReadPacket_maxPayload(t *testing.T) {
+	t.Parallel()
 	payload := strings.Repeat("a", MaxPayload)
 	r := NewReader(strings.NewReader("fff0" + payload))
 
@@ -171,6 +180,7 @@ func TestReader_ReadPacket_maxPayload(t *testing.T) {
 // retained from the first packet, after a second read, points at the
 // same memory now holding the second packet's bytes.
 func TestReader_ReadPacket_bufferAliasingContract(t *testing.T) {
+	t.Parallel()
 	r := NewReader(strings.NewReader("0007hi\n0007by\n"))
 
 	p1, err := r.ReadPacket()

@@ -39,6 +39,7 @@ func (c *capturingTracer) OnEvent(e trace.Event) {
 }
 
 func TestReader_emitsPacketEvents(t *testing.T) {
+	t.Parallel()
 	tr := &capturingTracer{}
 	r := NewReader(
 		strings.NewReader("0007hi\n0000"),
@@ -53,6 +54,7 @@ func TestReader_emitsPacketEvents(t *testing.T) {
 	require.Len(t, tr.events, 2)
 
 	t.Run("data packet", func(t *testing.T) {
+		t.Parallel()
 		ev, ok := tr.events[0].(trace.PacketEvent)
 		require.True(t, ok, "got %T, want trace.PacketEvent", tr.events[0])
 		assert.Equal(t, trace.DirectionInbound, ev.Direction)
@@ -61,6 +63,7 @@ func TestReader_emitsPacketEvents(t *testing.T) {
 	})
 
 	t.Run("flush packet", func(t *testing.T) {
+		t.Parallel()
 		ev, ok := tr.events[1].(trace.PacketEvent)
 		require.True(t, ok, "got %T, want trace.PacketEvent", tr.events[1])
 		assert.Equal(t, trace.PacketFlush, ev.Kind)
@@ -69,6 +72,7 @@ func TestReader_emitsPacketEvents(t *testing.T) {
 }
 
 func TestReader_nilTracerNoEmit(t *testing.T) {
+	t.Parallel()
 	// Without WithReaderTracer the reader proceeds without invoking any
 	// tracer; the test simply verifies no panic.
 	r := NewReader(strings.NewReader("0007hi\n"))
@@ -77,6 +81,7 @@ func TestReader_nilTracerNoEmit(t *testing.T) {
 }
 
 func TestReader_WithReaderTracerURL(t *testing.T) {
+	t.Parallel()
 	tr := &capturingTracer{}
 	r := NewReader(
 		strings.NewReader("0007hi\n"),
@@ -92,6 +97,7 @@ func TestReader_WithReaderTracerURL(t *testing.T) {
 }
 
 func TestWriter_emitsPacketEvents(t *testing.T) {
+	t.Parallel()
 	tr := &capturingTracer{}
 	var buf bytes.Buffer
 	w := NewWriter(&buf, WithWriterTracer(tr, trace.DirectionOutbound))
@@ -102,6 +108,7 @@ func TestWriter_emitsPacketEvents(t *testing.T) {
 	require.Len(t, tr.events, 2)
 
 	t.Run("data write", func(t *testing.T) {
+		t.Parallel()
 		ev := tr.events[0].(trace.PacketEvent)
 		assert.Equal(t, trace.DirectionOutbound, ev.Direction)
 		assert.Equal(t, trace.PacketData, ev.Kind)
@@ -109,6 +116,7 @@ func TestWriter_emitsPacketEvents(t *testing.T) {
 	})
 
 	t.Run("flush write", func(t *testing.T) {
+		t.Parallel()
 		ev := tr.events[1].(trace.PacketEvent)
 		assert.Equal(t, trace.PacketFlush, ev.Kind)
 		assert.Nil(t, ev.Bytes)
@@ -116,6 +124,7 @@ func TestWriter_emitsPacketEvents(t *testing.T) {
 }
 
 func TestWriter_WritePacketOverflowDoesNotEmit(t *testing.T) {
+	t.Parallel()
 	tr := &capturingTracer{}
 	var buf bytes.Buffer
 	w := NewWriter(&buf, WithWriterTracer(tr, trace.DirectionOutbound))
@@ -126,6 +135,7 @@ func TestWriter_WritePacketOverflowDoesNotEmit(t *testing.T) {
 }
 
 func Test_kindToTracerKind(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   Kind
@@ -138,6 +148,7 @@ func Test_kindToTracerKind(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, kindToTracerKind(tt.in))
 		})
 	}
@@ -148,6 +159,7 @@ func Test_kindToTracerKind(t *testing.T) {
 // A new [Kind] added without an arm in [kindToTracerKind] will panic
 // here rather than silently emit a zero kind through the tracer.
 func Test_kindToTracerKind_exhaustive(t *testing.T) {
+	t.Parallel()
 	for _, k := range []Kind{Data, Flush, Delim, ResponseEnd} {
 		got := kindToTracerKind(k)
 		assert.NotZerof(t, uint8(got),
@@ -164,6 +176,7 @@ func Test_kindToTracerKind_exhaustive(t *testing.T) {
 // The assertion is a substring match rather than an exact string, so
 // the panic message can be reworded without breaking the test.
 func Test_kindToTracerKind_panic(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		r := recover()
 		require.NotNil(t, r, "kindToTracerKind should panic on an unknown Kind")

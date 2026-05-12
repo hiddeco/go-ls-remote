@@ -15,6 +15,7 @@ import (
 )
 
 func TestEncodeObjectInfo(t *testing.T) {
+	t.Parallel()
 	const (
 		oidA = "1111111111111111111111111111111111111111"
 		oidB = "2222222222222222222222222222222222222222"
@@ -224,6 +225,7 @@ func TestEncodeObjectInfo(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			w := pktline.NewWriter(&buf)
 
@@ -251,6 +253,7 @@ func buildObjectInfoStream(t *testing.T, payloads ...string) *bytes.Buffer {
 }
 
 func TestDecodeObjectInfo(t *testing.T) {
+	t.Parallel()
 	const (
 		oid1 = "1111111111111111111111111111111111111111"
 		oid2 = "2222222222222222222222222222222222222222"
@@ -258,6 +261,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	)
 
 	t.Run("empty (just flush)", func(t *testing.T) {
+		t.Parallel()
 		// [protocol-caps.c::send_info lines 44-45] short-circuit on an
 		// empty OID list and emit neither attrs nor per-OID lines — the
 		// response is a bare flush. The decoder must accept that as an
@@ -274,6 +278,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("attrs only, no oids", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t, "size\n")
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
@@ -282,6 +287,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("single OID with size", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t, "size\n", oid1+" 42\n")
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
@@ -290,6 +296,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("multiple OIDs preserved order", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t,
 			"size\n",
 			oid1+" 100\n",
@@ -307,6 +314,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("missing OID dropped", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t,
 			"size\n",
 			oid1+" 42\n",
@@ -323,6 +331,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("malformed size token", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t,
 			"size\n",
 			oid1+" not-a-number\n",
@@ -335,6 +344,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("ERR mid-stream after attrs", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t,
 			"size\n",
 			"ERR repository disabled\n",
@@ -348,6 +358,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("ERR before attrs", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t, "ERR something bad\n")
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
@@ -358,6 +369,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("unexpected control packet (delim) mid-stream", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WritePacket([]byte("size\n")))
@@ -371,6 +383,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("truncated (eof before flush)", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WritePacket([]byte("size\n")))
@@ -384,6 +397,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("empty OID lines dropped", func(t *testing.T) {
+		t.Parallel()
 		// Regression for a fuzz finding: a per-OID line that begins with
 		// a space (or is empty) made the decoder surface a `RawObjectInfo`
 		// with an empty `OID`. `send_info` never emits an empty OID, so
@@ -402,6 +416,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("size attribute absent (empty attrs)", func(t *testing.T) {
+		t.Parallel()
 		// Degenerate but legal: server sends an empty attrs line, so
 		// per-OID lines carry no size token. Decoder returns OIDs with
 		// `Size=0`.
@@ -420,6 +435,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("attrs line elided, single OID (canonical no-size)", func(t *testing.T) {
+		t.Parallel()
 		// [protocol-caps.c::send_info lines 47-48] gate the `size\n` attrs
 		// PKT-LINE on `info->size`; when the client did not request the
 		// `size` argument, canonical Git emits no attrs line at all and
@@ -438,6 +454,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("attrs line elided, multiple OIDs (canonical no-size)", func(t *testing.T) {
+		t.Parallel()
 		buf := buildObjectInfoStream(t,
 			oid1+"\n",
 			oid2+"\n",
@@ -556,6 +573,7 @@ func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) 
 // [protocol-caps.c::cap_object_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L79
 // [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func TestObjectInfo_roundTrip(t *testing.T) {
+	t.Parallel()
 	const (
 		oidA = "1111111111111111111111111111111111111111"
 		oidB = "2222222222222222222222222222222222222222"
@@ -604,7 +622,9 @@ func TestObjectInfo_roundTrip(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			t.Run("request", func(t *testing.T) {
+				t.Parallel()
 				var buf bytes.Buffer
 				w := pktline.NewWriter(&buf)
 				require.NoError(t,
@@ -616,6 +636,7 @@ func TestObjectInfo_roundTrip(t *testing.T) {
 			})
 
 			t.Run("response idempotent", func(t *testing.T) {
+				t.Parallel()
 				first := emitObjectInfoResponse(t, tc.wantInfos, tc.args.Size)
 				gotFirst, err := DecodeObjectInfo(pktline.NewReader(first))
 				require.NoError(t, err)

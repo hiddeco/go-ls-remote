@@ -12,6 +12,7 @@ import (
 )
 
 func TestHTTPProtocolHeader(t *testing.T) {
+	t.Parallel()
 	v0 := transport.ProtocolV0
 	v1 := transport.ProtocolV1
 	v2 := transport.ProtocolV2
@@ -28,12 +29,14 @@ func TestHTTPProtocolHeader(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, HTTPProtocolHeader(tc.v))
 		})
 	}
 }
 
 func TestWriteStreamRequest(t *testing.T) {
+	t.Parallel()
 	v0 := transport.ProtocolV0
 	v1 := transport.ProtocolV1
 	v2 := transport.ProtocolV2
@@ -90,6 +93,7 @@ func TestWriteStreamRequest(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			w := pktline.NewWriter(&buf)
 			require.NoError(t, WriteStreamRequest(w, tc.url, tc.v))
