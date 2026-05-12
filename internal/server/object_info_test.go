@@ -185,9 +185,10 @@ func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 // TestObjectInfo_MissingOID pins the canonical empty-size form for an
 // OID the server cannot resolve in its odb: per `protocol-caps.c:66-67`,
 // `odb_read_object_info` failure yields `<oid> ` (with a trailing space
-// and no size value). The handler must NOT omit the row, despite the
-// plan's text suggesting omission — byte equivalence with canonical Git
-// requires the empty-size form.
+// and no size value). The handler must NOT omit the row — byte
+// equivalence with canonical Git's `send_info` requires the empty-size
+// form, even though a naive reading of the v2 grammar might suggest
+// omitting unresolved OIDs entirely.
 //
 // The wire decoder side ([wire.DecodeObjectInfo]) drops these rows so
 // callers see "missing" semantics, but the on-the-wire bytes match
