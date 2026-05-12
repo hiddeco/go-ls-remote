@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 	filet "github.com/hiddeco/go-ls-remote/transport/file"
@@ -491,6 +493,36 @@ func TestDial_bridgeOpenError_userTransport(t *testing.T) {
 		"a user-defined SchemeError must bridge through transport.ErrNotFound; got %v", err)
 	assert.True(t, errors.Is(err, userSentinel),
 		"the user-defined sentinel identity must stay reachable; got %v", err)
+}
+
+// Test_bridgeWireSentinel_joinsKnownSentinels pins that every wire
+// sentinel listed in [wireSentinelBridges] is joined onto a public
+// sentinel and that an unknown error passes through unchanged.
+func Test_bridgeWireSentinel_joinsKnownSentinels(t *testing.T) {
+	cases := []struct {
+		name   string
+		in     error
+		public error // nil ⇒ pass through unchanged
+	}{
+		{"server-refused", wire.ErrServerRefused, ErrServerRefused},
+		{"unsupported-protocol", wire.ErrUnsupportedProtocol, ErrUnsupportedProtocol},
+		{"wrapped-server-refused",
+			fmt.Errorf("decode: %w", wire.ErrServerRefused), ErrServerRefused},
+		{"unknown", errors.New("something else"), nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := bridgeWireSentinel(tc.in)
+			require.ErrorIs(t, got, tc.in, "original cause must remain reachable")
+			if tc.public != nil {
+				require.ErrorIs(t, got, tc.public,
+					"public sentinel must be joined onto the chain")
+			} else {
+				require.Same(t, tc.in, got,
+					"unknown error must be returned unchanged")
+			}
+		})
+	}
 }
 
 // stubTransport is a test fake whose `Open` always returns the

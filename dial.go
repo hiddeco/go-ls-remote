@@ -138,20 +138,10 @@ func Dial(ctx context.Context, rawURL string, opts ...Option) (*Session, error) 
 		// resource.
 		_ = conn.Close()
 
-		// Translate the wire-layer `ErrUnsupportedProtocol` into the
-		// public sentinel via `errors.Join`. The joined error
-		// satisfies `errors.Is` against both sentinels, so a caller's
-		// `errors.Is(err, lsremote.ErrUnsupportedProtocol)` succeeds
-		// even though the wire layer's sentinel has a distinct
-		// identity.
-		wrapped := err
-		if errors.Is(err, wire.ErrUnsupportedProtocol) {
-			wrapped = errors.Join(ErrUnsupportedProtocol, err)
-		}
 		return nil, &ProtocolError{
 			URL: redactedURL,
 			Op:  "advertisement",
-			Err: wrapped,
+			Err: bridgeWireSentinel(err),
 		}
 	}
 
@@ -165,38 +155,75 @@ func Dial(ctx context.Context, rawURL string, opts ...Option) (*Session, error) 
 	}, nil
 }
 
+// openSentinelBridges maps generic transport-layer sentinel
+// identities to the public sentinel that should be joined onto the
+// error chain so `errors.Is(err, lsremote.ErrX)` succeeds regardless
+// of which scheme produced the failure. Each scheme-specific
+// transport defines its own `*transport.SchemeError` bound to one
+// of these generic identities, so a single match here covers every
+// current and future transport that follows the convention.
+var openSentinelBridges = []struct{ generic, public error }{
+	{transport.ErrNotFound, ErrNotFound},
+	{transport.ErrAuthRequired, ErrAuthRequired},
+	{transport.ErrAuthFailed, ErrAuthFailed},
+	{transport.ErrUnsupportedProtocol, ErrUnsupportedProtocol},
+}
+
+// wireSentinelBridges maps wire-layer sentinel identities to the
+// public sentinel that should be joined onto the chain. The wire
+// layer keeps its own sentinels for in-package matching; the public
+// surface joins them at the boundary so callers never have to walk
+// the wire layer.
+var wireSentinelBridges = []struct{ wire, public error }{
+	{wire.ErrUnsupportedProtocol, ErrUnsupportedProtocol},
+	{wire.ErrServerRefused, ErrServerRefused},
+}
+
 // bridgeOpenError translates an error returned by a
 // [transport.Transport.Open] into a form whose `errors.Is` chain
 // reaches the public sentinels [ErrNotFound], [ErrAuthRequired],
-// [ErrAuthFailed], and [ErrUnsupportedProtocol].
+// [ErrAuthFailed], and [ErrUnsupportedProtocol]. See
+// [openSentinelBridges] for the mapping.
 //
-// Each scheme-specific transport defines its own sentinel identities
-// as [*transport.SchemeError] values bound to one of the generic
-// `transport.Err*` identities. Matching on the generic identity here
-// means every scheme — including user-defined transports following
-// the same convention — bridges into the public `errors.Is` chain
-// without library changes. `errors.Join` is the idiomatic way to
-// satisfy `errors.Is` against multiple identities without rebuilding
-// every other field the transport's own error type carries — its
-// message, its status code, its server-body excerpt all remain
-// reachable via `errors.As` on the joined chain.
+// Each scheme-specific transport defines its own
+// `*transport.SchemeError` bound to one of the generic
+// `transport.Err*` identities listed in the table, so a single
+// match here covers every current and future transport that
+// follows the convention.
+//
+// `errors.Join` is the idiomatic way to satisfy `errors.Is` against
+// multiple identities without rebuilding every other field the
+// transport's own error type carries — its message, its status
+// code, its server-body excerpt all remain reachable via
+// `errors.As` on the joined chain.
+//
+// When err matches none of the known sentinels the original error
+// is returned unchanged.
+func bridgeOpenError(err error) error {
+	for _, b := range openSentinelBridges {
+		if errors.Is(err, b.generic) {
+			return errors.Join(b.public, err)
+		}
+	}
+	return err
+}
+
+// bridgeWireSentinel translates a wire-layer error into a form whose
+// `errors.Is` chain reaches a public sentinel — see
+// [wireSentinelBridges] for the mapping. Used at advertisement-parse
+// time in [Dial] and during v2 command exchanges in
+// [Session.protocolError]; the centralised table means a future wire
+// sentinel is bridged uniformly at every site.
 //
 // When err matches none of the known sentinels the original error is
-// returned unchanged, so the wrap is a no-op for transport-level
-// errors the public surface area does not yet name.
-func bridgeOpenError(err error) error {
-	switch {
-	case errors.Is(err, transport.ErrNotFound):
-		return errors.Join(ErrNotFound, err)
-	case errors.Is(err, transport.ErrAuthRequired):
-		return errors.Join(ErrAuthRequired, err)
-	case errors.Is(err, transport.ErrAuthFailed):
-		return errors.Join(ErrAuthFailed, err)
-	case errors.Is(err, transport.ErrUnsupportedProtocol):
-		return errors.Join(ErrUnsupportedProtocol, err)
-	default:
-		return err
+// returned unchanged.
+func bridgeWireSentinel(err error) error {
+	for _, b := range wireSentinelBridges {
+		if errors.Is(err, b.wire) {
+			return errors.Join(b.public, err)
+		}
 	}
+	return err
 }
 
 // populateFromTransportError lifts a transport-level
