@@ -914,40 +914,45 @@ func (s *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	return resp, nil
 }
 
-// TestConn_Close_ReleasesUndrainedCommandBody pins the leak fix on
+// TestConn_Close_ReleasesAllInflightBodies pins the leak fix on
 // [Conn.Close]: a caller that abandons the [pktline.Reader] returned
 // by [Conn.Command] without draining must still see the underlying
-// body closed when the parent [Conn] is closed. The
-// [pktline.Reader] does not own a Close method, so this responsibility
-// falls on [Conn].
-func TestConn_Close_ReleasesUndrainedCommandBody(t *testing.T) {
+// body closed when the parent [Conn] is closed. The [pktline.Reader]
+// does not own a Close method, so this responsibility falls on
+// [Conn] across every command issued for the [Conn]'s lifetime.
+func TestConn_Close_ReleasesAllInflightBodies(t *testing.T) {
 	probe := &closeCounter{Reader: bytes.NewReader(nil)}
-	cmd := &closeCounter{Reader: strings.NewReader("undrained command body")}
+	cmd1 := &closeCounter{Reader: strings.NewReader("abandoned body 1")}
+	cmd2 := &closeCounter{Reader: strings.NewReader("abandoned body 2")}
+
 	c := &Conn{
-		body:    probe,
-		reader:  pktline.NewReader(probe),
-		url:     mustParseURL(t, "https://example.com/repo.git/info/refs"),
-		cmdBody: cmd,
+		body:   probe,
+		reader: pktline.NewReader(probe),
+		url:    mustParseURL(t, "https://example.com/repo.git/info/refs"),
 	}
+	c.trackCommandBody(cmd1)
+	c.trackCommandBody(cmd2)
 
 	require.NoError(t, c.Close(), "Close must not error")
 	assert.Equal(t, 1, probe.closes, "probe body must be closed exactly once")
-	assert.Equal(t, 1, cmd.closes, "tracked command body must be closed exactly once")
+	assert.Equal(t, 1, cmd1.closes, "first abandoned body must be closed exactly once")
+	assert.Equal(t, 1, cmd2.closes, "second abandoned body must be closed exactly once")
 
-	// Idempotency: a second close must not double-close either body.
+	// Idempotency: a second close must not double-close any body.
 	require.NoError(t, c.Close())
 	assert.Equal(t, 1, probe.closes)
-	assert.Equal(t, 1, cmd.closes)
+	assert.Equal(t, 1, cmd1.closes)
+	assert.Equal(t, 1, cmd2.closes)
 }
 
-// TestConn_Command_ClosesPreviousBody pins the bound on the
-// command-body bookkeeping: each successful command POST releases the
-// body of the previous successful POST so the [Conn] does not
-// accumulate already-superseded bodies for its lifetime. The
-// single-flight contract on [Conn] means at most one body is ever
-// outstanding, so close-and-replace is the natural shape and bounds
-// memory regardless of how many commands the caller issues.
-func TestConn_Command_ClosesPreviousBody(t *testing.T) {
+// TestConn_Command_AccumulatesBodiesUntilClose pins the multi-flight
+// contract: successive [Conn.Command] calls do NOT release the prior
+// command's body. Each body remains live for the caller to drain
+// independently; [Conn.Close] releases whatever bodies the caller
+// abandoned. The single-flight close-and-replace shape would
+// invalidate a still-reading [pktline.Reader] from an earlier command,
+// which is exactly what the multi-flight contract forbids.
+func TestConn_Command_AccumulatesBodiesUntilClose(t *testing.T) {
 	bodies := [3]*closeCounter{
 		{Reader: bytes.NewReader([]byte("first response"))},
 		{Reader: bytes.NewReader([]byte("second response"))},
@@ -972,27 +977,19 @@ func TestConn_Command_ClosesPreviousBody(t *testing.T) {
 		gitProtocolHeader: "version=2",
 	}
 
-	_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
-	require.NoError(t, err)
-	assert.Equal(t, 0, bodies[0].closes,
-		"first body remains in-flight until superseded")
+	for range 3 {
+		_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+		require.NoError(t, err)
+	}
 
-	_, err = c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
-	require.NoError(t, err)
-	assert.Equal(t, 1, bodies[0].closes,
-		"first body closed when second Command takes over")
-	assert.Equal(t, 0, bodies[1].closes,
-		"second body in-flight after second Command")
-
-	_, err = c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
-	require.NoError(t, err)
-	assert.Equal(t, 1, bodies[0].closes)
-	assert.Equal(t, 1, bodies[1].closes,
-		"second body closed when third Command takes over")
-	assert.Equal(t, 0, bodies[2].closes,
-		"third body in-flight after third Command")
+	for i, b := range bodies {
+		assert.Equal(t, 0, b.closes,
+			"body %d must stay live across subsequent Commands", i)
+	}
 
 	require.NoError(t, c.Close())
-	assert.Equal(t, 1, bodies[2].closes,
-		"third body closed when Conn.Close runs")
+	for i, b := range bodies {
+		assert.Equal(t, 1, b.closes,
+			"body %d must be closed by Conn.Close", i)
+	}
 }

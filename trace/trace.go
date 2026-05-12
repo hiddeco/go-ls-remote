@@ -38,10 +38,12 @@ const (
 // Implementations must not block; both methods are called synchronously
 // on the I/O hot path, and slow tracers measurably degrade throughput.
 //
-// Implementations must also be safe for concurrent use if the library is
-// used concurrently against the same Tracer (HTTP-backed sessions
-// multiplex commands; see the public Session contract). Wrapping
-// non-concurrent sinks in a mutex is the usual pattern.
+// A Tracer may receive events from multiple sources in parallel —
+// either commands multiplexed on a single HTTP-backed Session, or
+// multiple Sessions sharing the Tracer across goroutines.
+// Implementations must therefore be safe for concurrent OnEvent and
+// OnPacketEvent calls. Wrapping non-concurrent sinks in a mutex is
+// the usual pattern.
 //
 // # Nil tracer
 //

@@ -96,14 +96,13 @@ func BenchmarkEncodeCommandBody(b *testing.B) {
 // performs on every call regardless of where the bytes go: payload
 // validation, the [commandPostURL] derivation, body encoding, the
 // `*http.Request` plumbing, the pre-dispatch credential resolver
-// step, the response-handling switch, and the close-and-replace
-// bookkeeping on `cmdBody`.
+// step, the response-handling switch, and the in-flight bookkeeping
+// the [Conn] performs to track abandoned bodies for [Conn.Close].
 //
 // The stub round-tripper returns a fresh `200 OK` with [http.NoBody]
-// for every iteration; that body's `Read` returns `(0, io.EOF)`
-// immediately, so [drainAndClose] on the prior iteration's body is
-// effectively free and the benchmark isolates the [Conn.Command]
-// body path rather than the body teardown shape.
+// for every iteration. Each body lands in the [Conn]'s in-flight
+// tracking set; the benchmark isolates the [Conn.Command] body path
+// and the per-call set update, not the body teardown shape.
 //
 // Tracer is nil throughout — the encode-path tracer overhead is
 // covered separately by `BenchmarkEncodeCommandBody`.

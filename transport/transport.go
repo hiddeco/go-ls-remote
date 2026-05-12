@@ -72,7 +72,7 @@ type OpenOptions struct {
 	PreferredProtocol *ProtocolVersion
 }
 
-// Conn is a single-flight connection to a Git server.
+// Conn is a connection to a Git server.
 //
 // User implementations are supported as part of the [Transport]
 // extension contract; the rules below are the load-bearing seams
@@ -81,16 +81,15 @@ type OpenOptions struct {
 //
 // # Concurrency
 //
-// Conn is NOT safe for concurrent use. While a `*pktline.Reader`
-// returned from [Conn.Advertisement] or [Conn.Command] is open,
-// calling [Conn.Command] again on the same Conn has undefined
-// behaviour. Drain or close the previous reader first.
-//
-// The public Session contract (lsremote.Session) may permit
-// concurrent calls when the underlying transport multiplexes
-// (HTTP can; SSH, git, and file cannot). That contract is
-// documented at the Session layer; at this layer Conn is always
-// single-flight.
+// The Conn interface places no cross-transport concurrency
+// requirement on implementations: concrete transports document their
+// own contract. The HTTP transport supports concurrent [Conn.Command]
+// calls because each command is an independent POST. The SSH, git,
+// and file transports share a single bidirectional byte stream and
+// are not safe for concurrent use: one in-flight command must drain
+// before the next begins. The public Session contract
+// (lsremote.Session) reflects whichever the underlying transport
+// delivers.
 type Conn interface {
 	// Advertisement returns a reader over the initial advertisement
 	// pkt-lines. It is available on every negotiated protocol

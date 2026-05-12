@@ -18,11 +18,22 @@ import (
 // advertisement; on the dumb path the [pktline.Reader] is the
 // synthetic v0-shaped stream produced by `internal/dumbhttp`.
 //
-// Conn is single-flight per the [transport.Conn] contract: while the
-// reader returned from [Conn.Advertisement] is open, callers must not
-// invoke [Conn.Command]. The HTTP transport could in principle
-// multiplex via parallel requests, but that is a Session-layer
-// concern; at this layer Conn matches the cross-transport rule.
+// Conn supports concurrent [Conn.Command] calls. Each command is an
+// independent POST against the upload-pack endpoint, so multiple
+// commands may be in flight at once and each returned [pktline.Reader]
+// is independent of every other. Callers do not need to drain one
+// reader before issuing the next command, nor to serialise calls
+// against the same [Conn] across goroutines.
+//
+// Well-behaved callers drain each returned reader to release its
+// underlying HTTP body back to the [http.Client] connection pool.
+// A caller that abandons a reader without draining leaks the body
+// into the [Conn]'s in-flight set; [Conn.Close] drains and releases
+// every still-tracked body so a long-lived [Conn] remains bounded.
+//
+// The advertisement reader returned from [Conn.Advertisement] runs
+// over a separate response body owned by the [Conn] itself; reading
+// it does not interact with the command-body tracking set.
 type Conn struct {
 	// body is the response body the probe handed off. Closing the
 	// connection drains and closes it; see [Conn.Close].
@@ -94,14 +105,21 @@ type Conn struct {
 	// to POST to.
 	dumb bool
 
-	// cmdBody tracks the [http.Response.Body] of the most recent
-	// successful command POST so [Conn.Close] can release it if the
-	// caller abandoned its [pktline.Reader] without draining. The field
-	// is overwritten on each successful POST after draining and closing
-	// the previous value, so a long-lived [Conn] does not accumulate
-	// superseded bodies; the single-flight contract guarantees at most
-	// one body is outstanding at a time.
-	cmdBody io.ReadCloser
+	// inflightMu guards inflight. It is held only across set updates;
+	// HTTP I/O runs without holding the mutex so concurrent commands
+	// do not serialise on each other.
+	inflightMu sync.Mutex
+
+	// inflight is the set of command-response bodies the [Conn] still
+	// tracks. Each successful command POST registers its response
+	// body here; [Conn.Close] drains and closes every entry. Bodies
+	// remain in the set for the lifetime of the [Conn]: the
+	// [pktline.Reader] handed to the caller does not expose a Close
+	// method, so the [Conn] cannot observe a natural drain to
+	// deregister an entry. Memory cost is one map entry per command
+	// issued on the [Conn]; well-behaved callers cap their issue rate
+	// against [Conn.Close] cadence to keep this bounded.
+	inflight map[io.ReadCloser]struct{}
 }
 
 // Advertisement returns the cached pkt-line reader. On the smart
@@ -113,10 +131,9 @@ func (c *Conn) Advertisement() *pktline.Reader {
 	return c.reader
 }
 
-// Close drains and closes the probe response body and any in-flight
-// command response body that has not been drained, exactly once.
-// Subsequent calls are no-ops and return nil, matching the
-// [transport.Conn] contract.
+// Close drains and closes the probe response body and every still-
+// tracked command response body, exactly once. Subsequent calls are
+// no-ops and return nil, matching the [transport.Conn] contract.
 //
 // The probe body's close error is the one returned; errors from the
 // command-body cleanup are intentionally swallowed so a misbehaving
@@ -134,13 +151,30 @@ func (c *Conn) Close() error {
 			_, _ = io.Copy(io.Discard, io.LimitReader(c.body, drainCap))
 			c.closeErr = c.body.Close()
 		}
-		if c.cmdBody != nil {
-			drainAndClose(c.cmdBody)
-			c.cmdBody = nil
+		c.inflightMu.Lock()
+		bodies := c.inflight
+		c.inflight = nil
+		c.inflightMu.Unlock()
+		for body := range bodies {
+			drainAndClose(body)
 		}
 	})
 	if !first {
 		return nil
 	}
 	return c.closeErr
+}
+
+// trackCommandBody registers body in the in-flight set so
+// [Conn.Close] can release it if the caller abandons its reader
+// without draining. The body is registered before [Conn.Command]
+// returns to the caller so a Close that races with the caller's
+// receive of the reader still cleans up.
+func (c *Conn) trackCommandBody(body io.ReadCloser) {
+	c.inflightMu.Lock()
+	if c.inflight == nil {
+		c.inflight = make(map[io.ReadCloser]struct{})
+	}
+	c.inflight[body] = struct{}{}
+	c.inflightMu.Unlock()
 }

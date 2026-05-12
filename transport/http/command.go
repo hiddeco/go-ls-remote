@@ -29,12 +29,17 @@ const commandAcceptType = "application/x-git-upload-pack-result"
 
 // Command issues a v2 command POST against the connection's
 // upload-pack endpoint and returns a [pktline.Reader] over the
-// response body. The returned reader streams the response pkt-lines
-// verbatim. Callers should drain the reader to release the underlying
+// response body. Each call is an independent HTTP POST: multiple
+// commands may be in flight on the same [Conn] at once, and the
+// returned readers are independent of every other reader the [Conn]
+// has handed out. Callers do not need to drain one reader before
+// issuing the next.
+//
+// Callers should drain each returned reader to release the underlying
 // connection back to the [http.Client]'s pool; the [pktline.Reader]
-// does not expose a Close method. [Conn.Close] releases any in-flight
-// command body that has not been drained, so a caller that abandons
-// the reader and closes the parent [Conn] will not leak.
+// does not expose a Close method. [Conn.Close] releases every command
+// body still tracked at close time, so a caller that abandons a
+// reader and closes the parent [Conn] will not leak.
 //
 // The on-wire request body is the canonical v2 command-request frame
 // (`gitprotocol-v2.adoc` §"Command Request"):
@@ -106,16 +111,11 @@ func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody
 	if err != nil {
 		return nil, err
 	}
-	// Close-and-replace: a successful POST supersedes the previous one,
-	// so its body is released here rather than accumulated. Single-flight
-	// per the [transport.Conn] contract guarantees nothing else is
-	// reading the previous body. The new body is captured BEFORE
-	// returning so a caller that drops `rdr` on the floor still has it
-	// covered by the next [Conn.Close].
-	if prev := c.cmdBody; prev != nil {
-		drainAndClose(prev)
-	}
-	c.cmdBody = resp.Body
+	// Register the response body in the in-flight set BEFORE handing
+	// the reader to the caller. A caller that drops `rdr` on the floor
+	// — or a [Conn.Close] that races with the receive on the return
+	// path — still finds the body in the set and drains it.
+	c.trackCommandBody(resp.Body)
 	return rdr, nil
 }
 
