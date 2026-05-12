@@ -562,6 +562,103 @@ func (f *fakeCommandConn) Command(_ context.Context, name string,
 
 func (f *fakeCommandConn) Close() error { return nil }
 
+// sharedStreamConn is a [transport.Conn] that mimics the canonical
+// `file://`, `git://`, and `ssh://` transports: every command's
+// response streams back on the same underlying byte source, so
+// leftover bytes from one command's response are picked up by the
+// next command's reader. The HTTP transport differs (each command
+// is an independent POST), so the bug this fixture exercises does
+// not surface there.
+type sharedStreamConn struct {
+	reader *pktline.Reader
+}
+
+func (c *sharedStreamConn) Advertisement() *pktline.Reader { return c.reader }
+
+func (c *sharedStreamConn) Command(_ context.Context, _ string,
+	body transport.CommandBody) (*pktline.Reader, error) {
+	if err := body(pktline.NewWriter(io.Discard)); err != nil {
+		return nil, err
+	}
+	return c.reader, nil
+}
+
+func (c *sharedStreamConn) Close() error { return nil }
+
+// TestSession_Refs_v2_DrainsOnEarlyBreak pins that abandoning the
+// iterator returned by [Session.Refs] before the underlying response
+// reaches its trailing flush leaves the [transport.Conn] in the
+// drained state subsequent commands require. The non-HTTP transports
+// share a single bidirectional byte stream where each command's
+// response must drain to flush before the next command is issued —
+// see the contract pinned at [connect.c::get_remote_refs lines 564-597],
+// which assumes the v2 `ls-refs` response is fully consumed before
+// any further request flows on the same connection. A regression that
+// stops draining the response on an early break would silently
+// corrupt every subsequent command on a `file://`, `git://`, or
+// `ssh://`-backed Session: the next command's reader would pick up
+// the previous response's tail before its own response bytes.
+//
+// [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
+func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
+	const (
+		oidHEAD = "4444444444444444444444444444444444444444"
+		oidMain = "1111111111111111111111111111111111111111"
+		oidTag  = "2222222222222222222222222222222222222222"
+		oidNext = "3333333333333333333333333333333333333333"
+	)
+
+	// Two concatenated `ls-refs` responses on a single byte source.
+	// Response 1 carries three refs; response 2 carries one. Reading
+	// past response 1's flush would land squarely on response 2's
+	// first ref.
+	var buf bytes.Buffer
+	w := pktline.NewWriter(&buf)
+	require.NoError(t, w.WritePacket([]byte(oidHEAD+" HEAD\n")))
+	require.NoError(t, w.WritePacket([]byte(oidMain+" refs/heads/main\n")))
+	require.NoError(t, w.WritePacket([]byte(oidTag+" refs/tags/v1\n")))
+	require.NoError(t, w.WriteFlush())
+	require.NoError(t, w.WritePacket([]byte(oidNext+" refs/heads/next\n")))
+	require.NoError(t, w.WriteFlush())
+
+	conn := &sharedStreamConn{reader: pktline.NewReader(&buf)}
+	s := &Session{
+		conn: conn,
+		caps: Capabilities{
+			Version:  ProtocolV2,
+			Commands: []string{"ls-refs"},
+			Raw:      map[string][]string{"ls-refs": {""}},
+		},
+	}
+
+	// First call: break after the first ref. The iterator must drain
+	// response 1's remaining refs and flush before its goroutine
+	// returns.
+	seq, err := s.Refs(context.Background(), RefsRequest{})
+	require.NoError(t, err)
+	var seen []Ref
+	for ref, err := range seq {
+		require.NoError(t, err)
+		seen = append(seen, ref)
+		break
+	}
+	require.Len(t, seen, 1)
+	assert.Equal(t, "HEAD", seen[0].Name)
+
+	// Second call on the same Session: the shared reader must be
+	// positioned at the start of response 2. Without the drain, the
+	// reader would still hold `refs/heads/main`, `refs/tags/v1`, and
+	// the trailing flush from response 1, and the second call would
+	// observe two refs whose names match response 1's tail rather
+	// than the single ref response 2 carries.
+	refs, err := s.ListRefs(context.Background(), RefsRequest{})
+	require.NoError(t, err)
+	require.Len(t, refs, 1,
+		"second command must see a clean wire state; got %d refs", len(refs))
+	assert.Equal(t, "refs/heads/next", refs[0].Name)
+	assert.Equal(t, oidNext, refs[0].Hash)
+}
+
 // TestSession_Close_idempotent pins the idempotent-Close contract: two
 // successive calls must both return nil.
 func TestSession_Close_idempotent(t *testing.T) {

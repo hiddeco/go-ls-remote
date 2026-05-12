@@ -228,16 +228,73 @@ func (s *Session) refsV2(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, 
 
 	seq := wire.DecodeLSRefs(rdr)
 	return func(yield func(Ref, error) bool) {
+		// drained tracks whether the inner range exited at the
+		// trailing flush packet. When the caller breaks the public
+		// iterator before that point, [drainLSRefsResponse] runs on
+		// the deferred path to advance rdr past the flush — the
+		// `file://`, `git://`, and `ssh://` transports require each
+		// command's response to drain before the next request flows
+		// on the same byte stream ([connect.c::get_remote_refs lines 564-597]).
+		//
+		// [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
+		drained := false
+		defer func() {
+			if !drained {
+				drainLSRefsResponse(rdr)
+			}
+		}()
 		for rr, err := range seq {
 			if err != nil {
+				// Mid-stream error: the rdr position is ill-defined
+				// (a parse error mid-line may have left it misaligned),
+				// and a server still writing the response would block a
+				// drain. Skip the drain — the session is effectively
+				// dead and callers should [Session.Close] it.
+				drained = true
 				yield(Ref{}, s.protocolError("ls-refs", err))
 				return
 			}
 			if !yield(convertRef(rr), nil) {
+				// Caller broke early. The deferred drain will advance
+				// rdr to the trailing flush before this goroutine
+				// returns.
 				return
 			}
 		}
+		// Natural exhaustion: [wire.DecodeLSRefs] consumed the
+		// trailing flush before returning.
+		drained = true
 	}, nil
+}
+
+// drainLSRefsResponse advances rdr past the trailing flush packet
+// that ends a v2 `ls-refs` response. Used when the iterator returned
+// by [Session.Refs] is abandoned before the flush so the underlying
+// [transport.Conn] is left in the drained state subsequent commands
+// require — load-bearing on the `file://`, `git://`, and `ssh://`
+// transports where one bidirectional byte stream carries every
+// command, and useful on HTTP where it lets the response body return
+// to the connection pool.
+//
+// The drain is best-effort: any read error stops the loop and is
+// swallowed, because the iterator is being abandoned anyway and a
+// follow-up command will surface the broken stream on its own. The
+// response shape is `*ref flush-pkt` per
+// [gitprotocol-v2.adoc §"ls-refs" output (lines 231-239)], so any
+// non-flush packet is silently skipped and the loop terminates on
+// the first flush.
+//
+// [gitprotocol-v2.adoc §"ls-refs" output (lines 231-239)]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc?plain=1#L231-L239
+func drainLSRefsResponse(rdr *pktline.Reader) {
+	for {
+		pkt, err := rdr.ReadPacket()
+		if err != nil {
+			return
+		}
+		if pkt.Kind == pktline.Flush {
+			return
+		}
+	}
 }
 
 // ListRefs collects the refs yielded by [Session.Refs] into a slice.
