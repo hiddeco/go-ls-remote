@@ -201,7 +201,7 @@ func (s *SSHServer) acceptLoop(t testing.TB) {
 // presented key — see the publickey-callback policy on [NewSSHServer].
 func (s *SSHServer) handle(t testing.TB, conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	cfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(_ ssh.ConnMetadata, _ ssh.PublicKey) (*ssh.Permissions, error) {
@@ -221,7 +221,7 @@ func (s *SSHServer) handle(t testing.TB, conn net.Conn) {
 		// failure on teardown.
 		return
 	}
-	defer sshConn.Close()
+	defer func() { _ = sshConn.Close() }()
 
 	// Drain global out-of-band requests in a goroutine; x/crypto/ssh
 	// deadlocks if no one reads from the channel.

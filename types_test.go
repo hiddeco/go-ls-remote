@@ -158,9 +158,11 @@ func TestProtocolVersionAlias(t *testing.T) {
 	t.Run("alias values are assignable without conversion", func(t *testing.T) {
 		// The assignments compile only if ProtocolVersion is a type
 		// alias (not a distinct named type): no explicit conversion
-		// is performed in either direction.
-		var fromTransport transport.ProtocolVersion = ProtocolV2
-		var fromLsremote ProtocolVersion = transport.ProtocolV2
+		// is performed in either direction. The explicit type
+		// declarations are the assertion — staticcheck's ST1023
+		// "inferred type" suggestion would defeat the point.
+		var fromTransport transport.ProtocolVersion = ProtocolV2 //nolint:staticcheck // ST1023: explicit type is the test
+		var fromLsremote ProtocolVersion = transport.ProtocolV2  //nolint:staticcheck // ST1023: explicit type is the test
 		assert.Equal(t, fromTransport, fromLsremote)
 	})
 

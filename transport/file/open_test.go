@@ -24,7 +24,7 @@ func TestTransport_Open_AdvertisementIsV2(t *testing.T) {
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{UserAgent: "test/0.0"})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	rdr := conn.Advertisement()
 	pkt, err := rdr.ReadPacket()
@@ -84,7 +84,7 @@ func TestTransport_Open_PathPercentDecodeSucceeds(t *testing.T) {
 	tr := New()
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 }
 
 func TestTransport_Open_PinV1Rejected(t *testing.T) {

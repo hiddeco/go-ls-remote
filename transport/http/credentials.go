@@ -211,7 +211,7 @@ func (n *netrcResolver) maybeWarnLoosePermissions(info os.FileInfo) {
 	if w == nil {
 		w = os.Stderr
 	}
-	fmt.Fprintf(w, "httpt: warning: netrc file %q is readable or writable by group or world (mode %#o)\n", n.path, mode)
+	_, _ = fmt.Fprintf(w, "httpt: warning: netrc file %q is readable or writable by group or world (mode %#o)\n", n.path, mode)
 }
 
 // netrcEntry holds the credential extracted from a matched block.

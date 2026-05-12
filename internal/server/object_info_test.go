@@ -442,7 +442,7 @@ func flipPackByte(t *testing.T, packPath string, off int64) {
 	t.Helper()
 	f, err := os.OpenFile(packPath, os.O_RDWR, 0o644)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var buf [1]byte
 	_, err = f.ReadAt(buf[:], off)
 	require.NoError(t, err)

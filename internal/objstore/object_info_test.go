@@ -496,7 +496,7 @@ func corruptByte(t *testing.T, path string, off int64) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var b [1]byte
 	_, err = f.ReadAt(b[:], off)
 	require.NoError(t, err)

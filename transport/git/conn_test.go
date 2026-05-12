@@ -38,7 +38,7 @@ func startEchoListener(t *testing.T, handle func(net.Conn)) (host, port string) 
 func TestConn_Close_Idempotent(t *testing.T) {
 	host, port := startEchoListener(t, func(c net.Conn) {
 		// Accept and discard; the client side is what we are testing.
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		buf := make([]byte, 512)
 		for {
 			if _, err := c.Read(buf); err != nil {
@@ -70,7 +70,7 @@ func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 	const wantPayload = "version 2\n"
 
 	host, port := startEchoListener(t, func(c net.Conn) {
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 
 		// Drain the initial request pkt-line the client sends on connect.
 		r := pktline.NewReader(c)
@@ -92,7 +92,7 @@ func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 	}
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	pkt, err := conn.Advertisement().ReadPacket()
 	require.NoError(t, err)

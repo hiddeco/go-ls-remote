@@ -106,7 +106,7 @@ func readGitConfig(commonDir string) (storeConfig, error) {
 		}
 		return storeConfig{}, fmt.Errorf("objstore: read %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	raw, err := parseExtensions(f)
 	if err != nil {

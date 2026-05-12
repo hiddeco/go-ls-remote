@@ -27,7 +27,7 @@ func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 	payloadCh := make(chan []byte, 1)
 
 	host, port := startEchoListener(t, func(c net.Conn) {
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 		r := pktline.NewReader(c)
 		pkt, err := r.ReadPacket()
 		if err == nil {
@@ -57,7 +57,7 @@ func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 	}
 	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	want := fmt.Sprintf("git-upload-pack /repo\x00host=%s:%s\x00\x00version=2\x00", host, port)
 	gotPayload := <-payloadCh
@@ -132,14 +132,14 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
 			return
 		}
 		dialCalled.Store(true)
-		c.Close()
+		_ = c.Close()
 	}()
 	h, p, err := net.SplitHostPort(ln.Addr().String())
 	require.NoError(t, err)

@@ -16,12 +16,12 @@ func copyFixture(t *testing.T, name string) string {
 	t.Helper()
 	src, err := os.Open(packFixture(t, name))
 	require.NoError(t, err)
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	dst := filepath.Join(t.TempDir(), name)
 	w, err := os.Create(dst)
 	require.NoError(t, err)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	_, err = io.Copy(w, src)
 	require.NoError(t, err)

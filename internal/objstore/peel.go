@@ -199,7 +199,7 @@ func (s *Store[H]) readLooseTag(oid H) (objfmt.ObjectType, []byte, bool, error) 
 	if !ok {
 		return 0, nil, false, nil
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	if typ != objfmt.TypeTag {
 		// Drain not strictly required — Close releases the zlib
 		// decoder regardless — but keeping the read shape uniform

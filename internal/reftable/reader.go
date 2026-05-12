@@ -121,29 +121,29 @@ func OpenReader[H objfmt.Hash](path string) (*Reader[H], error) {
 
 	size := rdr.Len()
 	if size < headerSizeV1 {
-		rdr.Close()
+		_ = rdr.Close()
 		return nil, fmt.Errorf("reftable: have %d bytes, need %d for header: %w", size, headerSizeV1, ErrShortFile)
 	}
 
 	file := make([]byte, size)
 	if _, err := rdr.ReadAt(file, 0); err != nil {
-		rdr.Close()
+		_ = rdr.Close()
 		return nil, fmt.Errorf("reftable: read %s: %w", path, err)
 	}
 
 	h, err := parseHeader(file)
 	if err != nil {
-		rdr.Close()
+		_ = rdr.Close()
 		return nil, err
 	}
 	var zero H
 	if h.algo.Size() != len(zero) {
-		rdr.Close()
+		_ = rdr.Close()
 		return nil, fmt.Errorf("reftable: file %s declares %s, reader instantiated for %d-byte hash: %w",
 			path, h.algo, len(zero), ErrMixedHashAlgo)
 	}
 	if err := verifyTrailer(file, h); err != nil {
-		rdr.Close()
+		_ = rdr.Close()
 		return nil, err
 	}
 

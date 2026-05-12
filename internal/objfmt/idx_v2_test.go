@@ -31,7 +31,7 @@ func readOffsets(t *testing.T, path string) []offsetEntry {
 	t.Helper()
 	f, err := os.Open(path)
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var out []offsetEntry
 	sc := bufio.NewScanner(f)

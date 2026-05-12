@@ -41,7 +41,7 @@ func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, p
 		if err != nil {
 			return
 		}
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 
 		r := pktline.NewReader(c)
 		w := pktline.NewWriter(c)

@@ -30,7 +30,7 @@ type writerTracer struct {
 // directly by `pktline.Reader` / `pktline.Writer` without going
 // through OnEvent's polymorphic switch.
 func (t *writerTracer) OnPacketEvent(e *PacketEvent) {
-	fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
+	_, _ = fmt.Fprintf(t.w, "%s %s packet %s %d bytes\n",
 		e.Time.Format(time.RFC3339Nano),
 		directionGlyph(e.Direction),
 		kindLabel(e.Kind),
@@ -44,11 +44,11 @@ func (t *writerTracer) OnPacketEvent(e *PacketEvent) {
 func (t *writerTracer) OnEvent(e Event) {
 	switch ev := e.(type) {
 	case HTTPEvent:
-		fmt.Fprintf(t.w, "%s http %s %s -> %d (%s)\n",
+		_, _ = fmt.Fprintf(t.w, "%s http %s %s -> %d (%s)\n",
 			ev.Time.Format(time.RFC3339Nano),
 			ev.Method, ev.URL, ev.Status, ev.Duration)
 	case NegotiateEvent:
-		fmt.Fprintf(t.w, "%s negotiate v=%d agent=%q caps=%v\n",
+		_, _ = fmt.Fprintf(t.w, "%s negotiate v=%d agent=%q caps=%v\n",
 			ev.Time.Format(time.RFC3339Nano),
 			ev.Version, ev.ServerAgent, ev.Capabilities)
 	case CommandEvent:
@@ -56,13 +56,13 @@ func (t *writerTracer) OnEvent(e Event) {
 		if ev.Phase == CommandEnd {
 			phase = "end"
 		}
-		fmt.Fprintf(t.w, "%s command %s %s dur=%s err=%v\n",
+		_, _ = fmt.Fprintf(t.w, "%s command %s %s dur=%s err=%v\n",
 			ev.Time.Format(time.RFC3339Nano),
 			ev.Name, phase, ev.Duration, ev.Err)
 	default:
 		// Forward-compatible default: prints any third-party Event type
 		// using its Go-syntax representation.
-		fmt.Fprintf(t.w, "%s event %T %+v\n",
+		_, _ = fmt.Fprintf(t.w, "%s event %T %+v\n",
 			ev.When().Format(time.RFC3339Nano), ev, ev)
 	}
 }

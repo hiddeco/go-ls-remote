@@ -66,7 +66,7 @@ func startAgentServer(t *testing.T, priv ed25519.PrivateKey) string {
 			conns = append(conns, conn)
 			mu.Unlock()
 			wg.Go(func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				_ = agent.ServeAgent(keyring, conn)
 			})
 		}

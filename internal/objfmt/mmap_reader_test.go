@@ -19,7 +19,7 @@ func TestPack_openPackReader(t *testing.T) {
 
 		r, err := openPackReader(path)
 		require.NoError(t, err)
-		defer r.Close()
+		defer func() { _ = r.Close() }()
 
 		// Satisfies the interface contract.
 		var _ io.ReaderAt = r

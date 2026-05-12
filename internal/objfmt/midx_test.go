@@ -20,7 +20,7 @@ func midxPackNames(t *testing.T, midxPath string) []string {
 	t.Helper()
 	f, err := os.Open(midxPath + ".packnames")
 	require.NoError(t, err)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var out []string
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

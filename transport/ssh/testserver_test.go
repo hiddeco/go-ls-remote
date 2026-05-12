@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -299,7 +298,7 @@ func (s *testServer) acceptLoop() {
 // EOF, which the transport's tests check for.
 func (s *testServer) handle(conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	cfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -318,7 +317,7 @@ func (s *testServer) handle(conn net.Conn) {
 	if err != nil {
 		return
 	}
-	defer sshConn.Close()
+	defer func() { _ = sshConn.Close() }()
 
 	// Drain global out-of-band requests in a goroutine; tests never
 	// rely on them but x/crypto/ssh will deadlock if no one is
@@ -450,12 +449,10 @@ func (s *testServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
 				}
 			}
 			if err != nil {
-				if !errors.Is(err, io.EOF) {
-					// Drop the error: the client's `Conn.Close` racing
-					// with our `Write` produces `ErrUnexpectedEOF`,
-					// which is the expected shutdown shape for this
-					// fixture.
-				}
+				// Drop any read error including `io.EOF` and the
+				// `ErrUnexpectedEOF` produced when the client's
+				// `Conn.Close` races our `Write` — both are the
+				// expected shutdown shapes for this fixture.
 				return
 			}
 		}

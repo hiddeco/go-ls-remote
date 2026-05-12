@@ -65,11 +65,11 @@ func FuzzOpenReader(f *testing.F) {
 		// which algo the mutated header declares.
 		if r, err := OpenReader[objfmt.SHA1Hash](path); err == nil {
 			fuzzExerciseReader(r)
-			r.Close()
+			_ = r.Close()
 		}
 		if r, err := OpenReader[objfmt.SHA256Hash](path); err == nil {
 			fuzzExerciseReader(r)
-			r.Close()
+			_ = r.Close()
 		}
 	})
 }
@@ -113,10 +113,10 @@ func FuzzOpenStack(f *testing.F) {
 		// Try both algorithms, same rationale as [FuzzOpenReader]: a
 		// mutated manifest could point at a reftable of either algo.
 		if s, err := OpenStack[objfmt.SHA1Hash](dir); err == nil {
-			s.Close()
+			_ = s.Close()
 		}
 		if s, err := OpenStack[objfmt.SHA256Hash](dir); err == nil {
-			s.Close()
+			_ = s.Close()
 		}
 	})
 }

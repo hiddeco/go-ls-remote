@@ -97,7 +97,7 @@ func readPackedRefsFile[H objfmt.Hash](commonDir string) (packedRefs[H], error) 
 		}
 		return packedRefs[H]{}, fmt.Errorf("objstore: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	parsed, err := parsePackedRefs[H](f)
 	if err != nil {
