@@ -221,8 +221,8 @@ func TestNetrc_Resolve_WorldReadableWarns(t *testing.T) {
 	require.NoError(t, err, "world-readable file is still parsed; warning only")
 	require.NotNil(t, got, "credential is still returned")
 
-	assert.Contains(t, warn.String(), "httpt: warning:",
-		"world-readable .netrc must produce a warning prefixed with `httpt: warning:`")
+	assert.Contains(t, warn.String(), "readable or writable by group or world",
+		"the warning must use the new wording covering read and write loosening")
 	assert.Contains(t, warn.String(), path)
 }
 
@@ -271,3 +271,31 @@ func TestNetrc_ParseError_Is(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNetrcParse), "parse errors must wrap ErrNetrcParse")
 }
+
+// TestNetrc_Resolve_WorldWritableWarns pins that a netrc whose mode
+// grants group or world write access emits the loose-permissions
+// warning. A world-writable netrc is more dangerous than a
+// world-readable one: any local user can substitute credentials.
+func TestNetrc_Resolve_WorldWritableWarns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mode bits are not meaningful on Windows")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".netrc")
+	require.NoError(t, os.WriteFile(path, []byte("machine example.com login a password b\n"), 0o600))
+	// 0o622: owner rw, group w, other w — write bits only, no read bits.
+	// This bypasses the old 0o044 read-only mask.
+	require.NoError(t, os.Chmod(path, 0o622))
+
+	var buf bytes.Buffer
+	resolver := newNetrcResolver(path, &buf)
+
+	u, err := url.Parse("https://example.com/repo")
+	require.NoError(t, err)
+	_, err = resolver.Resolve(context.Background(), u)
+	require.NoError(t, err)
+
+	assert.Contains(t, buf.String(), "readable or writable by group or world",
+		"a world-writable netrc must emit the loose-permissions warning")
+}
+

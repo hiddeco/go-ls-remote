@@ -133,9 +133,10 @@ var ErrNetrcParse = errors.New("httpt: malformed netrc")
 //
 // If the file does not exist the resolver returns `(nil, nil)`. If the
 // file exists but is malformed the resolver returns an error wrapping
-// [ErrNetrcParse]. If the file is readable by group or world the
-// resolver still uses it but emits a one-line warning prefixed with
-// `httpt: warning:` to stderr, mirroring canonical curl's behaviour.
+// [ErrNetrcParse]. If the file (or a symlink leading to it) is readable
+// or writable by group or world the resolver still uses it but emits a
+// one-line warning prefixed with `httpt: warning:` to stderr, mirroring
+// canonical curl's behaviour.
 func Netrc() CredentialResolver {
 	return newNetrcResolver(defaultNetrcPath(), nil)
 }
@@ -145,7 +146,7 @@ func Netrc() CredentialResolver {
 // inject a temp-dir path and capture the warning.
 type netrcResolver struct {
 	path string
-	// warn receives the world-readable warning. nil falls back to
+	// warn receives the loose-permissions warning. nil falls back to
 	// [os.Stderr].
 	warn io.Writer
 }
@@ -165,14 +166,14 @@ func (n *netrcResolver) Resolve(_ context.Context, u *url.URL) (Credentials, err
 		return nil, nil
 	}
 
-	info, err := os.Stat(n.path)
+	info, err := os.Lstat(n.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("httpt: stat netrc: %w", err)
 	}
-	n.maybeWarnWorldReadable(info)
+	n.maybeWarnLoosePermissions(info)
 
 	data, err := os.ReadFile(n.path)
 	if err != nil {
@@ -189,22 +190,28 @@ func (n *netrcResolver) Resolve(_ context.Context, u *url.URL) (Credentials, err
 	return Basic(entry.login, entry.password), nil
 }
 
-// maybeWarnWorldReadable emits a stderr warning when the file is
-// readable by group or world. Windows is skipped: POSIX mode bits are
-// not meaningful there.
-func (n *netrcResolver) maybeWarnWorldReadable(info os.FileInfo) {
+// maybeWarnLoosePermissions emits a stderr warning when the netrc
+// file is reachable in a way that lets group or world either read
+// or modify it. The check covers world/group read AND write because
+// a world-writable netrc is more dangerous than a world-readable
+// one: any local user can substitute credentials. The mode is read
+// via `os.Lstat` so a world-writable symlink pointing at a
+// mode-0600 target still trips the check — the link is the surface
+// an attacker controls. Windows is skipped: POSIX mode bits are not
+// meaningful there.
+func (n *netrcResolver) maybeWarnLoosePermissions(info os.FileInfo) {
 	if runtime.GOOS == "windows" {
 		return
 	}
 	mode := info.Mode().Perm()
-	if mode&0o044 == 0 {
+	if mode&0o077 == 0 {
 		return
 	}
 	w := n.warn
 	if w == nil {
 		w = os.Stderr
 	}
-	fmt.Fprintf(w, "httpt: warning: netrc file %q is readable by group or world (mode %#o)\n", n.path, mode)
+	fmt.Fprintf(w, "httpt: warning: netrc file %q is readable or writable by group or world (mode %#o)\n", n.path, mode)
 }
 
 // netrcEntry holds the credential extracted from a matched block.
