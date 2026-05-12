@@ -22,7 +22,7 @@ import (
 // All wrapped state is established at construction. The wrapped
 // [objfmt.Idx] and [objfmt.Pack] are documented as concurrent-read
 // safe (see their godoc), so [idxCatalog.Lookup], [idxCatalog.AllPacks],
-// and [idxCatalog.packByChecksum] are likewise safe for concurrent use
+// and [idxCatalog.IdxFor] are likewise safe for concurrent use
 // from multiple goroutines without further synchronisation. [Close]
 // is guarded by a [sync.Once] so the cascade runs exactly once.
 type idxCatalog[H objfmt.Hash] struct {
@@ -40,12 +40,6 @@ type idxCatalog[H objfmt.Hash] struct {
 	// freshly written by the same `WriteFile` loop) across
 	// filesystems with coarse mtime resolution.
 	packs []packEntry[H]
-
-	// byChecksum maps each pack's trailer hash (as recorded by the
-	// paired idx; see [objfmt.Idx.PackChecksum]) to the open pack. Used
-	// by the cross-pack REF_DELTA resolver in a follow-up; intentionally
-	// unused today.
-	byChecksum map[H]*objfmt.Pack[H]
 
 	// idxByPack maps each open pack to its paired idx. The CRC
 	// verification path on [Store.ObjectInfo] reaches for an idx by pack
@@ -92,20 +86,18 @@ func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCata
 			// Brand-new repos may not have materialised `objects/pack/`
 			// yet. Surface a usable empty catalog rather than refusing.
 			return &idxCatalog[H]{
-				commonDir:  commonDir,
-				algo:       algo,
-				byChecksum: map[H]*objfmt.Pack[H]{},
-				idxByPack:  map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
+				commonDir: commonDir,
+				algo:      algo,
+				idxByPack: map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 			}, nil
 		}
 		return nil, fmt.Errorf("objstore: stat %s: %w", packDir, err)
 	}
 
 	c := &idxCatalog[H]{
-		commonDir:  commonDir,
-		algo:       algo,
-		byChecksum: map[H]*objfmt.Pack[H]{},
-		idxByPack:  map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
+		commonDir: commonDir,
+		algo:      algo,
+		idxByPack: map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 	}
 
 	// closeOpened tears down everything established so far. Used on
@@ -168,7 +160,6 @@ func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCata
 			pack:  pack,
 			mtime: st.ModTime(),
 		})
-		c.byChecksum[idx.PackChecksum()] = pack
 		c.idxByPack[pack] = idx
 	}
 
@@ -222,19 +213,6 @@ func (c *idxCatalog[H]) AllPacks() iter.Seq[*objfmt.Pack[H]] {
 			}
 		}
 	}
-}
-
-// packByChecksum returns the open pack whose trailer hash matches h, as
-// recorded by the paired idx ([objfmt.Idx.PackChecksum]).
-//
-// Intentionally unused today; pre-installed for the cross-pack
-// REF_DELTA resolver in a follow-up. A REF_DELTA encodes its base by
-// OID without naming the pack the base lives in, so resolving across
-// packs needs an OID-keyed scan; this accessor exists so that scan can
-// short-circuit when the base's pack-checksum hint is known up front.
-func (c *idxCatalog[H]) packByChecksum(h H) (*objfmt.Pack[H], bool) {
-	p, ok := c.byChecksum[h]
-	return p, ok
 }
 
 // IdxFor returns the [objfmt.Idx] paired with pack via the open-time

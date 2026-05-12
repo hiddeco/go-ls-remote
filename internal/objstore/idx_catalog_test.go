@@ -238,31 +238,6 @@ func TestIdxCatalog_LookupHitsYoungerPackFirst(t *testing.T) {
 		"the catalog's first slot must be the youngest pack")
 }
 
-func TestIdxCatalog_PackByChecksumLookup(t *testing.T) {
-	// The cross-pack REF_DELTA scaffolding indexes packs by their
-	// pack-trailer hash (as recorded in the paired idx). Each idx's
-	// recorded checksum must round-trip to its `*Pack`.
-	c := openIdxCatalogFromFixture(t, "idx-multi")
-
-	for _, e := range c.packs {
-		got, ok := c.packByChecksum(e.idx.PackChecksum())
-		require.True(t, ok, "pack %s must be reachable by checksum",
-			filepath.Base(e.idx.Path()))
-		assert.Same(t, e.pack, got)
-	}
-}
-
-func TestIdxCatalog_PackByChecksumMissReturnsNilFalse(t *testing.T) {
-	// An unknown checksum must surface as a clean miss; the accessor is
-	// the only way the future REF_DELTA resolver can probe the index,
-	// so a (nil, false) shape is part of its contract.
-	c := openIdxCatalogFromFixture(t, "idx-multi")
-
-	pack, ok := c.packByChecksum(objfmt.SHA1Hash{})
-	assert.False(t, ok)
-	assert.Nil(t, pack)
-}
-
 func TestIdxCatalog_CorruptIdxReturnsErrorWithoutLeak(t *testing.T) {
 	// `idx-corrupt/` ships a 16-byte-zero `bogus.idx` that fails the v1
 	// fan-out length check. The opener must surface the wrapped error
