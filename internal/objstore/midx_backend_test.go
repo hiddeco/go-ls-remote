@@ -50,8 +50,7 @@ func TestMidxBackend_OpensWithSiblingPacks(t *testing.T) {
 	// `midx-with-siblings/` carries the midx + the two midx-covered
 	// packs + one sibling pack added after midx generation. The
 	// constructor must wire all of them up: the midx-listed packs into
-	// `coveredByMidxIndex` (and `packsByChecksum`), the sibling into
-	// `siblings` (and `packsByChecksum`).
+	// `coveredByMidxIndex`, the sibling into `siblings`.
 	b := openMidxBackendFromFixture(t, "midx-with-siblings")
 
 	require.NotNil(t, b.midx)
@@ -64,8 +63,6 @@ func TestMidxBackend_OpensWithSiblingPacks(t *testing.T) {
 	}
 	assert.Len(t, b.siblings, 1,
 		"the one not-covered pack must surface as a sibling")
-	assert.Len(t, b.packsByChecksum, 3,
-		"every opened pack must be reachable by its trailer checksum")
 	assert.Len(t, b.ordered, 3,
 		"`ordered` must enumerate every opened pack exactly once")
 }
@@ -250,28 +247,6 @@ func TestMidxBackend_BasenameTiebreaker(t *testing.T) {
 			"midx-pack-2.idx", "three-objects.idx",
 		},
 		names, "equal-mtime packs must order by basename")
-}
-
-func TestMidxBackend_PackByChecksumLookup(t *testing.T) {
-	// Every pack — midx-covered AND sibling — must round-trip through
-	// the checksum index. The cross-pack REF_DELTA resolver depends on
-	// this for both backends through a uniform contract.
-	b := openMidxBackendFromFixture(t, "midx-with-siblings")
-
-	require.Len(t, b.packsByChecksum, 3,
-		"checksum index must cover every opened pack")
-	for h, pack := range b.packsByChecksum {
-		got, ok := b.packByChecksum(h)
-		require.True(t, ok, "checksum %x must be reachable", h)
-		assert.Same(t, pack, got)
-	}
-
-	// Unknown checksum surfaces as a clean miss: the (nil, false) shape
-	// is part of the accessor's contract for the future REF_DELTA
-	// resolver.
-	pack, ok := b.packByChecksum(objfmt.SHA1Hash{})
-	assert.False(t, ok)
-	assert.Nil(t, pack)
 }
 
 func TestMidxBackend_NoSiblingPacks(t *testing.T) {

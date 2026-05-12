@@ -31,11 +31,10 @@ import (
 //
 // All wrapped state is established at construction. The wrapped
 // [objfmt.Midx], [objfmt.Idx], and [objfmt.Pack] are documented as
-// concurrent-read safe (see their godoc), so [midxBackend.Lookup],
-// [midxBackend.AllPacks], and [midxBackend.packByChecksum] are likewise
-// safe for concurrent use from multiple goroutines without further
-// synchronisation. [Close] is guarded by a [sync.Once] so the cascade
-// runs exactly once.
+// concurrent-read safe (see their godoc), so [midxBackend.Lookup] and
+// [midxBackend.AllPacks] are likewise safe for concurrent use from
+// multiple goroutines without further synchronisation. [Close] is
+// guarded by a [sync.Once] so the cascade runs exactly once.
 type midxBackend[H objfmt.Hash] struct {
 	commonDir string
 
@@ -58,15 +57,8 @@ type midxBackend[H objfmt.Hash] struct {
 	// coveredIdxs is the `*objfmt.Idx` parallel to
 	// [coveredByMidxIndex]. Lookups never consult these — the midx
 	// itself owns the pack-id / offset table — but [Close] needs them
-	// to release the underlying file handles, and `idx.PackChecksum()`
-	// is read at open time to populate [packsByChecksum].
+	// to release the underlying file handles.
 	coveredIdxs []*objfmt.Idx[H]
-
-	// packsByChecksum maps every opened pack — midx-covered AND
-	// sibling — by its trailer hash (as recorded by the paired idx;
-	// see [objfmt.Idx.PackChecksum]). Used by the cross-pack REF_DELTA
-	// resolver in a follow-up; intentionally unused today.
-	packsByChecksum map[H]*objfmt.Pack[H]
 
 	// idxByPack maps every opened pack — midx-covered AND sibling — to
 	// its paired idx. The CRC verification path on [Store.ObjectInfo]
@@ -109,9 +101,7 @@ type midxBackend[H objfmt.Hash] struct {
 // its `.pack` sibling, exactly as `idxCatalog` does. Each pair is then
 // classified: an idx whose basename appears in `midx.PackNames()` is a
 // midx-covered pack and goes into `packsByName`; everything else
-// becomes a sibling for the fallback scan. Both classifications also
-// land in `packsByChecksum` so the cross-pack REF_DELTA scaffolding
-// works through one uniform map.
+// becomes a sibling for the fallback scan.
 //
 // The midx's pack-name list is required to be a subset of the on-disk
 // `.idx` set: a midx that names a pack the directory no longer
@@ -142,7 +132,6 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 		packNames:          packNames,
 		coveredByMidxIndex: make([]*objfmt.Pack[H], len(packNames)),
 		coveredIdxs:        make([]*objfmt.Idx[H], len(packNames)),
-		packsByChecksum:    map[H]*objfmt.Pack[H]{},
 		idxByPack:          map[*objfmt.Pack[H]]*objfmt.Idx[H]{},
 	}
 
@@ -240,7 +229,6 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 		}
 		mtime := st.ModTime()
 
-		b.packsByChecksum[idx.PackChecksum()] = pack
 		b.idxByPack[pack] = idx
 		if i, covered := nameIndex[name]; covered {
 			b.coveredByMidxIndex[i] = pack
@@ -370,22 +358,6 @@ func (b *midxBackend[H]) AllPacks() iter.Seq[*objfmt.Pack[H]] {
 			}
 		}
 	}
-}
-
-// packByChecksum returns the open pack whose trailer hash matches h, as
-// recorded by the paired idx ([objfmt.Idx.PackChecksum]). The index
-// covers every opened pack — midx-covered AND sibling — so the
-// cross-pack REF_DELTA resolver can probe through one uniform map
-// regardless of which backend is in use.
-//
-// Intentionally unused today; pre-installed for the cross-pack
-// REF_DELTA resolver in a follow-up. A REF_DELTA encodes its base by
-// OID without naming the pack the base lives in, so resolving across
-// packs needs an OID-keyed scan; this accessor exists so that scan can
-// short-circuit when the base's pack-checksum hint is known up front.
-func (b *midxBackend[H]) packByChecksum(h H) (*objfmt.Pack[H], bool) {
-	p, ok := b.packsByChecksum[h]
-	return p, ok
 }
 
 // IdxFor returns the [objfmt.Idx] paired with pack via the open-time
