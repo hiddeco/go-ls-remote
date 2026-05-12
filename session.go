@@ -2,6 +2,7 @@ package lsremote
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"slices"
 	"strings"
@@ -336,12 +337,26 @@ func matchPrefixes(name string, prefixes []string) bool {
 // protocolError wraps err in a [*ProtocolError] tagged with the
 // Session's redacted URL and negotiated version. The wrapped error is
 // stored on `Err` so `errors.Is`/`errors.As` walks through to it.
+//
+// [wire.ErrServerRefused] is the one mid-session sentinel that needs
+// joining here: an `ERR <msg>` pkt-line arrives during the v2 command
+// response and we want public callers to match
+// `errors.Is(err, ErrServerRefused)` without walking the wire layer.
+// Mid-session refusals (an unknown command, an `ERR` pkt-line
+// mid-stream, an unrecognised `ls-refs` argument) all flow through
+// this hook. [wire.ErrUnsupportedProtocol] is joined at
+// advertisement-parse time in [bridgeOpenError] inside `dial.go`, not
+// here.
 func (s *Session) protocolError(op string, err error) error {
+	wrapped := err
+	if errors.Is(err, wire.ErrServerRefused) {
+		wrapped = errors.Join(ErrServerRefused, err)
+	}
 	return &ProtocolError{
 		URL:     s.url,
 		Op:      op,
 		Version: versionPtr(s.caps.Version),
-		Err:     err,
+		Err:     wrapped,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
+	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -534,4 +536,54 @@ func TestSession_Close_idempotent(t *testing.T) {
 
 	assert.NoError(t, s.Close(), "first Close must succeed")
 	assert.NoError(t, s.Close(), "second Close must also return nil")
+}
+
+// TestSession_protocolError_bridgesServerRefused pins the public-bridge
+// contract: when the wire layer surfaces an error whose chain reaches
+// `wire.ErrServerRefused`, `protocolError` must join the public
+// `ErrServerRefused` sentinel onto the stored chain so a caller's
+// `errors.Is(err, ErrServerRefused)` matches without reaching into the
+// wire package. The verbatim wire-level identity must remain reachable
+// via `errors.Is` on the same chain — joining never severs it.
+func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
+	s := &Session{
+		url:  "http://example.test/repo.git",
+		caps: Capabilities{Version: ProtocolV2},
+	}
+
+	t.Run("direct wire.ErrServerRefused is bridged", func(t *testing.T) {
+		err := s.protocolError("ls-refs", wire.ErrServerRefused)
+		require.Error(t, err)
+
+		assert.True(t, errors.Is(err, ErrServerRefused),
+			"public ErrServerRefused must match the joined chain")
+		assert.True(t, errors.Is(err, wire.ErrServerRefused),
+			"wire.ErrServerRefused must remain reachable on the joined chain")
+
+		var pe *ProtocolError
+		require.True(t, errors.As(err, &pe))
+		assert.Equal(t, "ls-refs", pe.Op)
+	})
+
+	t.Run("wrapped wire.ErrServerRefused is bridged", func(t *testing.T) {
+		wrapped := fmt.Errorf("ls-refs: %w", wire.ErrServerRefused)
+		err := s.protocolError("ls-refs", wrapped)
+		require.Error(t, err)
+
+		assert.True(t, errors.Is(err, ErrServerRefused),
+			"public ErrServerRefused must match even through a wrapping layer")
+		assert.True(t, errors.Is(err, wire.ErrServerRefused),
+			"wire.ErrServerRefused must remain reachable through the wrap")
+	})
+
+	t.Run("unrelated wire error is not bridged", func(t *testing.T) {
+		other := errors.New("decode: short read")
+		err := s.protocolError("object-info", other)
+		require.Error(t, err)
+
+		assert.False(t, errors.Is(err, ErrServerRefused),
+			"ErrServerRefused must not match an unrelated wire error")
+		assert.True(t, errors.Is(err, other),
+			"the original wire error must remain reachable")
+	})
 }
