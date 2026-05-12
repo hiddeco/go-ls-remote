@@ -32,10 +32,13 @@ func flushAdvertisement() []byte { return []byte("0000") }
 // server accepts the `GIT_PROTOCOL` env request. The transport must:
 //
 //   - emit `git-upload-pack '<path>'` via the SSH exec request, with
-//     single-quoting per canonical Git's `connect.c:1313`;
+//     single-quoting per canonical Git's [connect.c:1476];
 //   - send a `GIT_PROTOCOL=version=2` env request before the exec;
 //   - write the initial pkt-line on stdin carrying the version=2
-//     trailer per `gitprotocol-pack.adoc §"Extra Parameters"`.
+//     trailer per [gitprotocol-pack.adoc §"Extra Parameters"].
+//
+// [connect.c:1476]: https://github.com/git/git/blob/v2.54.0/connect.c#L1476
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func TestOpen_v2_envAccepted(t *testing.T) {
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,

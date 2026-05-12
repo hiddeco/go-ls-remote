@@ -55,14 +55,17 @@ type packedEntry[H objfmt.Hash] struct {
 //   - sorted: the ref entries are sorted by name. The parser verifies
 //     the trait on-the-fly during the body walk and clears it on the
 //     first out-of-order pair, mirroring `sort_snapshot` in
-//     `refs/packed-backend.c:380`. A surviving `sorted` is therefore
+//     [refs/packed-backend.c:380]. A surviving `sorted` is therefore
 //     trustworthy — consumers that need ordered iteration may stream
 //     straight from the file rather than buffering the full set.
 //
 // Unknown trait tokens in the header are tolerated and ignored so a
 // future trait the parser has not been taught about does not blow up
-// the file. The known set follows
-// `refs/packed-backend.c::parse_packed_ref_traits` in canonical Git.
+// the file. The known set follows the header-walking block inside
+// [refs/packed-backend.c::create_snapshot] in canonical Git.
+//
+// [refs/packed-backend.c:380]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L380
+// [refs/packed-backend.c::create_snapshot]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L706
 type packedTraits struct {
 	peeled      bool
 	fullyPeeled bool
@@ -80,12 +83,12 @@ type packedRefs[H objfmt.Hash] struct {
 
 // parsePackedRefs consumes a `packed-refs` stream and returns the
 // parsed [packedRefs]. The grammar follows
-// `refs/packed-backend.c::parse_packed_refs_line`:
+// [refs/packed-backend.c::next_record]:
 //
 //   - Optional first line `# pack-refs with: <traits>` whose
 //     space-separated tokens populate [packedTraits]. The traits header
 //     is pinned to line 1 (canonical Git checks `*snapshot->buf == '#'`
-//     in `refs/packed-backend.c:719` and consumes only one line). A
+//     in [refs/packed-backend.c:719] and consumes only one line). A
 //     `# pack-refs with:` line later in the file is a body comment, not
 //     a second traits header.
 //   - Subsequent comment lines (`#` start) and blank lines are skipped.
@@ -94,7 +97,7 @@ type packedRefs[H objfmt.Hash] struct {
 //   - `^<oid>` immediately following a ref entry records the dereferenced
 //     commit id of the previous ref. peelKnown is set to true. A
 //     second `^<oid>` line for the same ref is rejected: canonical Git's
-//     `next_record` (`refs/packed-backend.c:952`) consumes one peel per
+//     `next_record` ([refs/packed-backend.c:952]) consumes one peel per
 //     record, and `parse_oid_hex_algop` then dies on the leading `^` of
 //     the duplicate.
 //
@@ -102,6 +105,10 @@ type packedRefs[H objfmt.Hash] struct {
 // lines (wrong hex length, no separator, `^` with no preceding ref,
 // duplicate peel) surface as an error wrapping [ErrCorruptObject], with
 // the offending line number and text included for diagnostics.
+//
+// [refs/packed-backend.c::next_record]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L886
+// [refs/packed-backend.c:719]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L719
+// [refs/packed-backend.c:952]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L952
 func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 	out := packedRefs[H]{refs: make(map[string]packedEntry[H])}
 
@@ -129,13 +136,15 @@ func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 		line := strings.TrimRight(raw, " \t")
 		if line == "" {
 			// Note: this is *more permissive* than canonical Git. The
-			// record iterator at `refs/packed-backend.c:390` (and the
+			// record iterator at [refs/packed-backend.c:390] (and the
 			// `iter->eof - p < hexsz + 2` length check at line 920)
 			// dies on any line shorter than `<oid> <name>`, which
 			// includes blank lines. Canonical writers never emit blank
 			// lines so the divergence is invisible in practice; if v0
 			// gains write support this should tighten to canonical
 			// strictness so writer bugs surface as test-time failures.
+			//
+			// [refs/packed-backend.c:390]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L390
 			continue
 		}
 
@@ -143,9 +152,11 @@ func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 			// Only the first non-blank line is eligible for the
 			// traits header. Canonical Git checks `*snapshot->buf ==
 			// '#'` at the very start of the file
-			// (`refs/packed-backend.c:719`); a `#` line anywhere
+			// ([refs/packed-backend.c:719]); a `#` line anywhere
 			// later is a body comment. A leading blank line is a
 			// Go-side lenience canonical Git's writer never produces.
+			//
+			// [refs/packed-backend.c:719]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L719
 			if !seenAny {
 				out.traits = parsePackedRefTraits(line)
 			}
@@ -192,25 +203,30 @@ func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 		//
 		// Note: this is *stricter* than canonical Git, which accepts any
 		// `isspace` byte between the OID and the refname
-		// (`refs/packed-backend.c:922` checks `!isspace(*p++)`).
+		// ([refs/packed-backend.c:922] checks `!isspace(*p++)`).
 		// Canonical Git's writer emits exactly one ASCII space, so the
 		// divergence is invisible against canonical-Git-produced files.
 		// A future need to read non-canonical packed-refs would have to
 		// loosen this gate to match canonical's `isspace` rule.
+		//
+		// [refs/packed-backend.c:922]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L922
 		if !ok || name == "" || name[0] == ' ' || name[0] == '\t' || name[0] == '^' {
 			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: missing separator %q: %w",
 				lineNo, raw, ErrCorruptObject)
 		}
 		// Validate the refname against canonical Git's format rules
-		// (`refs.c:320` `check_refname_format` with
+		// ([refs.c:320] `check_refname_format` with
 		// `REFNAME_ALLOW_ONELEVEL`, the same flag the iterator uses at
-		// `refs/packed-backend.c:938`). Canonical Git would mark a
+		// [refs/packed-backend.c:938]). Canonical Git would mark a
 		// non-conforming entry `REF_BAD_NAME | REF_ISBROKEN` and zero
 		// the OID; for a read-only library that surfaces refs to
 		// downstream serializers, refusing the file at parse time is
 		// safer — embedded NUL bytes or control characters in a
 		// "valid" ref would be invisible to the caller otherwise.
+		//
+		// [refs.c:320]: https://github.com/git/git/blob/v2.54.0/refs.c#L320
+		// [refs/packed-backend.c:938]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L938
 		if !checkRefnameFormat(name) {
 			return packedRefs[H]{}, fmt.Errorf(
 				"objstore: packed-refs line %d: invalid refname %q: %w",
@@ -228,13 +244,15 @@ func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 				lineNo, raw, ErrCorruptObject)
 		}
 		// Verify the `sorted` trait on-the-fly. Canonical Git's
-		// `sort_snapshot` (`refs/packed-backend.c:380`) walks the
+		// `sort_snapshot` ([refs/packed-backend.c:380]) walks the
 		// records during iteration and clears the trait on the first
 		// out-of-order pair; a corrupt or hostile file claiming
 		// `sorted` must not be allowed to mislead downstream
 		// short-circuits that rely on the order. Equal names are not a
 		// violation — canonical Git treats them as in-order — so the
 		// comparison is strictly less-than.
+		//
+		// [refs/packed-backend.c:380]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L380
 		if out.traits.sorted && lastRef != "" && name < lastRef {
 			out.traits.sorted = false
 		}
@@ -252,7 +270,10 @@ func parsePackedRefs[H objfmt.Hash](r io.Reader) (packedRefs[H], error) {
 // whitespace around the `with:` separator is ignored, unknown tokens
 // are silently dropped, and a missing or malformed `with:` clause
 // yields the zero value rather than an error. Canonical reference:
-// `refs/packed-backend.c::parse_packed_ref_traits`.
+// the header-walking block inside
+// [refs/packed-backend.c::create_snapshot].
+//
+// [refs/packed-backend.c::create_snapshot]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L706
 func parsePackedRefTraits(line string) packedTraits {
 	// Strip the leading `#` and any whitespace, then look for the
 	// `pack-refs with:` lead-in. Anything else — a plain comment,

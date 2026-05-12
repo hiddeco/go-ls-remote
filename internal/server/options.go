@@ -19,7 +19,9 @@ import (
 type Options struct {
 	// Agent is the agent string the server advertises in its capability
 	// list. The value is opaque on the wire; canonical Git uses the
-	// `git/<version>` format (see `version.c::git_user_agent`).
+	// `git/<version>` format (see [version.c::git_user_agent]).
+	//
+	// [version.c::git_user_agent]: https://github.com/git/git/blob/v2.54.0/version.c#L28
 	Agent string
 
 	// PreferredProtocol selects which advertisement [Serve] emits: v0

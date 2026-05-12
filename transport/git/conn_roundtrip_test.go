@@ -24,9 +24,11 @@ import (
 
 // startServer spins up a TCP listener that accepts one connection,
 // reads the initial git-daemon pkt-line from the client (the
-// server-side analog of `daemon.c::execute():749`), then runs
+// server-side analog of [daemon.c::execute line 749]), then runs
 // `internal/server.Serve` over the connection until the client closes
 // or the test ends.
+//
+// [daemon.c::execute line 749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
 func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, port string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -47,8 +49,10 @@ func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, p
 		w := pktline.NewWriter(c)
 
 		// Read the initial discovery-time pkt-line — the server-side
-		// analog of `daemon.c::execute():749`. Discard it; the test
+		// analog of [daemon.c::execute line 749]. Discard it; the test
 		// cares about the post-handshake stream.
+		//
+		// [daemon.c::execute line 749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
 		if _, err := r.ReadPacket(); err != nil {
 			return
 		}
@@ -101,7 +105,9 @@ func openRoundtripConn(t *testing.T, host, port string) *Conn {
 // drainV2Advertisement reads all packets off rdr up to and including
 // the trailing flush. The v2 advertisement shape is `version 2\n`
 // followed by capability data lines and a flush per
-// `serve.c::protocol_v2_advertise_capabilities`.
+// [serve.c::protocol_v2_advertise_capabilities].
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainV2Advertisement(t testing.TB, rdr *pktline.Reader) {
 	t.Helper()
 	for {
@@ -118,7 +124,9 @@ func drainV2Advertisement(t testing.TB, rdr *pktline.Reader) {
 // because [pktline.Reader] reuses a single backing buffer across reads.
 // The reader is left positioned at the next packet after the flush,
 // ready for another command response — matching the v2 command-response
-// framing (`gitprotocol-v2.adoc` §"Command Response").
+// framing ([gitprotocol-v2.adoc §"Command Response"]).
+//
+// [gitprotocol-v2.adoc §"Command Response"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func readRoundtripPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
 	var pkts []pktline.Packet
@@ -137,8 +145,10 @@ func readRoundtripPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 
 // cmdBody builds a [transport.CommandBody] closure that calls
 // [wire.EncodeV2CommandRequest] with name, args, and caps. This mirrors
-// the canonical v2 command-request frame from `gitprotocol-v2.adoc`
-// §"Command Request".
+// the canonical v2 command-request frame from
+// [gitprotocol-v2.adoc §"Command Request"].
+//
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func cmdBody(name string, args, caps []string) transport.CommandBody {
 	return func(w *pktline.Writer) error {
 		return wire.EncodeV2CommandRequest(w, name, args, caps)
@@ -219,8 +229,10 @@ func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
 	pkts := readRoundtripPackets(t, rdr)
 	require.NotEmpty(t, pkts, "object-info must emit at least one packet")
 
-	// Per `protocol-caps.c::send_info`, a `size` request produces a
+	// Per [protocol-caps.c::send_info], a `size` request produces a
 	// `size\n` attrs line.
+	//
+	// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 	var hasSize bool
 	for _, p := range pkts {
 		if p.Kind != pktline.Data {

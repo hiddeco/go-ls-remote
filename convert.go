@@ -8,17 +8,20 @@ import (
 )
 
 // v2CommandNames is the library-curated set of v2 commands that
-// [Session] methods know how to issue. Per `gitprotocol-v2.adoc`
-// §"capability-advertisement", a v2 server advertises each command it
-// supports as a top-level capability whose name is the command name;
-// the canonical set today is `ls-refs`, `fetch`, `object-info`, and
-// `bundle-uri`. Intersecting the advertised names against this set
-// keeps metadata capabilities (`agent`, `object-format`,
-// `server-option`, `session-id`, ...) out of [Capabilities.Commands]
-// without having to enumerate them. The set grows when the library
-// learns to issue a new command. Callers who need the verbatim wire
-// view — every advertised capability name, including commands this
-// library does not yet implement — can read [Capabilities.Raw].
+// [Session] methods know how to issue. Per
+// [gitprotocol-v2.adoc §"capability-advertisement"], a v2 server
+// advertises each command it supports as a top-level capability whose
+// name is the command name; the canonical set today is `ls-refs`,
+// `fetch`, `object-info`, and `bundle-uri`. Intersecting the advertised
+// names against this set keeps metadata capabilities (`agent`,
+// `object-format`, `server-option`, `session-id`, ...) out of
+// [Capabilities.Commands] without having to enumerate them. The set
+// grows when the library learns to issue a new command. Callers who
+// need the verbatim wire view — every advertised capability name,
+// including commands this library does not yet implement — can read
+// [Capabilities.Raw].
+//
+// [gitprotocol-v2.adoc §"capability-advertisement"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#capability-advertisement
 var v2CommandNames = []string{
 	"ls-refs",
 	"fetch",
@@ -62,7 +65,7 @@ var v2CommandNames = []string{
 //     it is available verbatim in [Capabilities.Raw].
 //   - [Capabilities.Symrefs] is populated only for v0/v1 by walking
 //     every `symref=NAME:TARGET` capability and splitting on the first
-//     `:` per `connect.c::parse_one_symref_info`. Malformed entries —
+//     `:` per [connect.c::parse_one_symref_info]. Malformed entries —
 //     no colon, empty name, or empty target — are skipped silently,
 //     matching canonical Git's behaviour. v2 servers convey symrefs on
 //     the per-ref response from `ls-refs` instead, so this slice stays
@@ -72,6 +75,8 @@ var v2CommandNames = []string{
 //     boolean capabilities contribute the empty string. The returned
 //     map is always non-nil — callers can read missing keys without a
 //     prior nil check.
+//
+// [connect.c::parse_one_symref_info]: https://github.com/git/git/blob/v2.54.0/connect.c#L183
 func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 	c := Capabilities{Version: v}
 
@@ -82,11 +87,13 @@ func convertCaps(raw wire.RawCapabilities, v ProtocolVersion) Capabilities {
 		c.ObjectFormat = ObjectFormat(of)
 	} else if v != ProtocolV2 {
 		// v0/v1 servers that omit `object-format` always use SHA-1;
-		// see gitprotocol-capabilities.adoc §"object-format":
+		// see [gitprotocol-capabilities.adoc §"object-format"]:
 		// "If this capability is not provided, it is assumed that the
 		// only supported algorithm is SHA-1."
 		// v2 servers that omit `object-format` violate the v2 wire
 		// protocol; leave the field empty so callers can detect it.
+		//
+		// [gitprotocol-capabilities.adoc §"object-format"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-capabilities.adoc#object-format
 		c.ObjectFormat = ObjectFormatSHA1
 	}
 

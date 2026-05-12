@@ -102,7 +102,7 @@ func (s *Session) Capabilities() Capabilities {
 // toggling `peel`, `symrefs`, and `unborn` per the corresponding
 // [RefsRequest] flags. The `unborn` argument is dropped silently when
 // the server did not advertise `ls-refs=unborn` in its capability list
-// (`connect.c::get_remote_refs` lines 564-597). The iterator streams
+// ([connect.c::get_remote_refs lines 564-597]). The iterator streams
 // the response and yields one (Ref, error) pair per emission.
 //
 // On v0/v1 the wire has no `ls-refs` equivalent: the full ref
@@ -128,6 +128,8 @@ func (s *Session) Capabilities() Capabilities {
 // pair wrapping the cause in a `*ProtocolError` with `Op == "ls-refs"`
 // and stops. Iteration over a successful v0/v1 path never yields an
 // error.
+//
+// [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, error], error) {
 	if s.caps.Version != ProtocolV2 {
 		return s.refsCached(args), nil
@@ -143,7 +145,7 @@ func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, er
 // When `args.Symrefs` is true, the yielded [Ref.Symref] is populated
 // from the capability-level advertisement (`s.caps.Symrefs`) for any
 // ref whose name appears in that list — matching the v0/v1 wire shape
-// described in `connect.c::parse_one_symref_info`. This unifies the
+// described in [connect.c::parse_one_symref_info]. This unifies the
 // call-site experience with v2, where the `symrefs` argument to
 // `ls-refs` causes the server to include per-ref symref targets inline.
 //
@@ -155,6 +157,8 @@ func (s *Session) Refs(ctx context.Context, args RefsRequest) (iter.Seq2[Ref, er
 //
 // The cached [Session.refs] slice is never mutated; only the copy
 // that is passed to yield is adjusted.
+//
+// [connect.c::parse_one_symref_info]: https://github.com/git/git/blob/v2.54.0/connect.c#L183
 func (s *Session) refsCached(args RefsRequest) iter.Seq2[Ref, error] {
 	return func(yield func(Ref, error) bool) {
 		for _, ref := range s.refs {
@@ -166,10 +170,12 @@ func (s *Session) refsCached(args RefsRequest) iter.Seq2[Ref, error] {
 				// Post-fill Ref.Symref from the capability-level
 				// advertisement when the caller opted in. The wire layer
 				// already applies symrefs to RawRef at parse time (via
-				// `connect.c::annotate_refs_with_symref_info`), so the
+				// [connect.c::annotate_refs_with_symref_info]), so the
 				// cached entry carries the value; we expose it here only
 				// when Symrefs is set, matching the opt-in semantics of
 				// the v2 path.
+				//
+				// [connect.c::annotate_refs_with_symref_info]: https://github.com/git/git/blob/v2.54.0/connect.c#L209
 				if out.Symref == "" {
 					out.Symref = s.symrefTarget(ref.Name)
 				}
@@ -188,10 +194,12 @@ func (s *Session) refsCached(args RefsRequest) iter.Seq2[Ref, error] {
 
 // symrefTarget returns the capability-level symref target for name,
 // matching the v0/v1 advertisement shape captured in
-// `connect.c::parse_one_symref_info` (lines 183-207). A linear scan
+// [connect.c::parse_one_symref_info lines 183-207]. A linear scan
 // is acceptable because Capabilities.Symrefs is typically tiny on
 // v0/v1 servers — often just `HEAD → refs/heads/main`. Returns the
 // empty string when no entry matches.
+//
+// [connect.c::parse_one_symref_info lines 183-207]: https://github.com/git/git/blob/v2.54.0/connect.c#L183-L207
 func (s *Session) symrefTarget(name string) string {
 	for _, sr := range s.caps.Symrefs {
 		if sr.Name == name {
@@ -315,9 +323,11 @@ func (s *Session) ObjectInfo(ctx context.Context, oids []string,
 	out := convertObjectInfos(raw)
 	if !args.Size {
 		// The public contract says `-1` for "size not requested";
-		// canonical Git's `protocol-caps.c::send_info` omits the size
+		// canonical Git's [protocol-caps.c::send_info] omits the size
 		// column entirely on this branch and the wire decoder leaves
 		// `Size == 0`, which we translate to the public sentinel here.
+		//
+		// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 		for i := range out {
 			out[i].Size = -1
 		}
@@ -333,9 +343,11 @@ func (s *Session) Close() error {
 }
 
 // matchPrefixes reports whether name is admitted by the prefix filter.
-// An empty list admits every name, matching
-// `connect.c::ref_match`/`ls-refs.c::ref_match`. Otherwise name
-// matches when at least one prefix is a string-prefix of name.
+// An empty list admits every name, matching [ls-refs.c::ref_match].
+// Otherwise name matches when at least one prefix is a string-prefix
+// of name.
+//
+// [ls-refs.c::ref_match]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L54
 func matchPrefixes(name string, prefixes []string) bool {
 	if len(prefixes) == 0 {
 		return true

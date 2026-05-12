@@ -27,11 +27,13 @@ import (
 // for the read-fanout patterns the upper layers favour.
 //
 // Loose-overrides-packed mirrors canonical Git's
-// `refs/files-backend.c::loose_fill_ref_dir` precedence: when the same
+// [refs/files-backend.c::loose_fill_ref_dir] precedence: when the same
 // name exists in both places the loose copy is authoritative. The peel
 // hint from `packed-refs` is intentionally dropped on override because
 // loose ref files do not encode peel state and we have no way to verify
 // the packed peel still matches the loose OID.
+//
+// [refs/files-backend.c::loose_fill_ref_dir]: https://github.com/git/git/blob/v2.54.0/refs/files-backend.c#L310
 type looseRefs[H objfmt.Hash] struct {
 	gitDir    string                    // for HEAD reading
 	commonDir string                    // for refs/ + packed-refs reading
@@ -178,9 +180,12 @@ func (r *looseRefs[H]) walkLooseRefs() error {
 }
 
 // maxRefDepth caps symref-chain resolution at the same depth canonical
-// Git uses (`SYMREF_MAXDEPTH = 5` in `refs/refs-internal.h:246`, applied
-// by `refs.c::resolve_ref_unsafe` at `refs.c:2109`). A chain longer than
+// Git uses (`SYMREF_MAXDEPTH = 5` in [refs/refs-internal.h:246], applied
+// by `refs.c::resolve_ref_unsafe` at [refs.c:2109]). A chain longer than
 // this — or any cycle — surfaces as a corruption error.
+//
+// [refs/refs-internal.h:246]: https://github.com/git/git/blob/v2.54.0/refs/refs-internal.h#L246
+// [refs.c:2109]: https://github.com/git/git/blob/v2.54.0/refs.c#L2109
 const maxRefDepth = 5
 
 // resolveHead reads `<gitDir>/HEAD` and returns the resolved [Head].
@@ -197,8 +202,8 @@ const maxRefDepth = 5
 // Missing-HEAD handling: a missing HEAD file surfaces here as a
 // corruption error rather than an unborn-repo signal. Canonical Git
 // distinguishes `ENOENT` from other I/O errors in
-// `refs/files-backend.c:562-570` (the open-error retry path) and from
-// the lstat path at `refs/files-backend.c:504-512`, treating ENOENT as
+// [refs/files-backend.c:562-570] (the open-error retry path) and from
+// the lstat path at [refs/files-backend.c:504-512], treating ENOENT as
 // the "missing/unborn" case. We do not, because `git init` writes HEAD
 // atomically as part of repo creation; a directory that passed this
 // project's gitdir resolver but has no HEAD is in practice unreachable.
@@ -207,11 +212,14 @@ const maxRefDepth = 5
 //
 // Packed-refs HEAD fallback: canonical Git also falls back to
 // `packed-refs` when the loose `HEAD` file is missing
-// (`refs/files-backend.c:504-512`), a legacy compatibility path for
+// ([refs/files-backend.c:504-512]), a legacy compatibility path for
 // repositories produced by very old Git versions. Modern Git keeps
 // HEAD loose unconditionally, so we omit that fallback. If a fixture
 // ever surfaces with HEAD only in `packed-refs`, this is the place to
 // add the lookup.
+//
+// [refs/files-backend.c:562-570]: https://github.com/git/git/blob/v2.54.0/refs/files-backend.c#L562-L570
+// [refs/files-backend.c:504-512]: https://github.com/git/git/blob/v2.54.0/refs/files-backend.c#L504-L512
 func (r *looseRefs[H]) resolveHead() (Head[H], error) {
 	path := filepath.Join(r.gitDir, "HEAD")
 	raw, err := os.ReadFile(path)
@@ -248,9 +256,11 @@ func (r *looseRefs[H]) resolveHead() (Head[H], error) {
 // hop, whether it resolved to an OID (then `Symref` is the symref that
 // pointed at that OID) or was missing (then `Symref` is the
 // unresolvable name and `Unborn` is true). This mirrors canonical
-// `refs.c::resolve_ref_unsafe` (`refs.c:2075`), which returns the loop's
+// `refs.c::resolve_ref_unsafe` ([refs.c:2075]), which returns the loop's
 // last `refname` whether the resolution succeeded or terminated at a
 // missing target.
+//
+// [refs.c:2075]: https://github.com/git/git/blob/v2.54.0/refs.c#L2075
 func (r *looseRefs[H]) followSymrefChain(target string) (Head[H], error) {
 	seen := make(map[string]struct{}, maxRefDepth)
 	current := target
@@ -313,10 +323,13 @@ func (r *looseRefs[H]) readLooseSymref(name string) (string, bool, error) {
 }
 
 // parseSymrefTarget recognises the `ref: <name>` shape canonical Git
-// writes for symbolic refs (`refs/files-backend.c::parse_loose_ref_contents`
-// at `refs/files-backend.c:621`). It returns `ok=false` when the input
+// writes for symbolic refs ([refs/files-backend.c::parse_loose_ref_contents]
+// at [refs/files-backend.c:621]). It returns `ok=false` when the input
 // is not a symref so callers can fall through to OID parsing, and an
 // error when the input is a symref with an empty target.
+//
+// [refs/files-backend.c::parse_loose_ref_contents]: https://github.com/git/git/blob/v2.54.0/refs/files-backend.c#L615
+// [refs/files-backend.c:621]: https://github.com/git/git/blob/v2.54.0/refs/files-backend.c#L621
 func parseSymrefTarget(content string) (string, bool, error) {
 	rest, ok := strings.CutPrefix(content, "ref:")
 	if !ok {
@@ -373,7 +386,7 @@ func (r *looseRefs[H]) Lookup(name string) (RefEntry[H], bool, error) {
 //     without one definitively has no peel.
 //   - The file-wide `peeled` trait, scoped to refs whose name has the
 //     `refs/tags/` prefix and (again) only for `fromPacked` entries.
-//     Canonical `next_record` (`refs/packed-backend.c:945`) sets
+//     Canonical `next_record` ([refs/packed-backend.c:945]) sets
 //     `REF_KNOWS_PEELED` for tags under either trait; a missing
 //     `^<oid>` line on a tag means the tag is non-peelable
 //     (commit-target lightweight tag).
@@ -382,6 +395,8 @@ func (r *looseRefs[H]) Lookup(name string) (RefEntry[H], bool, error) {
 // loose-override entry's OID never sat in the file, so the file-wide
 // traits say nothing about it; PeelKnown stays false and
 // [Store.PeelRef] falls through to a full peel.
+//
+// [refs/packed-backend.c:945]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L945
 func (r *looseRefs[H]) toRefEntry(name string, entry packedEntry[H]) RefEntry[H] {
 	peelKnown := entry.peelKnown ||
 		(entry.fromPacked && r.traits.fullyPeeled) ||

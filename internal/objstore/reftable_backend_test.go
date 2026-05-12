@@ -134,10 +134,12 @@ func TestReftableBackend_Head_MissingRecordIsCorrupt(t *testing.T) {
 func TestReftableBackend_CustomLocation_RelativeToGitDir(t *testing.T) {
 	// `extensions.refStorage = reftable://<location>` resolves a
 	// relative payload against gitDir per canonical Git's
-	// `Documentation/config/extensions.adoc` § extensions.refStorage.
+	// [Documentation/config/extensions.adoc lines 59-78].
 	// The fixture's reftable lives under the canonical `reftable/`
 	// directory; copy it into a sibling `alt-reftable/` and confirm the
 	// opener picks it up via the relative payload.
+	//
+	// [Documentation/config/extensions.adoc lines 59-78]: https://github.com/git/git/blob/v2.54.0/Documentation/config/extensions.adoc?plain=1#L59-L78
 	root := materializeFixture(t, "with-reftable-content")
 	gitDir := filepath.Join(root, ".git")
 	src := filepath.Join(gitDir, "reftable")

@@ -5,8 +5,8 @@ import (
 )
 
 // EncodeV2CommandRequest writes a v2 command-request frame to w using
-// the canonical layout from `gitprotocol-v2.adoc` §"Command Request"
-// and matched by `serve.c::process_request`:
+// the canonical layout from [gitprotocol-v2.adoc §"Command Request"]
+// and matched by [serve.c::process_request]:
 //
 //	command-request = command-line *capability-line delim-pkt *arg-line flush-pkt
 //	command-line    = PKT-LINE("command=" cmd LF)
@@ -28,8 +28,12 @@ import (
 // is left to the caller. When the sink is a `bytes.Buffer` write
 // itself cannot fail, but the encoder may still return a wrapped
 // [pktline.ErrPayloadTooLarge] if any value (command name, capability,
-// or argument) exceeds the canonical cap from `pkt-line.h:234` once
+// or argument) exceeds the canonical cap from [pkt-line.h:234] once
 // the trailing LF is appended.
+//
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
+// [serve.c::process_request]: https://github.com/git/git/blob/v2.54.0/serve.c#L280
+// [pkt-line.h:234]: https://github.com/git/git/blob/v2.54.0/pkt-line.h#L234
 func EncodeV2CommandRequest(w *pktline.Writer, name string, args, caps []string) error {
 	if err := w.WriteLineParts("command=", name); err != nil {
 		return err

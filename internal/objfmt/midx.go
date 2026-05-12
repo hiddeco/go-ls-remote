@@ -12,8 +12,8 @@ import (
 // `objects/pack/` directory.
 //
 // The format is documented in
-// `Documentation/technical/multi-pack-index.adoc` and the canonical
-// reader lives in `midx.c::load_multi_pack_index_one`. A 12-byte header
+// [Documentation/technical/multi-pack-index.adoc] and the canonical
+// reader lives in [midx.c::load_multi_pack_index_one]. A 12-byte header
 // is followed by a chunk lookup table; required chunks are `PNAM`
 // (pack-name list), `OIDF` (256-entry fan-out), `OIDL` (sorted OID
 // table), and `OOFF` (per-object pack id and offset). Optional chunks
@@ -30,6 +30,9 @@ import (
 // then arithmetic over the in-memory slice; midx files for typical
 // multi-gigabyte repositories are well under 10 MiB so the simpler
 // model wins over mmap.
+//
+// [Documentation/technical/multi-pack-index.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/multi-pack-index.adoc
+// [midx.c::load_multi_pack_index_one]: https://github.com/git/git/blob/v2.54.0/midx.c#L109
 type Midx[H Hash] struct {
 	path      string
 	algo      Algo
@@ -70,12 +73,14 @@ type chunkExtent struct {
 // separate `multi-pack-index-chain` index in a sibling
 // `multi-pack-index.d/` directory rather than a header field, so this
 // reader rejects byte 7 ≠ 0 defensively (mirrors the explicit
-// zero-write in `midx-write.c::write_midx_header`) and treats only
+// zero-write in [midx-write.c::write_midx_header]) and treats only
 // standalone midx files as in scope.
 //
 // The chunk lookup table's terminator entry has an all-zero ID; its
 // 8-byte offset is one past the last byte of the final chunk's body
 // and so doubles as the final chunk's length.
+//
+// [midx-write.c::write_midx_header]: https://github.com/git/git/blob/v2.54.0/midx-write.c#L37
 
 const (
 	midxHeaderSize    = 12
@@ -85,7 +90,9 @@ const (
 	// offset must satisfy in the chunk-format file family. Mirrors
 	// `MIDX_CHUNK_ALIGNMENT` in `midx.h` and the `expected_alignment`
 	// argument passed to `read_table_of_contents` in
-	// `chunk-format.c:127-130`.
+	// [chunk-format.c:127-130].
+	//
+	// [chunk-format.c:127-130]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L127-L130
 	midxChunkAlignment = 4
 )
 
@@ -230,7 +237,9 @@ func (m *Midx[H]) parseChunkTable(numChunks int) error {
 		}
 		// Each chunk's start offset must be `midxChunkAlignment`-byte
 		// aligned; canonical Git rejects misaligned offsets at TOC
-		// parse time (`chunk-format.c:127-130`).
+		// parse time ([chunk-format.c:127-130]).
+		//
+		// [chunk-format.c:127-130]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L127-L130
 		if e.off%midxChunkAlignment != 0 {
 			return fmt.Errorf("objfmt: midx chunk %s offset %d not %d-byte aligned: %w",
 				e.id, e.off, midxChunkAlignment, ErrCorrupt)
@@ -263,8 +272,10 @@ func (id chunkID) String() string { return string(id[:]) }
 // For v1 files canonical Git requires the entries to be in
 // strict-ascending lexicographic order, rejecting both inversions and
 // duplicates ("multi-pack-index pack names out of order" in
-// `midx.c:213-218`). v2 relaxes the ordering, so the check fires only
+// [midx.c:213-218]). v2 relaxes the ordering, so the check fires only
 // when `m.ver == 1`.
+//
+// [midx.c:213-218]: https://github.com/git/git/blob/v2.54.0/midx.c#L213-L218
 func (m *Midx[H]) parsePackNames() error {
 	ext := m.chunks[chunkPNAM]
 	body := m.data[ext.off : ext.off+ext.len]
@@ -298,8 +309,10 @@ func (m *Midx[H]) parsePackNames() error {
 
 // parseFanout validates that the OIDF chunk is the canonical 1024
 // bytes (256 × uint32), checks that the entries are non-decreasing
-// (`midx.c:62-71` rejects "oid fanout out of order"), and reads the
+// ([midx.c:62-71] rejects "oid fanout out of order"), and reads the
 // count out of the last slot.
+//
+// [midx.c:62-71]: https://github.com/git/git/blob/v2.54.0/midx.c#L62-L71
 func (m *Midx[H]) parseFanout() error {
 	ext := m.chunks[chunkOIDF]
 	if ext.len != 256*4 {
@@ -357,12 +370,14 @@ func (m *Midx[H]) parseFanout() error {
 // object once, so duplicate OIDs indicate either a writer bug or a
 // malicious file.
 //
-// Canonical Git's `midx_read_oid_lookup` (`midx.c:76-84`) only checks
+// Canonical Git's `midx_read_oid_lookup` ([midx.c:76-84]) only checks
 // that the chunk size matches `count * hash_len`; ordering is assumed
 // because `midx-write.c` writes a sorted table. v0 is deliberately
 // stricter here as defense-in-depth: a one-pass walk at parse time
 // costs nothing and acts as a tripwire for both malformed external
 // files and any future v0 write path that produces a corrupt OIDL.
+//
+// [midx.c:76-84]: https://github.com/git/git/blob/v2.54.0/midx.c#L76-L84
 func (m *Midx[H]) validateOIDLookup() error {
 	if m.count < 2 {
 		return nil

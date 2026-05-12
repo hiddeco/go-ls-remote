@@ -209,7 +209,7 @@ func benchSyntheticOID(seed uint64) string {
 // body callback into a reused [pktline.Writer] over a reused
 // [bytes.Buffer] and rewinds a reused [pktline.Reader] over a pre-canned
 // flush-only response (`0000`). The flush is a valid `ls-refs` response
-// per `gitprotocol-v2.adoc` §"ls-refs": zero ref-lines followed by the
+// per [gitprotocol-v2.adoc §"ls-refs"]: zero ref-lines followed by the
 // terminating flush. The stub recycles its writer, reader, and source
 // buffers across iterations so the bench reports the encoder's
 // allocation pressure rather than the stub's setup cost. The
@@ -225,6 +225,8 @@ func benchSyntheticOID(seed uint64) string {
 // `ref-prefix <p>` line via [pktline.Writer.WriteLineParts] without
 // intermediate string concatenation, and the writer's scratch buffer is
 // reused across writes.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
 func BenchmarkSession_Refs_v2_emit(b *testing.B) {
 	canned := flushOnlyResponse(b)
 	conn := newReuseCommandConn(canned)
@@ -279,7 +281,7 @@ func BenchmarkSession_Refs_v2_emit(b *testing.B) {
 // body callback into a reused [pktline.Writer] over a reused
 // [bytes.Buffer] and rewinds a reused [pktline.Reader] over a pre-canned
 // flush-only response (`0000`). A bare flush is a valid `object-info`
-// response per `protocol-caps.c::send_info` lines 44-45 (the
+// response per [protocol-caps.c::send_info lines 44-45] (the
 // zero-OID-requested shape); the decoder returns `nil, nil` and the
 // Session-level call completes with an empty slice. The stub recycles
 // its writer, reader, and source buffers across iterations so the bench
@@ -294,6 +296,8 @@ func BenchmarkSession_Refs_v2_emit(b *testing.B) {
 // [pktline.Writer.WriteLineParts] without intermediate string
 // concatenation, and the writer's scratch buffer is reused across all
 // per-OID lines.
+//
+// [protocol-caps.c::send_info lines 44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func BenchmarkSession_ObjectInfo_emit(b *testing.B) {
 	canned := flushOnlyResponse(b)
 	conn := newReuseCommandConn(canned)
@@ -345,11 +349,15 @@ func benchObjectInfoOIDs(n int) []string {
 
 // flushOnlyResponse builds a pre-canned wire response carrying nothing
 // but a flush packet. It is a valid `ls-refs` response (zero ref-lines
-// followed by the terminating flush, per `gitprotocol-v2.adoc`
-// §"ls-refs") and a valid `object-info` response (the zero-OID shape
-// per `protocol-caps.c::send_info` lines 44-45). Built once per bench
-// and handed to `reuseCommandConn` so the response side of the wire
-// exchange is constant; the bench measures the request side.
+// followed by the terminating flush, per
+// [gitprotocol-v2.adoc §"ls-refs"]) and a valid `object-info` response
+// (the zero-OID shape per [protocol-caps.c::send_info lines 44-45]).
+// Built once per bench and handed to `reuseCommandConn` so the response
+// side of the wire exchange is constant; the bench measures the request
+// side.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
+// [protocol-caps.c::send_info lines 44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func flushOnlyResponse(b *testing.B) []byte {
 	b.Helper()
 	var buf bytes.Buffer

@@ -18,11 +18,14 @@ import (
 // TestTransport_Open_DialsAndSendsInitialRequest verifies the happy
 // path: [Transport.Open] dials the listener and emits the initial
 // git-daemon pkt-line whose payload matches the wire grammar from
-// `gitprotocol-pack.adoc §"Extra Parameters"` and
-// `connect.c::git_connect_git` (lines 1288-1298) in canonical Git.
+// [gitprotocol-pack.adoc §"Extra Parameters"] and
+// [connect.c::git_connect_git lines 1288-1298] in canonical Git.
 //
 // With a nil [transport.OpenOptions.PreferredProtocol] the transport
 // auto-negotiates v2, so the request carries a `version=2` trailer.
+//
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [connect.c::git_connect_git lines 1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
 func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 	payloadCh := make(chan []byte, 1)
 

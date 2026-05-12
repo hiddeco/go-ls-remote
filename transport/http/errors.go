@@ -38,8 +38,10 @@ var (
 
 	// ErrNotFound is returned when the server reports `404 Not Found`
 	// for the discovery URL. Canonical Git surfaces the same condition
-	// as `repository '%s' not found` (see `remote-curl.c::discover_refs`,
+	// as `repository '%s' not found` (see [remote-curl.c::discover_refs],
 	// `HTTP_MISSING_TARGET`).
+	//
+	// [remote-curl.c::discover_refs]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L465
 	ErrNotFound = &transport.SchemeError{
 		Parent: transport.ErrNotFound,
 		Msg:    "transport/http: repository not found",
@@ -49,9 +51,11 @@ var (
 	// connection was opened against a dumb-HTTP server. The dumb body
 	// carries no v2 capability advertisement, so command POSTs are not
 	// available; canonical Git refuses the same configuration in
-	// `remote-curl.c::discover_refs` when the server's response is not
+	// [remote-curl.c::discover_refs] when the server's response is not
 	// the smart advertisement and the user later asks for a v2-only
 	// operation.
+	//
+	// [remote-curl.c::discover_refs]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L465
 	ErrUnsupportedProtocol = &transport.SchemeError{
 		Parent: transport.ErrUnsupportedProtocol,
 		Msg:    "transport/http: server does not support v2 commands",

@@ -28,10 +28,12 @@ type Info struct {
 // maxChainDepth bounds the number of OFS_DELTA / REF_DELTA hops
 // [Store.ObjectInfo] is willing to chase before declaring the chain
 // pathological. Mirrors canonical Git's `MAX_DELTA_CACHE_DEPTH`-style
-// guard in `packfile.c::unpack_entry`: a depth past 64 effectively
+// guard in [packfile.c::unpack_entry]: a depth past 64 effectively
 // never appears in produced packs (`pack.depth` defaults to 50, with
 // repack ceilings around 250), and the bound keeps the iterative
 // walk from running indefinitely on adversarial input.
+//
+// [packfile.c::unpack_entry]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1775
 const maxChainDepth = 64
 
 // refDeltaCacheEntry is one cached cross-pack REF_DELTA resolution
@@ -94,9 +96,11 @@ type refDeltaCacheEntry[H objfmt.Hash] struct {
 //   - CRC mismatch (when enabled) → wrapped [ErrCorruptObject].
 func (s *Store[H]) ObjectInfo(oid H) (Info, error) {
 	// Loose-first: matches canonical Git's lookup precedence
-	// (`object-file.c::oid_object_info_extended` consults the loose
+	// ([odb.c::do_oid_object_info_extended] consults the loose
 	// store ahead of pack lookup) and skips the delta-chain machinery
 	// entirely for the common ref-tip read path.
+	//
+	// [odb.c::do_oid_object_info_extended]: https://github.com/git/git/blob/v2.54.0/odb.c#L583
 	typ, size, body, ok, err := s.loose.Find(oid)
 	if err != nil {
 		return Info{}, err
@@ -118,7 +122,9 @@ func (s *Store[H]) ObjectInfo(oid H) (Info, error) {
 	// Each alternate runs its own ObjectInfo, so its loose / pack /
 	// nested-alternates layers are all consulted before the next
 	// sibling alternate gets a turn — matching canonical Git's
-	// `odb.c::do_oid_object_info_extended` walk shape.
+	// [odb.c::do_oid_object_info_extended] walk shape.
+	//
+	// [odb.c::do_oid_object_info_extended]: https://github.com/git/git/blob/v2.54.0/odb.c#L583
 	for _, alt := range s.alternates {
 		info, err := alt.ObjectInfo(oid)
 		if err == nil {
@@ -144,8 +150,10 @@ func (s *Store[H]) ObjectInfo(oid H) (Info, error) {
 // offset → OID lookup the [objfmt.Idx] surface does not yet expose;
 // the integrity backstop for those bytes is the pack-trailer hash via
 // [objfmt.Pack.VerifyChecksum]. Mirrors canonical Git's
-// `packfile.c::check_pack_crc`, which also runs on the OID-keyed
+// [pack-check.c::check_pack_crc], which also runs on the OID-keyed
 // entry rather than on every chain step.
+//
+// [pack-check.c::check_pack_crc]: https://github.com/git/git/blob/v2.54.0/pack-check.c#L30
 func (s *Store[H]) walkPackChain(oid H, pack *objfmt.Pack[H], at int64) (Info, error) {
 	if err := s.verifyPackCRC(pack, oid, at); err != nil {
 		return Info{}, err
@@ -248,15 +256,18 @@ func (s *Store[H]) lookupRefDeltaBase(base H) (*objfmt.Pack[H], int64, bool) {
 // CRC-32/IEEE and compares the result against the value recorded in
 // the paired idx. Skips silently when the store was opened with CRC
 // verification disabled, or when the paired idx is the v1 layout
-// (which carries no CRC table at all — see `gitformat-pack.adoc`
-// lines 196-218).
+// (which carries no CRC table at all — see
+// [Documentation/gitformat-pack.adoc lines 196-218]).
 //
 // The compressed range covers every byte from `at` (the start of the
 // type/size header) to the start of the next packed object, or to
 // the start of the pack's trailer when `at` names the last object.
-// Mirrors `packfile.c::check_pack_crc`.
+// Mirrors [pack-check.c::check_pack_crc].
 //
 // A CRC mismatch wraps [ErrCorruptObject].
+//
+// [Documentation/gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
+// [pack-check.c::check_pack_crc]: https://github.com/git/git/blob/v2.54.0/pack-check.c#L30
 func (s *Store[H]) verifyPackCRC(pack *objfmt.Pack[H], oid H, at int64) error {
 	if !s.cfg.verifyCRC {
 		return nil

@@ -73,7 +73,9 @@ type midxBackend[H objfmt.Hash] struct {
 	// packs." Sorted by pack mtime (younger first) with idx basename
 	// as a stable tiebreaker so the fallback walk consults the pack
 	// most likely to satisfy the next lookup first, matching
-	// canonical Git's `packfile.c::sort_pack` heuristic.
+	// canonical Git's [packfile.c::sort_pack] heuristic.
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	siblings []packEntry[H]
 
 	// ordered enumerates every opened pack in the order
@@ -216,10 +218,12 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 		}
 
 		// Capture pack mtime once: it feeds the open-time sort that
-		// matches canonical Git's `packfile.c::sort_pack` heuristic
+		// matches canonical Git's [packfile.c::sort_pack] heuristic
 		// (younger first). Stat failures here are unusual — the pack
 		// was just opened — but surface as a clean error rather than
 		// silently substituting a zero time.
+		//
+		// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 		st, err := os.Stat(packPath)
 		if err != nil {
 			_ = pack.Close()
@@ -245,9 +249,11 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 
 	// Validate that every pack the midx claims is actually present:
 	// the midx and the pack-set must agree (canonical Git rejects this
-	// shape too — see `midx.c::prepare_midx_pack`). Missing entries
+	// shape too — see [midx.c::prepare_midx_pack]). Missing entries
 	// surface as [ErrCorruptObject] naming the offending pack so
 	// operators can find it.
+	//
+	// [midx.c::prepare_midx_pack]: https://github.com/git/git/blob/v2.54.0/midx.c#L456
 	for i, pack := range b.coveredByMidxIndex {
 		if pack == nil {
 			closeOpened()
@@ -259,7 +265,9 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 	// Sort siblings by pack mtime (younger first) with idx basename
 	// as a stable tiebreaker so the midx-miss fallback scan consults
 	// the pack most likely to satisfy the next lookup first
-	// (`packfile.c::sort_pack`).
+	// ([packfile.c::sort_pack]).
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	slices.SortFunc(b.siblings, func(a, c packEntry[H]) int {
 		if d := c.mtime.Compare(a.mtime); d != 0 {
 			return d
@@ -272,8 +280,10 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 	// merged list across midx-covered AND sibling packs. The midx
 	// insertion order is an implementation detail consumers of
 	// `AllPacks` (e.g. cross-pack REF_DELTA scans) must not depend
-	// on; canonical Git's `packfile.c::sort_pack` heuristic governs
+	// on; canonical Git's [packfile.c::sort_pack] heuristic governs
 	// the order across the whole pack set.
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	type orderedEntry struct {
 		pack  *objfmt.Pack[H]
 		idx   *objfmt.Idx[H]
@@ -312,7 +322,7 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 // Git's "midx is authoritative for its packs; siblings exist for
 // newly-added packs" rule (`midx.c::nth_midxed_*` vs
 // `find_pack_entry`); the sibling scan order is mtime-descending
-// with basename tiebreaker, matching `packfile.c::sort_pack` so the
+// with basename tiebreaker, matching [packfile.c::sort_pack] so the
 // pack most likely to satisfy the next lookup is the first one
 // consulted.
 //
@@ -321,6 +331,8 @@ func openMidxBackend[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*midxBa
 // reinterpreting the error slot. The error slot is preserved for
 // forward compatibility with a future shape that may surface per-pack
 // failures (e.g. a lazily-mapped read error).
+//
+// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 func (b *midxBackend[H]) Lookup(h H) (*objfmt.Pack[H], int64, bool, error) {
 	if packIdx, off, ok := b.midx.Find(h); ok {
 		// `coveredByMidxIndex` is sized to `PackNames()` at open
@@ -345,11 +357,13 @@ func (b *midxBackend[H]) Lookup(h H) (*objfmt.Pack[H], int64, bool, error) {
 
 // AllPacks yields every open `*objfmt.Pack` the backend holds — both
 // midx-covered and sibling — in a single mtime-desc / basename
-// tiebreaker order, matching canonical Git's `packfile.c::sort_pack`
+// tiebreaker order, matching canonical Git's [packfile.c::sort_pack]
 // heuristic. The midx insertion order is an implementation detail
 // that does NOT survive in the enumeration; consumers (the cross-pack
 // REF_DELTA scan, integrity walks) want "younger first" across the
 // whole set. See [packBackend.AllPacks] for the contract.
+//
+// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 func (b *midxBackend[H]) AllPacks() iter.Seq[*objfmt.Pack[H]] {
 	return func(yield func(*objfmt.Pack[H]) bool) {
 		for _, p := range b.ordered {

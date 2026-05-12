@@ -10,7 +10,9 @@ import (
 
 // gitfilePrefix is the literal directive that introduces the gitdir
 // pointer inside a `.git` regular file. Canonical Git rejects any
-// other prefix in `setup.c::read_gitfile_gently`.
+// other prefix in [setup.c::read_gitfile_gently].
+//
+// [setup.c::read_gitfile_gently]: https://github.com/git/git/blob/v2.54.0/setup.c#L956
 const gitfilePrefix = "gitdir: "
 
 // resolveGitDir returns the git directory and the common directory
@@ -21,7 +23,7 @@ const gitfilePrefix = "gitdir: "
 // pointing at the original repo's gitdir.
 //
 // The resolution order mirrors canonical Git's
-// `setup.c::is_git_directory` and `setup.c::get_common_dir_noenv`:
+// [setup.c::is_git_directory] and [setup.c::get_common_dir_noenv]:
 //
 //  1. If path is itself a git directory, gitDir = path.
 //  2. Else if path/.git is a directory and is itself a git
@@ -40,6 +42,9 @@ const gitfilePrefix = "gitdir: "
 // points at the parent repo passes validation).
 //
 // Both returned paths are passed through [filepath.Clean].
+//
+// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
+// [setup.c::get_common_dir_noenv]: https://github.com/git/git/blob/v2.54.0/setup.c#L324
 func resolveGitDir(path string) (gitDir, commonDir string, err error) {
 	gitDir, err = locateGitDir(path)
 	if err != nil {
@@ -96,7 +101,7 @@ func locateGitDir(path string) (string, error) {
 
 // isGitDirectory reports whether path is a git repository directory
 // (or a per-worktree gitdir). It mirrors canonical Git's
-// `setup.c::is_git_directory` (lines 416–454 in 2.45-era Git):
+// [setup.c::is_git_directory] (lines 416–454 in 2.45-era Git):
 //
 //   - `HEAD` under path must be a regular file (or symlink to one).
 //   - `objects/` and `refs/` must exist as directories. They are
@@ -107,6 +112,8 @@ func locateGitDir(path string) (string, error) {
 // All filesystem lookups follow symlinks: canonical Git uses
 // `access(..., X_OK)`, which dereferences, and Go's [os.Stat] does
 // the same. [os.Lstat] is deliberately avoided.
+//
+// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 func isGitDirectory(path string) bool {
 	if info, err := os.Stat(filepath.Join(path, "HEAD")); err != nil || !info.Mode().IsRegular() {
 		return false
@@ -155,9 +162,11 @@ func readGitfile(gitfile string) (string, error) {
 
 // resolveCommonDir reads gitDir/commondir, if present, and returns
 // the resolved common directory. When the file is absent commonDir
-// equals gitDir. Mirrors `setup.c::get_common_dir_noenv`: an
+// equals gitDir. Mirrors [setup.c::get_common_dir_noenv]: an
 // absolute payload is taken verbatim, a relative payload joins
 // against gitDir.
+//
+// [setup.c::get_common_dir_noenv]: https://github.com/git/git/blob/v2.54.0/setup.c#L324
 func resolveCommonDir(gitDir string) (string, error) {
 	commonFile := filepath.Join(gitDir, "commondir")
 	raw, err := os.ReadFile(commonFile)
@@ -171,7 +180,7 @@ func resolveCommonDir(gitDir string) (string, error) {
 	target := strings.TrimRight(string(raw), "\r\n")
 	if target == "" {
 		// Treat an empty commondir as absent. Canonical Git's
-		// `setup.c::get_common_dir_noenv` reads the file with
+		// [setup.c::get_common_dir_noenv] reads the file with
 		// `strbuf_read_file(...) <= 0` and dies on a zero-byte
 		// payload, but the resolver's contract is to surface a
 		// usable directory whenever it can — and in this branch the
@@ -181,6 +190,8 @@ func resolveCommonDir(gitDir string) (string, error) {
 		// indirection is just a non-linked worktree). Revisit if v0
 		// ever needs strict canonical-Git behavior, e.g. for an
 		// `fsck`-equivalent integrity path.
+		//
+		// [setup.c::get_common_dir_noenv]: https://github.com/git/git/blob/v2.54.0/setup.c#L324
 		return gitDir, nil
 	}
 

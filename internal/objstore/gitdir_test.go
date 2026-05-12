@@ -16,11 +16,17 @@ import (
 // path component called `dotgit` to `.git` on the way through.
 //
 // Canonical `git` refuses to track paths containing a literal `.git`
-// component (`is_dotgit_path()` in `path.c`), so the on-disk fixtures
-// store their `.git` artefacts under the name `dotgit`. This helper
-// reverses that rename so the resolver under test sees the same shape
-// it would see on a real working tree. Tests still never shell out;
-// they only read the committed bytes and write them back unchanged.
+// component ([read-cache.c::verify_path_internal] guards the index
+// with [is_hfs_dotgit] and [is_ntfs_dotgit] checks), so the on-disk
+// fixtures store their `.git` artefacts under the name `dotgit`. This
+// helper reverses that rename so the resolver under test sees the
+// same shape it would see on a real working tree. Tests still never
+// shell out; they only read the committed bytes and write them back
+// unchanged.
+//
+// [read-cache.c::verify_path_internal]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
+// [is_hfs_dotgit]: https://github.com/git/git/blob/v2.54.0/utf8.c#L784
+// [is_ntfs_dotgit]: https://github.com/git/git/blob/v2.54.0/path.c#L1415
 func materializeFixture(t *testing.T, name string) string {
 	t.Helper()
 
@@ -65,10 +71,12 @@ func materializeFixture(t *testing.T, name string) string {
 }
 
 // writeMinimalGitDir lays down the three signatures required by
-// canonical Git's `setup.c::is_git_directory` — a regular `HEAD`
+// canonical Git's [setup.c::is_git_directory] — a regular `HEAD`
 // file plus empty `objects/` and `refs/` directories — at dir.
 // Tests that synthesise a gitdir in `t.TempDir()` use this helper
 // so the resolver accepts the fixture under the tightened rule.
+//
+// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 func writeMinimalGitDir(t *testing.T, dir string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o755))
@@ -257,9 +265,11 @@ func TestResolveGitDir_CommondirAbsent(t *testing.T) {
 }
 
 func TestResolveGitDir_HeadAlonePathIsRejected(t *testing.T) {
-	// Canonical Git's `setup.c::is_git_directory` requires HEAD,
+	// Canonical Git's [setup.c::is_git_directory] requires HEAD,
 	// `objects/`, and `refs/` together. A directory carrying only a
 	// stray `HEAD` file must not be accepted as a gitdir.
+	//
+	// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
 
@@ -270,7 +280,9 @@ func TestResolveGitDir_HeadAlonePathIsRejected(t *testing.T) {
 
 func TestResolveGitDir_HeadPlusObjectsButNoRefsIsRejected(t *testing.T) {
 	// Two-out-of-three is not enough: `refs/` is independently
-	// required by `setup.c::is_git_directory`.
+	// required by [setup.c::is_git_directory].
+	//
+	// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0o755))
@@ -324,7 +336,9 @@ func TestResolveGitDir_GitfileTargetMustBeRealRepo(t *testing.T) {
 func TestResolveGitDir_CommondirAbsolute(t *testing.T) {
 	// An absolute `commondir` payload must be used verbatim rather
 	// than re-rooted under the gitdir. Mirrors the canonical Git
-	// behaviour in `setup.c::get_common_dir_noenv`.
+	// behaviour in [setup.c::get_common_dir_noenv].
+	//
+	// [setup.c::get_common_dir_noenv]: https://github.com/git/git/blob/v2.54.0/setup.c#L324
 	gitDirPath := t.TempDir()
 	commonTarget := t.TempDir()
 	writeMinimalGitDir(t, commonTarget)

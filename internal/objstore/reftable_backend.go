@@ -44,13 +44,15 @@ type reftableBackend[H objfmt.Hash] struct {
 //   - When location is absolute, it is consumed verbatim.
 //   - When location is relative, it is resolved against gitDir
 //     (not commonDir), per canonical Git's
-//     `Documentation/config/extensions.adoc` § `extensions.refStorage`:
+//     [Documentation/config/extensions.adoc lines 59-78]:
 //     "if relative, it is interpreted relative to `$GIT_DIR`".
 //
 // The stack's hash algorithm is checked against `H` inside
 // [reftable.OpenReader]; opening a SHA-256 reftable as a SHA-1 backend
 // (or vice versa) surfaces as [reftable.ErrMixedHashAlgo] before any
 // record reaches the lift.
+//
+// [Documentation/config/extensions.adoc lines 59-78]: https://github.com/git/git/blob/v2.54.0/Documentation/config/extensions.adoc?plain=1#L59-L78
 func openReftableBackend[H objfmt.Hash](gitDir, commonDir, location string) (*reftableBackend[H], error) {
 	reftableDir := resolveReftableDir(gitDir, commonDir, location)
 

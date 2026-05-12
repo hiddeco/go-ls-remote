@@ -11,7 +11,9 @@ import (
 
 // encodeVarint encodes v in the reftable varint format. It is the
 // inverse of [decodeVarint] and only used by tests to hand-build
-// fixture bytes. Mirrors `reftable/record.c::put_var_int`.
+// fixture bytes. Mirrors [reftable/record.c::put_var_int].
+//
+// [reftable/record.c::put_var_int]: https://github.com/git/git/blob/v2.54.0/reftable/record.c#L56
 func encodeVarint(v uint64) []byte {
 	var buf [varintMaxBytes]byte
 	pos := len(buf) - 1

@@ -18,11 +18,13 @@ import (
 // openStoreFromFixture materializes the named fixture, creates any
 // missing `objects/` and `objects/pack/` directories so the gitdir
 // satisfies canonical Git's `is_git_directory` check (see
-// `setup.c::is_git_directory`), and returns an opened [objstore.Store[objfmt.SHA1Hash]].
+// [setup.c::is_git_directory]), and returns an opened [objstore.Store[objfmt.SHA1Hash]].
 // A handful of ref-only fixtures (`unborn-head`, `detached-head`,
 // `mixed`) ship without an `objects/` directory because they were
 // authored for the ref-backend tests; the server tests need the full
 // gitdir shape so the empty objects directory is conjured here.
+//
+// [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 func openStoreFromFixture(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
 	gitdir := testfixture.MaterializeRepo(t, name)
@@ -48,14 +50,17 @@ func openStoreFromFixture256(t *testing.T, name string) *objstore.Store[objfmt.S
 }
 
 // TestServe_V0EmptyRepoPlaceholder pins the empty-repo branch of the
-// canonical advertise loop (`upload-pack.c:1416-1438`): when no ref
+// canonical advertise loop ([upload-pack.c:1416-1438]): when no ref
 // callback fires, `data.sent_capabilities` stays zero and
 // `write_v0_ref` is invoked once with a synthetic
 // `capabilities^{}` ref carrying the null oid. The pkt-line payload
 // is `<zero-oid> capabilities^{}\0<caps>\n`. The `empty` fixture's
 // HEAD is `ref: refs/heads/main`, so `format_symref_info`
-// (`upload-pack.c:1216-1224`) yields `symref=HEAD:refs/heads/main`
+// ([upload-pack.c:1216-1224]) yields `symref=HEAD:refs/heads/main`
 // even though HEAD itself is not advertised.
+//
+// [upload-pack.c:1416-1438]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1416-L1438
+// [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0EmptyRepoPlaceholder(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -94,8 +99,10 @@ func TestServe_V0UnbornHeadPlaceholder(t *testing.T) {
 
 // TestServe_V0DefaultsAgent pins the agent fallback for the v0 path:
 // when [Options.Agent] is empty, the cap list carries
-// `agent=<wire.DefaultUserAgent>` (matching `upload-pack.c:1262`'s
+// `agent=<wire.DefaultUserAgent>` (matching [upload-pack.c:1262]'s
 // `git_user_agent_sanitized()`).
+//
+// [upload-pack.c:1262]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1262
 func TestServe_V0DefaultsAgent(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -110,10 +117,12 @@ func TestServe_V0DefaultsAgent(t *testing.T) {
 
 // TestServe_V0DetachedHead pins the detached-HEAD shape: HEAD has no
 // symref target, so no `symref=HEAD:...` cap is emitted. Canonical
-// reference: `format_symref_info` at `upload-pack.c:1216-1224` early-
+// reference: `format_symref_info` at [upload-pack.c:1216-1224] early-
 // returns when the symref list is empty. The `detached-head` fixture
 // has HEAD at `4444...` with no other refs, so HEAD is the only
 // advertised ref.
+//
+// [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0DetachedHead(t *testing.T) {
 	store := openStoreFromFixture(t, "detached-head")
 
@@ -138,11 +147,11 @@ func TestServe_V0DetachedHead(t *testing.T) {
 // for a non-empty repo whose `packed-refs` carries a branch and an
 // annotated tag with a peel line. The fixture HEAD is symbolic
 // (`refs/heads/main`), so the first emitted ref is HEAD itself with
-// the cap list (`upload-pack.c:1416-1422` invokes
+// the cap list ([upload-pack.c:1416-1422] invokes
 // `head_ref_namespaced(send_ref)` before
 // `for_each_namespaced_ref_1(send_ref, &data)`). Subsequent refs are
 // emitted in C-locale byte order; the annotated tag's peel line is
-// written immediately after the tag (`upload-pack.c:1268-1270`).
+// written immediately after the tag ([upload-pack.c:1268-1270]).
 //
 // Layout of `packed-refs-fully-peeled/dotgit/packed-refs`:
 //
@@ -152,6 +161,9 @@ func TestServe_V0DetachedHead(t *testing.T) {
 //	^dddddddddddddddddddddddddddddddddddddddd
 //
 // HEAD points at `refs/heads/main`, so HEAD's resolved oid is `aaa...`.
+//
+// [upload-pack.c:1416-1422]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1416-L1422
+// [upload-pack.c:1268-1270]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1268-L1270
 func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
@@ -177,10 +189,12 @@ func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 // non-HEAD ref list against the `mixed` fixture, which combines a
 // loose ref and a packed ref so the underlying `IterRefs` iterator
 // has to merge two backends. Canonical reference:
-// `gitprotocol-pack.adoc:201-203` ("MUST be sorted by name according
+// [gitprotocol-pack.adoc:201-203] ("MUST be sorted by name according
 // to the C locale ordering"); the canonical advertise loop achieves
 // this via `for_each_namespaced_ref_1` which iterates the merged
 // ref view in sorted order.
+//
+// [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
 //
 // Layout of the `mixed` fixture:
 //
@@ -247,9 +261,11 @@ func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.St
 // (the ref walk produces refs), and the cap list lands on the first
 // sorted non-HEAD ref via the `capsEmitted=false` fall-through in
 // `writeV0Advertisement`. The `symref=HEAD:<target>` cap is still
-// emitted because `format_symref_info` (`upload-pack.c:1216-1224`)
+// emitted because `format_symref_info` ([upload-pack.c:1216-1224])
 // formats whatever `data.symref` carries regardless of whether HEAD
 // itself is advertised.
+//
+// [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0UnbornHeadWithStrayRefs(t *testing.T) {
 	strayOID := strings.Repeat("e", 40)
 	store := buildUnbornHeadStrayRefsFixture(t, strayOID)

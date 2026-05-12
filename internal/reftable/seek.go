@@ -20,12 +20,14 @@ type blockProbeCounter struct {
 // readRefIndexPosition pulls `ref_index_position` from the file
 // footer. The footer's section-position fields begin immediately after
 // the header copy — at offset 24 for v1, 28 for v2. A zero return
-// signals "no ref index", per reftable.adoc §"Footer".
+// signals "no ref index", per [reftable.adoc § Footer].
 //
 // The caller must have already validated the footer with
 // [verifyTrailer]; readRefIndexPosition does not re-check the CRC and
 // does not bounds-check the file length beyond what [header.size] /
 // [header.footerSize] imply.
+//
+// [reftable.adoc § Footer]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#footer
 func readRefIndexPosition(file []byte, h header) uint64 {
 	footer := file[len(file)-h.footerSize():]
 	return binary.BigEndian.Uint64(footer[h.size():])
@@ -39,9 +41,9 @@ func readRefIndexPosition(file []byte, h header) uint64 {
 // indexRoot is the absolute file offset stored in the footer. When it
 // is zero the caller asked for a fileless seek: seekToLeaf falls back
 // to a linear scan of ref blocks beginning at the file header's first
-// ref block. (Canonical Git does the same; reftable.adoc §"Ref index"
-// notes that small files may omit the ref index, and §"Block
-// alignment" requires multi-block unaligned files to carry one.)
+// ref block. (Canonical Git does the same; [reftable.adoc § Ref index]
+// notes that small files may omit the ref index, and [reftable.adoc § Block alignment]
+// requires multi-block unaligned files to carry one.)
 //
 // The returned slice is a window onto file aliasing exactly one
 // block's worth of bytes (its declared block_len), and
@@ -74,8 +76,13 @@ func readRefIndexPosition(file []byte, h header) uint64 {
 // from call sites where the descent is rare enough that allocation
 // is in the noise (e.g. tests).
 //
-// Mirrors the descent in `reftable/table.c::table_iter_seek_indexed`
-// and the per-block seek in `reftable/block.c::block_iter_seek_key`.
+// Mirrors the descent in [reftable/table.c::table_iter_seek_indexed]
+// and the per-block seek in [reftable/block.c::block_iter_seek_key].
+//
+// [reftable.adoc § Ref index]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-index
+// [reftable.adoc § Block alignment]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#block-alignment
+// [reftable/table.c::table_iter_seek_indexed]: https://github.com/git/git/blob/v2.54.0/reftable/table.c#L356
+// [reftable/block.c::block_iter_seek_key]: https://github.com/git/git/blob/v2.54.0/reftable/block.c#L488
 func seekToLeaf(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter, scratch *[]byte) ([]byte, uint32, error) {
 	if indexRoot == 0 {
 		return seekLinear(file, h, probe, counter, scratch)
@@ -88,10 +95,12 @@ func seekToLeaf(file []byte, h header, indexRoot uint64, probe []byte, counter *
 // is the smallest known key ≥ probe. See [seekToLeaf] for the public
 // contract.
 func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter *blockProbeCounter, scratch *[]byte) ([]byte, uint32, error) {
-	// Cap the descent at a sensible bound. reftable.adoc §"Ref index"
+	// Cap the descent at a sensible bound. [reftable.adoc § Ref index]
 	// allows multi-level indexes, but a healthy file converges to a
 	// leaf in a handful of steps. The cap stops a malformed file from
 	// looping us forever; we lift it well above any plausible depth.
+	//
+	// [reftable.adoc § Ref index]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-index
 	const maxDepth = 64
 
 	pos := indexRoot
@@ -101,11 +110,13 @@ func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter 
 		}
 
 		// The first ref block in a file shares its frame with the file
-		// header (reftable.adoc §"Ref block format"); when an index
+		// header ([reftable.adoc § Ref block format]); when an index
 		// points back at file offset 0 we must hand parseBlock the
 		// firstByteOffset shift so its restart-table rebase still
 		// works. Every other block lives at its own offset and uses
 		// firstByteOffset = 0.
+		//
+		// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 		var firstByteOffset uint32
 		var slice []byte
 		if pos == 0 {
@@ -151,13 +162,15 @@ func seekIndexed(file []byte, h header, indexRoot uint64, probe []byte, counter 
 // index block. It locates the smallest index_record whose key is ≥
 // probe (using the restart table for an O(log) jump-in followed by a
 // short linear scan, exactly like
-// `reftable/block.c::block_iter_seek_key`). If probe sorts after
+// [reftable/block.c::block_iter_seek_key]). If probe sorts after
 // every index_record, descendIndex falls through to the last record's
 // block_position so callers always get a leaf back.
 //
 // scratch, if non-nil, points to a caller-owned key buffer reused
 // across every key decode in this descent and across the recursion to
 // the next-level index block. See [seekToLeaf] for the contract.
+//
+// [reftable/block.c::block_iter_seek_key]: https://github.com/git/git/blob/v2.54.0/reftable/block.c#L488
 func descendIndex(blk *block, probe []byte, scratch *[]byte) (uint64, error) {
 	// Records live in bytes[startOff:restartOff). startOff is 4 (block
 	// header) for every block but the first ref block in the file —
@@ -213,7 +226,9 @@ func descendIndex(blk *block, probe []byte, scratch *[]byte) (uint64, error) {
 			return 0, fmt.Errorf("reftable: decode index key at offset %d: %w", cur, err)
 		}
 		// After the (prefix-compressed) key comes varint(block_position)
-		// for index records (reftable.adoc §"index record").
+		// for index records ([reftable.adoc § index record]).
+		//
+		// [reftable.adoc § index record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#index-record
 		blockPos, m, err := decodeVarint(blk.bytes[cur+uint32(n) : restartOff])
 		if err != nil {
 			return 0, fmt.Errorf("reftable: decode index block_position at offset %d: %w", cur, err)

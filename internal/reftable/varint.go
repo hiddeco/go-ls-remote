@@ -32,7 +32,7 @@ const varintMaxBytes = 10
 // and returns its value, the number of bytes consumed, and any error.
 //
 // Reftable's varint is identical to the ofs-delta encoding used in
-// pack files (reftable.adoc §"Varint encoding"):
+// pack files ([reftable.adoc § Varint encoding]):
 //
 //	val = buf[0] & 0x7f
 //	while (buf[i] & 0x80) {
@@ -51,8 +51,11 @@ const varintMaxBytes = 10
 //   - ErrVarintOverflow when an 11th byte is needed or the running
 //     value would step past uint64.
 //
-// See `reftable/record.c::get_var_int` for the canonical reference;
+// See [reftable/record.c::get_var_int] for the canonical reference;
 // the overflow check there mirrors the bit shift used here.
+//
+// [reftable.adoc § Varint encoding]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#varint-encoding
+// [reftable/record.c::get_var_int]: https://github.com/git/git/blob/v2.54.0/reftable/record.c#L22
 func decodeVarint(buf []byte) (uint64, int, error) {
 	if len(buf) == 0 {
 		return 0, 0, fmt.Errorf("reftable: empty buffer for varint: %w", ErrTruncatedRecord)
@@ -71,8 +74,10 @@ func decodeVarint(buf []byte) (uint64, int, error) {
 			return 0, 0, fmt.Errorf("reftable: varint exceeds %d bytes: %w", varintMaxBytes, ErrVarintOverflow)
 		}
 		// `val + 1` and `val << 7` must both fit in uint64. The check
-		// mirrors `reftable/record.c::get_var_int`: if the top 7 bits
+		// mirrors [reftable/record.c::get_var_int]: if the top 7 bits
 		// of val are set, the next shift would lose data.
+		//
+		// [reftable/record.c::get_var_int]: https://github.com/git/git/blob/v2.54.0/reftable/record.c#L22
 		val++
 		if val>>(64-7) != 0 {
 			return 0, 0, fmt.Errorf("reftable: varint value would overflow uint64: %w", ErrVarintOverflow)

@@ -93,7 +93,9 @@ func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 	// Drain the advertisement, capturing the data lines so callers can
 	// assert on advertised capabilities. The v2 advertisement begins
 	// with `version 2\n`, then one cap per line, then a flush
-	// (`serve.c::protocol_v2_advertise_capabilities`).
+	// ([serve.c::protocol_v2_advertise_capabilities]).
+	//
+	// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 	rdr := conn.Advertisement()
 	var caps []string
 	for {
@@ -119,8 +121,10 @@ func testMatrixEmpty(t *testing.T) {
 
 	// `empty` carries no refs, only an unborn HEAD. Without the
 	// `unborn` arg the server must skip HEAD entirely
-	// (`ls-refs.c::send_possibly_unborn_head` returns early), so the
+	// ([ls-refs.c::send_possibly_unborn_head] returns early), so the
 	// response is a flush-only stream with no data packets.
+	//
+	// [ls-refs.c::send_possibly_unborn_head]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L123
 	rdr, err := c.Command(context.Background(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -194,9 +198,11 @@ func testMatrixUnbornHead(t *testing.T) {
 	gitdir := materializeServeableFixture(t, "unborn-head")
 	c, caps := openMatrixConn(t, gitdir)
 	// The server advertises `ls-refs=unborn` so a v2 client knows the
-	// `unborn` argument is recognised (`ls-refs.c:153`'s capability
+	// `unborn` argument is recognised ([ls-refs.c:185-186]'s capability
 	// echo). Pinning the cap shape protects against accidental
 	// regressions in the advertise path.
+	//
+	// [ls-refs.c:185-186]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L185-L186
 	assertHasCap(t, caps, "ls-refs=unborn")
 
 	rdr, err := c.Command(context.Background(), "ls-refs",
@@ -208,8 +214,10 @@ func testMatrixUnbornHead(t *testing.T) {
 	// Unborn HEAD path: `head.OID == 0` and `head.Symref ==
 	// "refs/heads/main"`, so the handler emits
 	// `unborn HEAD symref-target:refs/heads/main\n`
-	// (`ls-refs.c:91-94`). Without the `unborn` arg the line would be
+	// ([ls-refs.c:91-94]). Without the `unborn` arg the line would be
 	// suppressed entirely.
+	//
+	// [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 	line := requireRefLine(t, lines, " HEAD symref-target:refs/heads/main\n")
 	assert.True(t, strings.HasPrefix(line, "unborn "),
 		"an unborn HEAD must take `unborn` in the OID slot, not a zero hash; got %q", line)
@@ -256,7 +264,9 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 	lines := dataLines(t, rdr)
 	require.NotEmpty(t, lines, "object-info must produce data lines for a hit")
 	requireDataLine(t, lines, "size")
-	// The per-OID line is `<oid> <size>\n` per `protocol-caps.c::send_info`.
+	// The per-OID line is `<oid> <size>\n` per [protocol-caps.c::send_info].
+	//
+	// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 	requireRefLine(t, lines, threeCommitOID+" ")
 }
 

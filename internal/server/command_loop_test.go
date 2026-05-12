@@ -84,10 +84,12 @@ var flushBytes = []byte("0000")
 var delimBytes = []byte("0001")
 
 // TestServe_V2EmptyRequestTerminates verifies the canonical
-// empty-request termination path from `serve.c::process_request`
-// lines 314-321: a flush received before any `command=` or capability
+// empty-request termination path from [serve.c::process_request lines 314-321]:
+// a flush received before any `command=` or capability
 // line means the client wants to terminate the session, and the loop
 // returns cleanly.
+//
+// [serve.c::process_request lines 314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 func TestServe_V2EmptyRequestTerminates(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -98,10 +100,12 @@ func TestServe_V2EmptyRequestTerminates(t *testing.T) {
 }
 
 // TestServe_V2StreamCloseTerminates verifies the EOF-before-request
-// path from `serve.c::process_request` lines 292-297: the canonical
+// path from [serve.c::process_request lines 292-297]: the canonical
 // peek returns `PACKET_READ_EOF` and the loop exits with status 1.
 // In our emulator the same situation surfaces as `io.EOF` from the
 // reader; `Serve` must return nil.
+//
+// [serve.c::process_request lines 292-297]: https://github.com/git/git/blob/v2.54.0/serve.c#L292-L297
 func TestServe_V2StreamCloseTerminates(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -223,7 +227,7 @@ func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 
 // TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs pins the
 // canonical "flush instead of delim" path from
-// `serve.c::process_request` lines 314-329: the dispatcher detects a
+// [serve.c::process_request lines 314-329]: the dispatcher detects a
 // flush in place of the args-section delim, leaves the flush on the
 // wire ("the flush packet isn't consume here"), and dispatches the
 // command. The command's handler then reads the flush as its own
@@ -236,6 +240,8 @@ func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 // A clean end-to-end response with both bodies emitted in sequence
 // proves the early flush stayed on the wire and was consumed by the
 // ls-refs handler exactly once.
+//
+// [serve.c::process_request lines 314-329]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L329
 func TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -253,6 +259,8 @@ func TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs(t *testing.T) {
 
 	// ls-refs body for an empty repo with no args: just a flush.
 	// object-info body for an empty OID list (even with `size`):
-	// just a flush, per `protocol-caps.c:44-45`.
+	// just a flush, per [protocol-caps.c:44-45].
+	//
+	// [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 	assert.Equal(t, "00000000", string(resp))
 }

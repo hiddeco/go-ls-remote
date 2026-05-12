@@ -236,13 +236,15 @@ func (r *Reader[H]) iterAllRefs() iter.Seq2[refRecord[H], error] {
 
 		// kb persists across block boundaries: the first record of
 		// every ref block sits at a restart point with prefix_length=0
-		// (reftable.adoc §"ref record"), so [decodeKey] ignores the
+		// ([reftable.adoc § ref record]), so [decodeKey] ignores the
 		// hoisted `prev` from the previous block; only the `scratch`
 		// buffer is reused, and that reuse is correctness-safe — the
 		// previous block's last decoded key is no longer aliased by
 		// any live record. Hoisting the buffers out of the block loop
 		// eliminates the per-block warm-up allocations (two per block,
 		// one for each of the first two records' fresh-buffer decode).
+		//
+		// [reftable.adoc § ref record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-record
 		var kb keyBuf
 
 		pos := uint32(0)

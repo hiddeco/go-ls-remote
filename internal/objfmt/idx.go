@@ -29,8 +29,8 @@ type Idx[H Hash] struct {
 	data  []byte
 }
 
-// Pack-index v2 layout per `Documentation/gitformat-pack.adoc`
-// (lines 285-319):
+// Pack-index v2 layout per [Documentation/gitformat-pack.adoc lines
+// 285-319]:
 //
 //	'\xfftOc'           4 bytes magic
 //	uint32 version (BE) currently always 2
@@ -44,7 +44,10 @@ type Idx[H Hash] struct {
 //
 // Pack-index v1 has no magic; the file begins directly with the
 // fan-out table. The layout is documented in the same file at
-// lines 196-218.
+// [Documentation/gitformat-pack.adoc lines 196-218].
+//
+// [Documentation/gitformat-pack.adoc lines 285-319]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L285-L319
+// [Documentation/gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
 
 const idxV2HeaderLen = 8
 
@@ -112,8 +115,10 @@ func (i *Idx[H]) parseHeader() error {
 	case 1:
 		// fan-out: 256 × uint32, then N × (uint32 offset + hashLen oid),
 		// then a 20-byte pack-trailer SHA-1, then a 20-byte idx-trailer
-		// SHA-1. v1 is SHA-1 only — see `gitformat-pack.adoc` lines
-		// 196-218.
+		// SHA-1. v1 is SHA-1 only — see [gitformat-pack.adoc lines
+		// 196-218].
+		//
+		// [gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
 		if len(i.data) < 256*4 {
 			return fmt.Errorf("objfmt: idx v1 truncated before fan-out: %w", ErrTruncated)
 		}
@@ -151,9 +156,11 @@ func (i *Idx[H]) parseHeader() error {
 // the cumulative count of OIDs whose first byte is ≤ N, so it must be
 // monotonically non-decreasing across the full table.
 //
-// Mirrors `packfile.c:215-220` — the same check Git applies at idx-load
+// Mirrors [packfile.c:215-220] — the same check Git applies at idx-load
 // time (`for (i = 0; i < 256; i++) { if (n < nr) return error(...);
 // nr = n; }`).
+//
+// [packfile.c:215-220]: https://github.com/git/git/blob/v2.54.0/packfile.c#L215-L220
 func validateIdxFanout(fanout []byte) error {
 	var prev uint32
 	for k := range 256 {

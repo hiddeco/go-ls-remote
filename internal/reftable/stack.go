@@ -30,8 +30,10 @@ var (
 	// ErrInvalidTablesList is returned when `tables.list` cannot be
 	// parsed as a sequence of newline-separated basenames. The most
 	// common cause is an empty middle line (a corrupted manifest);
-	// canonical Git's `reftable/stack.c::read_lines` likewise rejects
+	// canonical Git's [reftable/stack.c::read_lines] likewise rejects
 	// this shape.
+	//
+	// [reftable/stack.c::read_lines]: https://github.com/git/git/blob/v2.54.0/reftable/stack.c#L111
 	ErrInvalidTablesList = errors.New("reftable: invalid tables.list")
 )
 
@@ -75,7 +77,7 @@ type Stack[H objfmt.Hash] struct {
 // trailing newline is tolerated. An empty file is a valid empty stack.
 // Empty middle lines indicate a corrupted manifest and surface as
 // [ErrInvalidTablesList]. See canonical Git's
-// `reftable/stack.c::read_lines` for the wire-compatible parser.
+// [reftable/stack.c::read_lines] for the wire-compatible parser.
 //
 // Every reader is opened under the stack's static hash type `H`; a file
 // whose on-disk hash algorithm does not match surfaces as
@@ -87,6 +89,8 @@ type Stack[H objfmt.Hash] struct {
 //
 // On successful return the caller owns the [Stack] and must release it
 // with [Stack.Close].
+//
+// [reftable/stack.c::read_lines]: https://github.com/git/git/blob/v2.54.0/reftable/stack.c#L111
 func OpenStack[H objfmt.Hash](reftableDir string) (*Stack[H], error) {
 	manifest := filepath.Join(reftableDir, "tables.list")
 	raw, err := os.ReadFile(manifest)
@@ -167,7 +171,9 @@ func OpenStack[H objfmt.Hash](reftableDir string) (*Stack[H], error) {
 // The format is a strict sequence of `<basename>\n` records, with a
 // single trailing newline tolerated. Empty middle elements signal a
 // corrupted manifest and yield [ErrInvalidTablesList]; canonical Git
-// rejects the same shape in `reftable/stack.c::read_lines`.
+// rejects the same shape in [reftable/stack.c::read_lines].
+//
+// [reftable/stack.c::read_lines]: https://github.com/git/git/blob/v2.54.0/reftable/stack.c#L111
 func parseTablesList(raw []byte) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, nil

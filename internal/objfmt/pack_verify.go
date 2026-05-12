@@ -15,11 +15,13 @@ import (
 //
 // The trailer is `len(*new(H))` bytes wide — 20 for [SHA1Hash], 32 for
 // [SHA256Hash] — per the pack file layout in
-// `Documentation/gitformat-pack.adoc`. Verifying the trailer is
+// [Documentation/gitformat-pack.adoc]. Verifying the trailer is
 // expensive (whole-file read) but it is the only way to prove the
 // pack body is intact end-to-end; callers should run it once at open
 // time for untrusted packs and lean on the OS page cache for any
 // subsequent random-access reads.
+//
+// [Documentation/gitformat-pack.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc
 func (p *Pack[H]) VerifyChecksum() error {
 	var zero H
 	hashLen := int64(len(zero))

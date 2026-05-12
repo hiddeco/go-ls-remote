@@ -5,10 +5,12 @@ import "time"
 // CapabilityDropEvent is emitted when the encoder drops a per-command
 // argument because the server did not advertise the capability that
 // gates it. The v2 per-command grammar
-// (`gitprotocol-v2.adoc` §"command-request") forbids sending args the
+// ([gitprotocol-v2.adoc §"command-request"]) forbids sending args the
 // server has not opted in to; rather than fail the request, the
 // encoder downgrades silently and emits this event so a tracer can
 // surface the divergence to a caller diagnosing missing data.
+//
+// [gitprotocol-v2.adoc §"command-request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 //
 // CapabilityDropEvent is owned by the `wire` package rather than the
 // `trace` package because it is specific to encoder downgrades and

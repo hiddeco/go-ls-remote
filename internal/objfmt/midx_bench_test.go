@@ -100,7 +100,9 @@ func BenchmarkMidx_Find_miss(b *testing.B) {
 func BenchmarkMidx_Find_loff(b *testing.B) {
 	// Every offset > 2 GiB so every Find traverses the LOFF table.
 	// `1<<31` is the threshold the writer uses to flag a slot as a
-	// LOFF index per `midx-write.c::write_midx_object_offsets`.
+	// LOFF index per [midx-write.c::write_midx_object_offsets].
+	//
+	// [midx-write.c::write_midx_object_offsets]: https://github.com/git/git/blob/v2.54.0/midx-write.c#L562
 	const (
 		n     = 10_000
 		packs = 4

@@ -1,17 +1,17 @@
 // Package dumbhttp synthesises a v0-shaped pkt-line stream from the
 // `info/refs` body of a Git "dumb" HTTP server. The body is the
-// UNIX-formatted text file described in `gitprotocol-http.adoc`
-// lines 158-200: one record per ref, fields separated by HTAB,
+// UNIX-formatted text file described in [gitprotocol-http.adoc
+// lines 158-200]: one record per ref, fields separated by HTAB,
 // terminated by LF, with annotated tags peeled onto a second line
 // suffixed `^{}`.
 //
 // The adapter exists so that the wire layer's v0/v1 advertisement
 // parser can consume a uniform stream regardless of whether the
 // server spoke smart or dumb HTTP. The synthesised stream has the
-// shape canonical Git's `connect.c::discover_version` (lines 73-104)
+// shape canonical Git's [connect.c::discover_version lines 143-181]
 // expects from a v0 advertisement, except that no capability text is
-// emitted on the first ref line — `gitprotocol-pack.adoc`
-// lines 219-228 allow an empty cap list, and any cap we'd synthesise
+// emitted on the first ref line — [gitprotocol-pack.adoc
+// lines 219-228] allow an empty cap list, and any cap we'd synthesise
 // would be either fetch-only or misleading.
 //
 // # Streaming model
@@ -34,6 +34,10 @@
 // characters (SHA-1) because the dumb HTTP body carries no
 // `object-format=` capability and the wire layer treats v0 as SHA-1
 // unless `object-format=sha256` is explicitly advertised.
+//
+// [gitprotocol-http.adoc lines 158-200]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L158-L200
+// [connect.c::discover_version lines 143-181]: https://github.com/git/git/blob/v2.54.0/connect.c#L143-L181
+// [gitprotocol-pack.adoc lines 219-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L219-L228
 package dumbhttp
 
 import (
@@ -71,10 +75,12 @@ const maxRefLineBytes = pktline.MaxPayload - 2
 // emptyRepoPlaceholder is the synthetic pkt-line payload used when
 // the dumb body carries zero refs. Its shape mirrors the
 // `<zero-oid> capabilities^{}` line canonical Git's
-// `connect.c::process_dummy_ref` (lines 260-274) recognises and
+// [connect.c::process_dummy_ref lines 260-274] recognises and
 // skips, so the wire layer parses an empty advertisement without
 // error. The leading 40 zeros encode SHA-1 — see the package doc
 // for why we do not synthesise a SHA-256 variant.
+//
+// [connect.c::process_dummy_ref lines 260-274]: https://github.com/git/git/blob/v2.54.0/connect.c#L260-L274
 const emptyRepoPlaceholder = "0000000000000000000000000000000000000000 capabilities^{}\x00\n"
 
 // pktLengthPrefix is the size of a pkt-line length prefix in bytes.
@@ -197,7 +203,9 @@ func (s *synth) fillFirst() error {
 		return err
 	}
 	// `<oid> <refname>\x00\n` — NUL marks the (empty) capability list
-	// per `gitprotocol-pack.adoc` lines 219-228.
+	// per [gitprotocol-pack.adoc lines 219-228].
+	//
+	// [gitprotocol-pack.adoc lines 219-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L219-L228
 	payload := oid + " " + name + "\x00\n"
 	s.pending = encodePktLine(payload)
 	s.st = stateStreaming
@@ -221,7 +229,9 @@ func (s *synth) fillNext() error {
 	}
 	// Subsequent refs (including peel annotations) are emitted plain;
 	// they correspond to `other-tip` and `other-peeled` productions in
-	// `gitprotocol-pack.adoc` lines 219-228.
+	// [gitprotocol-pack.adoc lines 219-228].
+	//
+	// [gitprotocol-pack.adoc lines 219-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L219-L228
 	payload := oid + " " + name + "\n"
 	s.pending = encodePktLine(payload)
 	return nil
@@ -236,9 +246,11 @@ func (s *synth) nextRefLine() (string, bool, error) {
 		return "", false, s.firstErr
 	}
 	for s.src.Scan() {
-		// Trim canonical whitespace per `gitprotocol-http.adoc`
-		// lines 158-200: lines end with LF (already consumed by the
+		// Trim canonical whitespace per [gitprotocol-http.adoc
+		// lines 158-200]: lines end with LF (already consumed by the
 		// scanner), but we also accept CR-trailed lines (CRLF servers).
+		//
+		// [gitprotocol-http.adoc lines 158-200]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L158-L200
 		raw := strings.TrimRight(s.src.Text(), " \t\r")
 		if raw == "" {
 			continue
@@ -265,13 +277,15 @@ func (s *synth) nextRefLine() (string, bool, error) {
 
 // splitRefLine splits a dumb-HTTP ref record into its OID and
 // refname. The canonical separator is HTAB
-// (`gitprotocol-http.adoc` lines 158-200); we tolerate runs of
+// ([gitprotocol-http.adoc lines 158-200]); we tolerate runs of
 // whitespace as well, matching real-world servers that emit a
 // space. A line with fewer than two fields surfaces
 // [ErrMalformedRefLine] wrapped with the offending text. A line
 // whose `<oid> <SP> <refname>` size would exceed [maxRefLineBytes]
 // surfaces [ErrRefLineTooLarge] instead — synthesising it would
 // require a pkt-line length prefix wider than 4 hex nibbles.
+//
+// [gitprotocol-http.adoc lines 158-200]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L158-L200
 func splitRefLine(line string) (string, string, error) {
 	oid, name, err := splitOIDAndName(line)
 	if err != nil {

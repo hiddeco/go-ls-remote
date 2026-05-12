@@ -34,7 +34,9 @@ func cmdBody(cmd string, args, caps []string) transport.CommandBody {
 // up to and including the trailing flush so the test is positioned to
 // invoke [Conn.Command]. The advertisement shape is `version 2\n` plus
 // capability data lines plus a flush per
-// `serve.c::protocol_v2_advertise_capabilities`.
+// [serve.c::protocol_v2_advertise_capabilities].
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t testing.TB, c *Conn[objfmt.SHA1Hash]) {
 	t.Helper()
 	rdr := c.Advertisement()
@@ -57,8 +59,10 @@ func drainAdvertisement(t testing.TB, c *Conn[objfmt.SHA1Hash]) {
 // a clean response: the server stays parked in its command loop after
 // emitting the trailing flush. Returning on the first flush therefore
 // matches the v2 command-response framing
-// (`gitprotocol-v2.adoc` §"Command Response") and leaves the reader
+// ([gitprotocol-v2.adoc §"Command Response"]) and leaves the reader
 // positioned at the start of the next response.
+//
+// [gitprotocol-v2.adoc §"Command Response"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
 	var pkts []pktline.Packet
@@ -157,8 +161,10 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	pkts := readAllPackets(t, rdr)
 	require.NotEmpty(t, pkts, "object-info must emit at least one packet")
 
-	// Per `protocol-caps.c::send_info`, an object-info request with
+	// Per [protocol-caps.c::send_info], an object-info request with
 	// `size` produces a `size\n` attrs line followed by a per-OID line.
+	//
+	// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 	var hasSize bool
 	for _, p := range pkts {
 		if p.Kind != pktline.Data {

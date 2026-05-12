@@ -18,13 +18,13 @@ import (
 // # Wire protocol
 //
 // The initial pkt-line follows the grammar from
-// `gitprotocol-pack.adoc §"Extra Parameters"` and matches
-// `connect.c::git_connect_git` (lines 1288-1298) in canonical Git:
+// [gitprotocol-pack.adoc §"Extra Parameters"] and matches
+// [connect.c::git_connect_git lines 1288-1298] in canonical Git:
 //
 //	git-upload-pack <path> NUL host=<host[:port]> NUL [NUL version=<N> NUL]
 //
 // The payload carries no trailing LF; canonical Git strips one if
-// present (see `daemon.c:752-754`), so omitting it is the safe shape.
+// present (see [daemon.c:752-754]), so omitting it is the safe shape.
 //
 // With a nil [transport.OpenOptions.PreferredProtocol] the transport
 // auto-negotiates v2, so the version trailer carries `version=2`.
@@ -41,8 +41,8 @@ import (
 //
 // When the URL carries no port, port 9418 is used. The value is the
 // well-known git-daemon port, defined as `DEFAULT_GIT_PORT` in
-// `protocol.h:23` of canonical Git and resolved by
-// `connect.c:818,888,1040`.
+// [protocol.h:23] of canonical Git and resolved by [connect.c:818],
+// [connect.c:888], and [connect.c:1040].
 //
 // # Error mapping
 //
@@ -53,6 +53,14 @@ import (
 // [context.Canceled] / [context.DeadlineExceeded]). An initial pkt-line
 // write failure closes the TCP connection and surfaces as
 // `*ProtocolError{Op: "dial"}` wrapping a descriptive `fmt.Errorf`.
+//
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [connect.c::git_connect_git lines 1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
+// [daemon.c:752-754]: https://github.com/git/git/blob/v2.54.0/daemon.c#L752-L754
+// [protocol.h:23]: https://github.com/git/git/blob/v2.54.0/protocol.h#L23
+// [connect.c:818]: https://github.com/git/git/blob/v2.54.0/connect.c#L818
+// [connect.c:888]: https://github.com/git/git/blob/v2.54.0/connect.c#L888
+// [connect.c:1040]: https://github.com/git/git/blob/v2.54.0/connect.c#L1040
 func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -91,10 +99,13 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 
 // hostAddress assembles the `host:port` string for the TCP dial. The
 // default port is `9418` (the well-known git-daemon port; see
-// `protocol.h:23` and `connect.c:818` in canonical Git). IPv6 literals
+// [protocol.h:23] and [connect.c:818] in canonical Git). IPv6 literals
 // are bracketed so the host/port split is unambiguous; the bracketing
 // assumes `u.Host` is unbracketed, which is the [transport.URL]
 // invariant established by `ParseURL`.
+//
+// [protocol.h:23]: https://github.com/git/git/blob/v2.54.0/protocol.h#L23
+// [connect.c:818]: https://github.com/git/git/blob/v2.54.0/connect.c#L818
 func hostAddress(u *transport.URL) string {
 	port := u.Port
 	if port == "" {

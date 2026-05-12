@@ -57,7 +57,9 @@ func WithUserAgent(ua string) Option {
 // WithFollowRedirects selects the redirect policy. The zero value of
 // [FollowRedirects] is [FollowRedirectsInitial], which matches
 // canonical Git's `http.followRedirects=initial` default
-// (`Documentation/config/http.adoc:359-365`).
+// ([Documentation/config/http.adoc:359-365]).
+//
+// [Documentation/config/http.adoc:359-365]: https://github.com/git/git/blob/v2.54.0/Documentation/config/http.adoc?plain=1#L359-L365
 func WithFollowRedirects(p FollowRedirects) Option {
 	return optionFunc(func(t *Transport) {
 		t.followRedirects = p
@@ -78,11 +80,13 @@ func WithMaxRedirects(n int) Option {
 
 // FollowRedirects selects when the [Transport] follows HTTP redirects.
 // The variants match canonical Git's `http.followRedirects` config
-// values (`Documentation/config/http.adoc:359-365`).
+// values ([Documentation/config/http.adoc:359-365]).
 //
 // The zero value is [FollowRedirectsInitial], so a freshly constructed
 // [Transport] follows redirects on the initial discovery GET but
 // rejects redirects on subsequent POSTs — the canonical default.
+//
+// [Documentation/config/http.adoc:359-365]: https://github.com/git/git/blob/v2.54.0/Documentation/config/http.adoc?plain=1#L359-L365
 type FollowRedirects uint8
 
 const (

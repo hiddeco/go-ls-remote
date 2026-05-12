@@ -20,9 +20,11 @@ var packHeaderScratch = sync.Pool{
 
 // packHeaderPeek is the fixed peek-window size shared between
 // [Pack.ReadHeader] and the scratch pool above. 32 bytes covers any
-// plausible type/size header (2^137 max per `packfile.c:1228`)
+// plausible type/size header (2^137 max per [packfile.c:1228])
 // plus the OFS_DELTA varint; an additional `algo.Size()` bytes
 // cover REF_DELTA.
+//
+// [packfile.c:1228]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1228
 const packHeaderPeek = 32
 
 // ObjectHeader is the decoded form of a pack object's leading
@@ -71,8 +73,7 @@ type DeltaRef[H Hash] struct {
 // `at`, returning the type, declared size, optional delta base, and
 // the absolute offset of the body that follows.
 //
-// Header bit layout per `packfile.c::unpack_object_header_buffer`
-// (lines 1135-1158):
+// Header bit layout per [packfile.c::unpack_object_header_buffer lines 1135-1158]:
 //
 //	byte 0      bit 7    = continuation flag
 //	            bits 6-4 = type (1..7)
@@ -83,10 +84,13 @@ type DeltaRef[H Hash] struct {
 //
 // For [TypeOfsDelta] the type/size header is followed by a
 // big-endian offset varint with the +1-per-continuation-byte quirk
-// per `packfile.c::get_delta_base` (lines 1278-1292); the absolute
+// per [packfile.c::get_delta_base lines 1278-1292]; the absolute
 // base offset is `at - relativeOffset`. For [TypeRefDelta] the next
 // `len(*new(H))` raw bytes are the base hash. Reserved type 5 is
 // rejected; types 1..4, 6, 7 are accepted.
+//
+// [packfile.c::unpack_object_header_buffer lines 1135-1158]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1135-L1158
+// [packfile.c::get_delta_base lines 1278-1292]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1278-L1292
 func (p *Pack[H]) ReadHeader(at int64) (ObjectHeader[H], error) {
 	if at < 0 || at >= p.r.Len() {
 		return ObjectHeader[H]{}, fmt.Errorf("objfmt: header offset %d out of range", at)
@@ -174,16 +178,19 @@ func (p *Pack[H]) ReadHeader(at int64) (ObjectHeader[H], error) {
 // readOfsBase decodes the OFS_DELTA relative-offset varint at the
 // head of buf. The encoding is unusual: it is big-endian (most
 // significant 7 bits first) and adds one per continuation byte to
-// make the encoding unique. See `packfile.c::get_delta_base` lines
-// 1278-1292 for the reference implementation.
+// make the encoding unique. See [packfile.c::get_delta_base lines
+// 1278-1292] for the reference implementation.
 //
 // The overflow guard mirrors canonical Git's `MSB(base_offset, 7)`
-// check (`packfile.c::1284`): reject the input as soon as the next
+// check ([packfile.c:1284]): reject the input as soon as the next
 // `<< 7` shift would lose data, rather than letting it wrap silently.
 // Canonical expresses the predicate over `uint64`; we use `int64`
 // throughout so the threshold is `1 << 56` (one bit lower than
 // canonical's `1 << 57`) to also catch the sign-bit flip that signed
 // arithmetic introduces.
+//
+// [packfile.c::get_delta_base lines 1278-1292]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1278-L1292
+// [packfile.c:1284]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1284
 func readOfsBase(buf []byte) (int64, int, error) {
 	if len(buf) == 0 {
 		return 0, 0, fmt.Errorf("objfmt: empty OFS_DELTA offset: %w", ErrTruncated)

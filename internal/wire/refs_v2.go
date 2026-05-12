@@ -18,11 +18,14 @@ import (
 // optional; a nil tracer disables event emission.
 //
 // Capability echo is delegated to [writeCapabilityEcho]; the `unborn`
-// gate follows `connect.c::get_remote_refs` lines 564-597, and the
-// body grammar matches `gitprotocol-v2.adoc` §"command-request".
+// gate follows [connect.c::get_remote_refs lines 564-597], and the
+// body grammar matches [gitprotocol-v2.adoc §"command-request"].
 //
 // EncodeLSRefs does not flush the underlying writer — wrapping is
 // left to the caller.
+//
+// [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
+// [gitprotocol-v2.adoc §"command-request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func EncodeLSRefs(
 	w *pktline.Writer,
 	args RefsArgs,
@@ -78,9 +81,11 @@ func EncodeLSRefs(
 // writeLine emits a single pkt-line whose payload is s followed by
 // the literal `LF` byte. The `LF` is part of every command, capability,
 // and argument line in the v2 request grammar
-// (`gitprotocol-v2.adoc` §"command-request"). The body is a thin
+// ([gitprotocol-v2.adoc §"command-request"]). The body is a thin
 // wrapper around [pktline.Writer.WriteLine], which appends the LF
 // without allocating a temporary string or `[]byte`.
+//
+// [gitprotocol-v2.adoc §"command-request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func writeLine(w *pktline.Writer, s string) error {
 	return w.WriteLine(s)
 }
@@ -88,13 +93,15 @@ func writeLine(w *pktline.Writer, s string) error {
 // lsRefsSupportsUnborn reports whether any `ls-refs` capability value
 // advertised by the server contains the `unborn` feature token. The
 // scan mirrors `server_supports_feature("ls-refs", "unborn", 0)` at
-// `connect.c:112-132`, which walks every `ls-refs[=value]` line and
+// [connect.c:112-132], which walks every `ls-refs[=value]` line and
 // runs `parse_feature_request` on each value.
 //
 // Each value is itself a whitespace-separated feature list; reusing
 // [ParseCapabilities] gives the same tokenisation canonical Git's
 // `parse_feature_value` performs. A boolean `ls-refs` (no value)
 // contributes no tokens and so does not enable the gate.
+//
+// [connect.c:112-132]: https://github.com/git/git/blob/v2.54.0/connect.c#L112-L132
 func lsRefsSupportsUnborn(caps RawCapabilities) bool {
 	for _, v := range caps.All("ls-refs") {
 		for _, sub := range ParseCapabilities(v) {
@@ -112,28 +119,32 @@ func lsRefsSupportsUnborn(caps RawCapabilities) bool {
 // server `ERR` packet. Errors are yielded as a (zero [RawRef], err)
 // pair; the iterator yields no further values after an error.
 //
-// The grammar matches `gitprotocol-v2.adoc` §"ls-refs" output (lines
-// 231-244):
+// The grammar matches [gitprotocol-v2.adoc §"ls-refs" output (lines 231-239)]:
 //
 //	output           = *ref flush-pkt
 //	obj-id-or-unborn = (obj-id | "unborn")
 //	ref              = PKT-LINE(obj-id-or-unborn SP refname *(SP ref-attribute) LF)
 //	ref-attribute    = (symref | peeled)
 //
-// Per `connect.c::process_ref_v2` (lines 395-470), unknown attributes
+// Per [connect.c::process_ref_v2 (lines 395-470)], unknown attributes
 // are silently ignored — a forward-compatibility hook canonical Git
 // relies on. OID hashes are passed through verbatim; hash-length
 // validation is the root package's concern.
 //
 // DecodeLSRefs does not close r; the caller owns its lifetime.
+//
+// [gitprotocol-v2.adoc §"ls-refs" output (lines 231-239)]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc?plain=1#L231-L239
+// [connect.c::process_ref_v2 (lines 395-470)]: https://github.com/git/git/blob/v2.54.0/connect.c#L395-L470
 func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 	return func(yield func(RawRef, error) bool) {
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {
 				// `process_ref_v2` returns from `get_remote_refs`
-				// (connect.c:564-597) on EOF before flush; surface that
+				// ([connect.c:564-597]) on EOF before flush; surface that
 				// as `io.ErrUnexpectedEOF` for uniform caller handling.
+				//
+				// [connect.c:564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 				if errors.Is(err, io.EOF) {
 					yield(RawRef{}, io.ErrUnexpectedEOF)
 					return
@@ -152,9 +163,11 @@ func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 
 			line := bytes.TrimSuffix(pkt.Data, []byte{'\n'})
 
-			// `ERR ` detection per `pkt-line.c:509-510`. The shared
+			// `ERR ` detection per [pkt-line.c:509-510]. The shared
 			// [CheckERRPacket] helper wraps [ErrServerRefused] so
 			// callers can match the sentinel via `errors.Is`.
+			//
+			// [pkt-line.c:509-510]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L509-L510
 			if errPkt := CheckERRPacket(line); errPkt != nil {
 				yield(RawRef{}, errPkt)
 				return
@@ -173,8 +186,8 @@ func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 }
 
 // parseLSRefsLine parses a single trimmed v2 `ls-refs` ref line into a
-// [RawRef]. The token rules mirror `connect.c::process_ref_v2` lines
-// 395-470: split on spaces, treat a leading `unborn` as the OID-stand-in
+// [RawRef]. The token rules mirror [connect.c::process_ref_v2 lines 395-470]:
+// split on spaces, treat a leading `unborn` as the OID-stand-in
 // for an unborn ref, and silently ignore tokens whose prefix is not
 // `peeled:` or `symref-target:`.
 //
@@ -182,6 +195,8 @@ func DecodeLSRefs(r *pktline.Reader) iter.Seq2[RawRef, error] {
 // the per-line `[]byte → string` allocation `strings.Fields` would
 // otherwise force is avoided; conversion to `string` happens only at
 // the [RawRef] field boundary, where the value is retained.
+//
+// [connect.c::process_ref_v2 lines 395-470]: https://github.com/git/git/blob/v2.54.0/connect.c#L395-L470
 func parseLSRefsLine(line []byte) (RawRef, error) {
 	tokens := bytes.Fields(line)
 	if len(tokens) < 2 {

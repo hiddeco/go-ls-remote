@@ -22,9 +22,11 @@ var packMtimeAnchor = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 // the values are the desired mtimes.
 //
 // Pack ordering keys on the pack file itself (canonical Git's
-// `a->pack->mtime` in `packfile.c::sort_pack`); the paired idx mtime
+// `a->pack->mtime` in [packfile.c::sort_pack]); the paired idx mtime
 // is intentionally untouched so a real-world repack scenario, where
 // the idx is rewritten alongside its pack, is not implied.
+//
+// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 func stampPackMtimes(t *testing.T, gitDir string, mtimes map[string]time.Time) {
 	t.Helper()
 	for name, when := range mtimes {

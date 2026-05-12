@@ -147,11 +147,13 @@ func TestOpenAlternates_QuotedPath(t *testing.T) {
 
 func TestUnquoteCStyle_BackslashEscapes(t *testing.T) {
 	// Tabletop check that the C-style unquoter handles every escape
-	// canonical Git's `quote.c::unquote_c_style` accepts: the quoted
+	// canonical Git's [quote.c::unquote_c_style] accepts: the quoted
 	// form must round-trip through the documented runes. Kept as a
 	// table-driven unit test rather than a fixture-backed alternates
 	// test because writing literal backslashes through a path-resolving
 	// `Open` would conflate parsing with filesystem semantics.
+	//
+	// [quote.c::unquote_c_style]: https://github.com/git/git/blob/v2.54.0/quote.c#L403
 	cases := []struct {
 		name string
 		in   string

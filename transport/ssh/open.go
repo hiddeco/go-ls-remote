@@ -37,14 +37,14 @@ var ErrMissingHostKey = errors.New(
 // order:
 //
 //  1. The SSH `env` channel — `GIT_PROTOCOL=version=<N>` — is the path
-//     canonical Git takes in `connect.c:1311-1321` (`push_ssh_options`
+//     canonical Git takes in [connect.c:1311-1321] (`push_ssh_options`
 //     adds `SendEnv=GIT_PROTOCOL` to the `ssh` command line). It is
 //     best-effort: a server with a restrictive `AcceptEnv` directive
 //     rejects the request silently and the [Conn] is otherwise
 //     usable.
 //  2. The initial pkt-line on stdin — `git-upload-pack <path>\0host=<h>\0\0version=<N>\0`
 //     — is the universal fallback documented in
-//     `gitprotocol-pack.adoc §"Extra Parameters"`. Every server speaks
+//     [gitprotocol-pack.adoc §"Extra Parameters"]. Every server speaks
 //     it; restrictive `AcceptEnv` servers rely on it exclusively.
 //
 // # ClientConfig merge rule
@@ -79,6 +79,9 @@ var ErrMissingHostKey = errors.New(
 // for the TCP dial and pre-dial config validation, `"handshake"` for
 // the SSH transport-and-auth handshake, and `"session"` for session
 // channel setup (env, pipe opens, exec, initial pkt-line write).
+//
+// [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (_ transport.Conn, retErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -157,8 +160,11 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 	// restrictive servers and the [trace.PacketEvent] stream from the
 	// fallback pkt-line is the canonical signal.
 	//
-	// Canonical Git's analog is `push_ssh_options` at `connect.c:1311-1321`,
-	// which appends `SendEnv=GIT_PROTOCOL` to the spawned `ssh` command.
+	// Canonical Git's analog is `push_ssh_options` at
+	// [connect.c:1311-1321], which appends `SendEnv=GIT_PROTOCOL` to the
+	// spawned `ssh` command.
+	//
+	// [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
 	_ = session.Setenv("GIT_PROTOCOL", wire.HTTPProtocolHeader(opts.PreferredProtocol))
 
 	stdout, err := session.StdoutPipe()
@@ -291,13 +297,17 @@ func hostAddress(u *transport.URL) string {
 //	'  becomes  '\''
 //	!  becomes  '\!'
 //
-// It is a direct port of canonical Git's `sq_quote_buf` at `quote.c:28`
-// and matches the wire bytes `connect.c::git_proxy_connect` and
-// `connect.c:1313` produce. The bang escape keeps the result safe when
+// It is a direct port of canonical Git's [quote.c::sq_quote_buf] and
+// matches the wire bytes [connect.c::git_proxy_connect] and
+// [connect.c:1476] produce. The bang escape keeps the result safe when
 // re-evaluated under csh-derived shells that perform history
 // expansion. The output is safe to pass as a single argument through
 // any POSIX shell and round-trips through `git-shell`'s
 // `sq_dequote_to_argv`.
+//
+// [quote.c::sq_quote_buf]: https://github.com/git/git/blob/v2.54.0/quote.c#L28
+// [connect.c::git_proxy_connect]: https://github.com/git/git/blob/v2.54.0/connect.c#L1038
+// [connect.c:1476]: https://github.com/git/git/blob/v2.54.0/connect.c#L1476
 func shellQuote(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)

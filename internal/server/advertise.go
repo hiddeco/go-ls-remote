@@ -15,12 +15,12 @@ import (
 // writeV2Advertisement emits the discovery-time v2 capability
 // advertisement: a `version 2\n` data packet, one data packet per
 // advertised capability (each terminated by a single `\n`), and a
-// trailing flush. The shape matches `gitprotocol-v2.adoc`
-// §"Capability Advertisement" and the framing matches
-// `serve.c::protocol_v2_advertise_capabilities` lines 186-216.
+// trailing flush. The shape matches [gitprotocol-v2.adoc §"Capability Advertisement"]
+// and the framing matches
+// [serve.c::protocol_v2_advertise_capabilities lines 186-216].
 //
 // The capability set is a strict subset of canonical Git's, in
-// canonical Git's emission order from `serve.c:140-185`'s
+// canonical Git's emission order from [serve.c:140-185]'s
 // `capabilities[]` array — `agent`, `ls-refs`, `object-format`,
 // `object-info`. The unsupported capabilities (`fetch`,
 // `server-option`, `session-id`, `bundle-uri`, `promisor-remote`)
@@ -33,15 +33,23 @@ import (
 //
 //   - `agent=<value>` — opts.Agent when non-empty, otherwise
 //     [wire.DefaultUserAgent]. Canonical reference:
-//     `serve.c::agent_advertise` lines 25-31.
+//     [serve.c::agent_advertise lines 25-31].
 //   - `ls-refs=unborn` — the emulator implements the `unborn`
 //     feature, so it is always advertised. Canonical reference:
-//     `ls-refs.c::ls_refs_advertise` lines 218-223.
+//     [ls-refs.c::ls_refs_advertise lines 218-223].
 //   - `object-format=<algo>` — the repository's hash algorithm
 //     name (`sha1` or `sha256`). Canonical reference:
-//     `serve.c::object_format_advertise` lines 53-58.
+//     [serve.c::object_format_advertise lines 53-58].
 //   - `object-info` — boolean, no `=value`. Canonical reference:
-//     `serve.c::object_info_advertise` lines 92-101.
+//     [serve.c::object_info_advertise lines 92-101].
+//
+// [gitprotocol-v2.adoc §"Capability Advertisement"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#capability-advertisement
+// [serve.c::protocol_v2_advertise_capabilities lines 186-216]: https://github.com/git/git/blob/v2.54.0/serve.c#L186-L216
+// [serve.c:140-185]: https://github.com/git/git/blob/v2.54.0/serve.c#L140-L185
+// [serve.c::agent_advertise lines 25-31]: https://github.com/git/git/blob/v2.54.0/serve.c#L25-L31
+// [ls-refs.c::ls_refs_advertise lines 218-223]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L218-L223
+// [serve.c::object_format_advertise lines 53-58]: https://github.com/git/git/blob/v2.54.0/serve.c#L53-L58
+// [serve.c::object_info_advertise lines 92-101]: https://github.com/git/git/blob/v2.54.0/serve.c#L92-L101
 func writeV2Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	if err := w.WritePacket([]byte("version 2\n")); err != nil {
 		return fmt.Errorf("server: write v2 version line: %w", err)
@@ -72,21 +80,20 @@ func writeV2Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Stor
 // writeV0Advertisement emits the discovery-time v0 reference
 // advertisement: HEAD (when valid) carrying the cap list, the
 // remaining refs in C-locale byte order with peeled lines folded in,
-// and a trailing flush. The shape matches `gitprotocol-pack.adoc`
-// §"Reference Discovery" lines 208-228 and the canonical advertise
-// loop at `upload-pack.c:1416-1438` driving `write_v0_ref` at
-// `upload-pack.c:1231-1275`.
+// and a trailing flush. The shape matches [gitprotocol-pack.adoc §"Reference Discovery" lines 208-228]
+// and the canonical advertise loop at [upload-pack.c:1416-1438]
+// driving `write_v0_ref` at [upload-pack.c:1231-1275].
 //
 // HEAD lands first when [objstore.Head] returns either a symbolic
 // HEAD that resolves or a detached HEAD; an unborn HEAD is omitted
 // because canonical Git's `mark_our_ref` filters the all-zero oid
 // out of the advertisement. When HEAD is omitted and no other refs
 // exist, the loop emits the canonical empty-repo placeholder
-// (`upload-pack.c:1422-1428`): one `<zero-oid> capabilities^{}\0<caps>\n`
+// ([upload-pack.c:1422-1428]): one `<zero-oid> capabilities^{}\0<caps>\n`
 // pkt-line carrying the cap list.
 //
 // Capability emission order matches `write_v0_ref`'s format string
-// (`upload-pack.c:1249-1262`) restricted to the discovery-only subset:
+// ([upload-pack.c:1249-1262]) restricted to the discovery-only subset:
 // `symref=HEAD:<target>` (only when HEAD is symbolic and resolved or
 // unborn — `format_symref_info` formats from `data.symref`
 // regardless of whether HEAD itself is advertised),
@@ -98,7 +105,14 @@ func writeV2Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Stor
 // the ref backend can answer cheaply, falling through to
 // [objstore.Store.Peel] otherwise. The peel is suppressed when the
 // resolved peel hash is zero, matching `reference_get_peeled_oid`'s
-// "no peel" return at `upload-pack.c:1268-1270`.
+// "no peel" return at [upload-pack.c:1268-1270].
+//
+// [gitprotocol-pack.adoc §"Reference Discovery" lines 208-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L208-L228
+// [upload-pack.c:1416-1438]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1416-L1438
+// [upload-pack.c:1231-1275]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1231-L1275
+// [upload-pack.c:1422-1428]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1422-L1428
+// [upload-pack.c:1249-1262]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1249-L1262
+// [upload-pack.c:1268-1270]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1268-L1270
 func writeV0Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], opts Options) error {
 	head, err := store.Head()
 	if err != nil {
@@ -109,17 +123,21 @@ func writeV0Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Stor
 
 	// Drain `IterRefs` into a sorted slice so the wire output honours
 	// the C-locale byte ordering required by
-	// `gitprotocol-pack.adoc:201-203`. The backend's iteration order
+	// [gitprotocol-pack.adoc:201-203]. The backend's iteration order
 	// is unspecified per `internal/objstore.refBackend.IterRefs`.
+	//
+	// [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
 	refs, err := collectV0Refs(store)
 	if err != nil {
 		return err
 	}
 
 	// HEAD-omitted, no-refs case: emit the canonical empty-repo
-	// placeholder. `upload-pack.c:1422-1428` synthesises a
+	// placeholder. [upload-pack.c:1422-1428] synthesises a
 	// `capabilities^{}` ref with the null oid when
 	// `data.sent_capabilities` stays zero after the ref walk.
+	//
+	// [upload-pack.c:1422-1428]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1422-L1428
 	headValid := !head.Unborn && (head.Symref != "" || !head.OID.IsZero())
 	if !headValid && len(refs) == 0 {
 		var zero H
@@ -139,8 +157,10 @@ func writeV0Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Stor
 	// `strings.Builder` growth and the `[]byte(line.String())`
 	// conversion the previous shape allocated; `WritePacket` copies
 	// the payload into its own length-prefixed scratch
-	// (`pkt-line.c:509`), so reusing this slice across calls is
-	// safe.
+	// ([pkt-line.c::format_packet]), so reusing this slice across
+	// calls is safe.
+	//
+	// [pkt-line.c::format_packet]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L146
 	var line []byte
 
 	capsEmitted := false
@@ -194,8 +214,10 @@ func writeV0Advertisement[H objfmt.Hash](w *pktline.Writer, store *objstore.Stor
 
 // buildV0Caps assembles the space-separated cap list for the v0
 // advertisement. The caller frames it into the first ref's pkt-line.
-// Order matches `write_v0_ref` at `upload-pack.c:1249-1262` reduced
+// Order matches `write_v0_ref` at [upload-pack.c:1249-1262] reduced
 // to the emulator's discovery-only subset.
+//
+// [upload-pack.c:1249-1262]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1249-L1262
 func buildV0Caps[H objfmt.Hash](head objstore.Head[H], algo objfmt.Algo, opts Options) string {
 	var b strings.Builder
 	if head.Symref != "" {
@@ -216,9 +238,11 @@ func buildV0Caps[H objfmt.Hash](head objstore.Head[H], algo objfmt.Algo, opts Op
 }
 
 // collectV0Refs drains the backend's ref iterator into a slice sorted
-// by name in C-locale byte order. `gitprotocol-pack.adoc:201-203`
+// by name in C-locale byte order. [gitprotocol-pack.adoc:201-203]
 // requires the wire output to be C-sorted; canonical Git delivers
 // this through `for_each_namespaced_ref_1`'s merged sorted view.
+//
+// [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
 func collectV0Refs[H objfmt.Hash](store *objstore.Store[H]) ([]objstore.RefEntry[H], error) {
 	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {

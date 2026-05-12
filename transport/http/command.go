@@ -16,16 +16,23 @@ import (
 )
 
 // commandContentType is the request Content-Type a v2 command POST
-// uses. The value is fixed by `gitprotocol-http.adoc` lines 386-395
-// ("Smart Service git-upload-pack") and matched by canonical Git's
-// `remote-curl.c::post_rpc` (around `remote-curl.c:1230`).
+// uses. The value is fixed by
+// [gitprotocol-http.adoc §"Smart Service git-upload-pack"] and matched
+// by canonical Git's [remote-curl.c::post_rpc] (Content-Type wired in
+// at [remote-curl.c:1498]).
+//
+// [gitprotocol-http.adoc §"Smart Service git-upload-pack"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc#smart-service-git-upload-pack
+// [remote-curl.c::post_rpc]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L913
+// [remote-curl.c:1498]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L1498
 const commandContentType = "application/x-git-upload-pack-request"
 
 // commandAcceptType is the response Content-Type a v2 command POST
 // expects from the server. Servers MUST emit this exact value per
-// `gitprotocol-http.adoc` lines 386-395; clients send it as the
-// `Accept` header so an intermediate proxy that content-negotiates
-// gets the right shape.
+// [gitprotocol-http.adoc §"Smart Service git-upload-pack"]; clients
+// send it as the `Accept` header so an intermediate proxy that
+// content-negotiates gets the right shape.
+//
+// [gitprotocol-http.adoc §"Smart Service git-upload-pack"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc#smart-service-git-upload-pack
 const commandAcceptType = "application/x-git-upload-pack-result"
 
 // Command issues a v2 command POST against the connection's
@@ -43,7 +50,7 @@ const commandAcceptType = "application/x-git-upload-pack-result"
 // reader and closes the parent [Conn] will not leak.
 //
 // The on-wire request body is the canonical v2 command-request frame
-// (`gitprotocol-v2.adoc` §"Command Request"):
+// ([gitprotocol-v2.adoc §"Command Request"]):
 //
 //	command-request = command-line *capability-line delim-pkt *arg-line flush-pkt
 //	command-line    = PKT-LINE("command=" cmd LF)
@@ -69,7 +76,11 @@ const commandAcceptType = "application/x-git-upload-pack-result"
 //
 // Unlike the probe path, the command path does NOT retry on `401`
 // past the resolver-supplied credentials; the discovery probe owns
-// that retry per `remote-curl.c::http_request_reauth`.
+// that retry per [http.c::http_request_recoverable] (the canonical
+// HTTP_REAUTH retry loop).
+//
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
+// [http.c::http_request_recoverable]: https://github.com/git/git/blob/v2.54.0/http.c#L2330
 func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody) (*pktline.Reader, error) {
 	if c.dumb {
 		return nil, ErrUnsupportedProtocol
@@ -130,13 +141,13 @@ func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody
 // commandPostURL derives the v2 command POST URL from the probe's
 // final URL by rewriting the trailing `/info/refs` to
 // `/git-upload-pack` and discarding the query string. Canonical Git
-// performs the equivalent rewrite at `remote-curl.c::post_rpc` —
+// performs the equivalent rewrite at [remote-curl.c::post_rpc] —
 // the discovery URL is the same `<base>/info/refs?service=...` shape
 // and the per-RPC URL drops the query and replaces the suffix.
 //
 // The `/info/refs` suffix is treated as an invariant: every URL the
 // [Conn] reaches a `200 OK` smart advertisement on is required by
-// `gitprotocol-http.adoc:230-281` to terminate in that suffix. A URL
+// [gitprotocol-http.adoc:230-281] to terminate in that suffix. A URL
 // that does not is the result of a misbehaving redirect chain, and
 // suffix-trimming silently would point the POST at a non-existent
 // endpoint. Refuse such a URL up front so the caller sees a clear
@@ -146,6 +157,9 @@ func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody
 // prefers it over `Path`, which would silently drop the rewrite if
 // the probe URL came in with a percent-encoded path. Clearing
 // `RawPath` makes `String` re-encode from `Path`.
+//
+// [remote-curl.c::post_rpc]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L913
+// [gitprotocol-http.adoc:230-281]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L230-L281
 func commandPostURL(base *url.URL) (*url.URL, error) {
 	if base == nil {
 		return nil, fmt.Errorf("transport/http: command: base URL is nil")
@@ -204,7 +218,7 @@ func resolveCommandCreds(ctx context.Context, r CredentialResolver, postURL *url
 }
 
 // doCommandPOST issues a single POST with the v2 command-request
-// body. It mirrors the headers `remote-curl.c::post_rpc` sets and
+// body. It mirrors the headers [remote-curl.c::post_rpc] sets and
 // then dispatches via the [Conn]'s [http.Client] so the redirect
 // policy, cookie jar, and any test hooks the caller installed
 // continue to apply.
@@ -213,6 +227,8 @@ func resolveCommandCreds(ctx context.Context, r CredentialResolver, postURL *url
 // the round-trip; redirects (which `client.Do` follows under the
 // configured policy) collapse into a single event whose Status
 // reflects the final response.
+//
+// [remote-curl.c::post_rpc]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L913
 func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, body []byte,
 	ua, gitProto string, creds Credentials, tracer trace.Tracer) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL.String(), bytes.NewReader(body))

@@ -11,8 +11,8 @@ import (
 // zlibReaderPool reuses [*zlib.Reader] instances across calls to
 // [Pack.ReadDeltaHeader]. [zlib.NewReader] allocates roughly 44 KB of
 // inflate state per call (a 32 KB sliding window plus dictionary and
-// scratch buffers per `inflate.c::inflateReset2`); pooling drops the
-// per-call cost to amortised zero after warmup.
+// scratch buffers per [zlib inflate.c::inflateReset2]); pooling drops
+// the per-call cost to amortised zero after warmup.
 //
 // New is left as the zero-value (nil-returning) on purpose: a fresh
 // [*zlib.Reader] requires a non-empty source for [zlib.NewReader] to
@@ -20,12 +20,14 @@ import (
 // The cold path in [Pack.ReadDeltaHeader] therefore initialises a
 // reader via [zlib.NewReader] on a Get-miss and Put feeds the pool on
 // the way out, so the steady state is Get -> [zlib.Resetter.Reset].
+//
+// [zlib inflate.c::inflateReset2]: https://github.com/madler/zlib/blob/v1.3.1/inflate.c#L141
 var zlibReaderPool sync.Pool
 
 // ReadDeltaHeader decompresses the leading bytes of the delta payload
 // at bodyAt and returns the encoded source (base) and target
 // (resolved) sizes — the two varints that head every delta per
-// `delta.h::get_delta_hdr_size` (lines 85-102).
+// [delta.h::get_delta_hdr_size lines 85-102].
 //
 // The function only inflates enough bytes to cover both varints; it
 // does not read or apply the delta opcodes that follow. Callers
@@ -34,6 +36,8 @@ var zlibReaderPool sync.Pool
 // Note: this varint encoding is little-endian without the
 // "+1 per continuation byte" quirk that OFS_DELTA's offset varint
 // uses (see [Pack.ReadHeader]).
+//
+// [delta.h::get_delta_hdr_size lines 85-102]: https://github.com/git/git/blob/v2.54.0/delta.h#L85-L102
 func (p *Pack[H]) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, err error) {
 	if bodyAt < 0 || bodyAt >= p.r.Len() {
 		return 0, 0, fmt.Errorf("objfmt: delta body offset %d out of range", bodyAt)
@@ -86,10 +90,12 @@ func (p *Pack[H]) ReadDeltaHeader(bodyAt int64) (sourceSize, targetSize int64, e
 // readDeltaVarint decodes the little-endian 7-bit varint at the head
 // of buf, returning the value and the number of bytes consumed.
 //
-// The encoding mirrors `delta.h::get_delta_hdr_size`: each byte
+// The encoding mirrors [delta.h::get_delta_hdr_size]: each byte
 // contributes 7 bits, low byte first, with the high bit signalling a
 // continuation. Distinct from the OFS_DELTA offset varint, which is
 // big-endian and adds one per continuation byte.
+//
+// [delta.h::get_delta_hdr_size]: https://github.com/git/git/blob/v2.54.0/delta.h#L89
 func readDeltaVarint(buf []byte) (int64, int, error) {
 	var (
 		v     int64

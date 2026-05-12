@@ -74,7 +74,7 @@ func (c *Conn) Advertisement() *pktline.Reader { return c.reader }
 // command's response streams back on that connection. The caller
 // therefore sees a single persistent stream whose packets are
 // segmented by the canonical v2 command-response framing
-// (`gitprotocol-v2.adoc` §"Command Response").
+// ([gitprotocol-v2.adoc §"Command Response"]).
 //
 // # Concurrency
 //
@@ -87,14 +87,18 @@ func (c *Conn) Advertisement() *pktline.Reader { return c.reader }
 //
 // body is invoked exactly once against the [Conn]'s [pktline.Writer]
 // and must encode the canonical v2 command-request frame
-// (`gitprotocol-v2.adoc` §"Command Request"). A non-nil return aborts
+// ([gitprotocol-v2.adoc §"Command Request"]). A non-nil return aborts
 // the call: all write failures — whether from a payload-cap rejection
-// (canonical cap at `pkt-line.h:234`) or a TCP-write error — flow
+// (canonical cap at [pkt-line.h:234]) or a TCP-write error — flow
 // through `wrapWriteError` and surface as `*ProtocolError{Op: "command"}`
 // with the `"gitt: write command request: ..."` prefix; the
 // `errors.Is` chain to `pktline.ErrPayloadTooLarge` is preserved
 // through the wrap. After any Command error the [Conn] is effectively
 // dead and callers must invoke [Conn.Close] to release resources.
+//
+// [gitprotocol-v2.adoc §"Command Response"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
+// [pkt-line.h:234]: https://github.com/git/git/blob/v2.54.0/pkt-line.h#L234
 func (c *Conn) Command(ctx context.Context, _ string, body transport.CommandBody) (*pktline.Reader, error) {
 	// Honour cancellation up-front: the TCP connection has no
 	// per-write context plumbing, but a caller who has already

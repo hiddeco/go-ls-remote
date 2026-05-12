@@ -13,19 +13,25 @@ import (
 
 // peeledSuffix is the canonical `^{}` marker used to dereference an
 // annotated tag onto its target object on a v0/v1 ref line
-// (`gitprotocol-pack.adoc` lines 219-228, `other-peeled` production).
+// ([gitprotocol-pack.adoc lines 219-228], `other-peeled` production).
+//
+// [gitprotocol-pack.adoc lines 219-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L219-L228
 const peeledSuffix = "^{}"
 
 // emptyRepoRefname is the placeholder name advertised on the lone ref
 // line of an empty repository: `<zero-oid> capabilities^{}`. Canonical
-// Git's `connect.c::process_dummy_ref` (lines 260-274) recognises and
+// Git's [connect.c::process_dummy_ref (lines 260-274)] recognises and
 // skips this synthetic entry.
+//
+// [connect.c::process_dummy_ref (lines 260-274)]: https://github.com/git/git/blob/v2.54.0/connect.c#L260-L274
 const emptyRepoRefname = "capabilities" + peeledSuffix
 
 // shallowPrefix is the leading marker on a `shallow <oid>` advertisement
-// line (`gitprotocol-pack.adoc` `shallow` production, lines 233-235).
+// line ([gitprotocol-pack.adoc `shallow` production, line 230]).
 // The `ls-remote` shape never asks for shallow data, but a defensive
 // parser still tolerates the line if a server emits it.
+//
+// [gitprotocol-pack.adoc `shallow` production, line 230]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L230
 const shallowPrefix = "shallow "
 
 // parseV0Advertisement reads the body of a v0 or v1 advertisement and
@@ -42,7 +48,7 @@ const shallowPrefix = "shallow "
 // reads up to and including the terminating flush packet but does not
 // close r; the caller owns its lifetime.
 //
-// The grammar followed is `gitprotocol-pack.adoc` lines 219-228:
+// The grammar followed is [gitprotocol-pack.adoc lines 219-228]:
 //
 //	first-ref    = obj-id SP refname NUL capability-list
 //	other-tip    = obj-id SP refname
@@ -55,8 +61,10 @@ const shallowPrefix = "shallow "
 //
 // After the ref list is built, every `symref=NAME:TARGET` capability is
 // applied to the matching ref's [RawRef.Symref] field, mirroring
-// canonical Git's `connect.c::annotate_refs_with_symref_info`
-// (lines 209-233).
+// canonical Git's [connect.c::annotate_refs_with_symref_info (lines 209-233)].
+//
+// [gitprotocol-pack.adoc lines 219-228]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L219-L228
+// [connect.c::annotate_refs_with_symref_info (lines 209-233)]: https://github.com/git/git/blob/v2.54.0/connect.c#L209-L233
 func parseV0Advertisement(first pktline.Packet, r *pktline.Reader, version transport.ProtocolVersion) (Advertisement, error) {
 	caps, firstRef, err := parseFirstRefLine(first.Data)
 	if err != nil {
@@ -71,9 +79,11 @@ func parseV0Advertisement(first pktline.Packet, r *pktline.Reader, version trans
 	for {
 		p, err := r.ReadPacket()
 		if err != nil {
-			// `connect.c:75` treats EOF before the terminating flush as
-			// a truncated advertisement; surface it as
+			// [connect.c:152-153] treats EOF before the terminating flush
+			// as a truncated advertisement; surface it as
 			// [io.ErrUnexpectedEOF] for uniform caller handling.
+			//
+			// [connect.c:152-153]: https://github.com/git/git/blob/v2.54.0/connect.c#L152-L153
 			if errors.Is(err, io.EOF) {
 				return Advertisement{}, io.ErrUnexpectedEOF
 			}
@@ -88,9 +98,11 @@ func parseV0Advertisement(first pktline.Packet, r *pktline.Reader, version trans
 		}
 
 		line := bytes.TrimSuffix(p.Data, []byte{'\n'})
-		// `connect.c::process_shallow` (lines 311 onward) handles the
+		// [connect.c::process_shallow (lines 311-328)] handles the
 		// `shallow <oid>` production; we drop it because the ls-remote
 		// shape never negotiates shallow.
+		//
+		// [connect.c::process_shallow (lines 311-328)]: https://github.com/git/git/blob/v2.54.0/connect.c#L311-L328
 		if bytes.HasPrefix(line, []byte(shallowPrefix)) {
 			continue
 		}
@@ -130,8 +142,10 @@ func parseV0Advertisement(first pktline.Packet, r *pktline.Reader, version trans
 // parseFirstRefLine splits the cap-bearing first ref line into its
 // capability list and (when present) the leading [RawRef]. The empty-
 // repo placeholder `<zero-oid> capabilities^{}` returns a nil ref so
-// the caller does not record it — `connect.c::process_dummy_ref`
-// (lines 260-274) does the same in canonical Git.
+// the caller does not record it — [connect.c::process_dummy_ref (lines 260-274)]
+// does the same in canonical Git.
+//
+// [connect.c::process_dummy_ref (lines 260-274)]: https://github.com/git/git/blob/v2.54.0/connect.c#L260-L274
 func parseFirstRefLine(payload []byte) (RawCapabilities, *RawRef, error) {
 	line := bytes.TrimSuffix(payload, []byte{'\n'})
 
@@ -161,9 +175,11 @@ func parseFirstRefLine(payload []byte) (RawCapabilities, *RawRef, error) {
 
 // applySymrefs walks every `symref=NAME:TARGET` capability and copies
 // TARGET onto the matching ref's [RawRef.Symref] field. The split is
-// on the first `:` only, matching `connect.c::parse_one_symref_info`
-// (lines 183-207). A symref naming a refname not present in the
+// on the first `:` only, matching [connect.c::parse_one_symref_info (lines 183-207)].
+// A symref naming a refname not present in the
 // advertisement is silently ignored.
+//
+// [connect.c::parse_one_symref_info (lines 183-207)]: https://github.com/git/git/blob/v2.54.0/connect.c#L183-L207
 func applySymrefs(refs []RawRef, caps RawCapabilities) {
 	for _, val := range caps.All("symref") {
 		name, target, ok := strings.Cut(val, ":")

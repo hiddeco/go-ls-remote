@@ -15,11 +15,13 @@ import (
 // The contract under test is twofold: the encoder is total — it never
 // panics for any input — and a successful write produces a frameable
 // pkt-line stream that round-trips through [pktline.Reader] without a
-// framing error. The host-parameter logic at `connect.c:1288-1298`
+// framing error. The host-parameter logic at [connect.c:1288-1298]
 // rebrackets IPv6 literals when a port is present, so seeds cover the
 // IPv4/IPv6 with-port and bare-host variants alongside the four
 // [transport.ProtocolVersion] selectors (nil and the three concrete
 // versions).
+//
+// [connect.c:1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
 func FuzzWriteStreamRequest(f *testing.F) {
 	for _, seed := range writeStreamRequestFuzzSeeds() {
 		f.Add(seed.scheme, seed.host, seed.port, seed.path, seed.vSel)
@@ -90,8 +92,10 @@ type streamRequestFuzzSeed struct {
 // with a [transport.ProtocolVersion] selector. The host shapes target
 // the IPv6-bracketing branch in `hostParameter`; the version selectors
 // span nil (auto-negotiate to v2) and each concrete constant so the
-// `version > 0` guard at `connect.c:1294` is exercised in every
+// `version > 0` guard at [connect.c:1294] is exercised in every
 // direction.
+//
+// [connect.c:1294]: https://github.com/git/git/blob/v2.54.0/connect.c#L1294
 func writeStreamRequestFuzzSeeds() []streamRequestFuzzSeed {
 	return []streamRequestFuzzSeed{
 		// Empty host with nil version — the smallest legal input.
@@ -104,8 +108,10 @@ func writeStreamRequestFuzzSeeds() []streamRequestFuzzSeed {
 		{scheme: "git", host: "::1", port: "", path: "/repo.git", vSel: 3},
 		// IPv6 literal with port, v2 — rebracketing branch.
 		{scheme: "git", host: "2001:db8::1", port: "9418", path: "/repo.git", vSel: 3},
-		// Path without leading slash — `connect.c::git_connect_git`
+		// Path without leading slash — [connect.c::git_connect_git]
 		// emits `u.Path` verbatim, so the encoder must tolerate it.
+		//
+		// [connect.c::git_connect_git]: https://github.com/git/git/blob/v2.54.0/connect.c#L1251
 		{scheme: "git", host: "example.com", port: "", path: "repo.git", vSel: 3},
 		// Path with leading slash and an out-of-range version selector
 		// — exercises the `version > 0` branch with an unusual integer.

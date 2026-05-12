@@ -19,8 +19,8 @@ import (
 // the cap echoes, and the trailing delim of the capability section;
 // the handler reads the command-args section up to the terminating
 // flush and writes the per-OID metadata response followed by a flush.
-// Canonical reference: `protocol-caps.c::cap_object_info` lines 79-114
-// and `gitprotocol-v2.adoc` §"object-info" lines 556-585.
+// Canonical reference: [protocol-caps.c::cap_object_info lines 79-114]
+// and [gitprotocol-v2.adoc §"object-info" lines 556-585].
 //
 // The output grammar is:
 //
@@ -30,16 +30,16 @@ import (
 //	attr     = "size"
 //	obj-info = obj-id SP obj-size
 //
-// Argument parsing follows `protocol-caps.c::cap_object_info` lines
-// 87-99: each pkt-line in the command-args section is one of `size`,
+// Argument parsing follows [protocol-caps.c::cap_object_info lines 87-99]:
+// each pkt-line in the command-args section is one of `size`,
 // `oid <hex>`, or an unrecognised line. An unrecognised line emits a
 // single `ERR object-info: unexpected line: '<line>'\n` data pkt-line
 // (no flush) and the parser CONTINUES — this differs from
-// `ls-refs.c:188`'s `die()` behaviour. Mid-args EOF surfaces as
+// [ls-refs.c:188]'s `die()` behaviour. Mid-args EOF surfaces as
 // `io.ErrUnexpectedEOF` so callers can distinguish a truncated request
 // from a clean stream close.
 //
-// Response emission follows `protocol-caps.c::send_info` lines 37-77:
+// Response emission follows [protocol-caps.c::send_info lines 37-77]:
 //
 //   - An empty OID list yields no attrs line and no obj-info lines.
 //     The handler emits just the trailing flush (`send_info:44-45`).
@@ -56,7 +56,7 @@ import (
 // # Divergence from canonical Git on missing objects
 //
 // Canonical Git does not omit missing OIDs from the response: per
-// `protocol-caps.c:66-67`, it emits `<oid> ` (literal trailing space,
+// [protocol-caps.c:66-67], it emits `<oid> ` (literal trailing space,
 // no size value) when `odb_read_object_info` fails. We follow
 // canonical for byte equivalence — the `<oid> \n` empty-size form
 // lands on the wire when `size` is set, and just `<oid>\n` (no
@@ -75,6 +75,13 @@ import (
 // object corrupt or unresolvable: <wrapped>\n` data pkt-line followed
 // by a flush, then returns a wrapped [wire.ErrServerRefused] so the
 // dispatcher terminates the v2 session.
+//
+// [protocol-caps.c::cap_object_info lines 79-114]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L79-L114
+// [gitprotocol-v2.adoc §"object-info" lines 556-585]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc?plain=1#L556-L585
+// [protocol-caps.c::cap_object_info lines 87-99]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L87-L99
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
+// [protocol-caps.c::send_info lines 37-77]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37-L77
+// [protocol-caps.c:66-67]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L66-L67
 func handleObjectInfo[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	_ = opts
@@ -98,18 +105,22 @@ func handleObjectInfo[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 // flush of the v2 command-args section and returns the parsed
 // [wire.ObjectInfoArgs] together with the caller-ordered list of
 // requested OID hex strings. The accepted arguments mirror
-// `protocol-caps.c::cap_object_info` lines 87-99: `size`, `oid <hex>`,
+// [protocol-caps.c::cap_object_info lines 87-99]: `size`, `oid <hex>`,
 // or an unrecognised line.
 //
 // An unrecognised line emits an inline ERR data pkt-line on w via
 // [writeObjectInfoErr] and the parser continues. This differs from
 // `parseLSRefsArgs`, which refuses the request on the first unknown
 // argument: the divergence is intentional and matches canonical Git's
-// per-handler choice (`protocol-caps.c:96-99` continues; `ls-refs.c:188`
+// per-handler choice ([protocol-caps.c:96-99] continues; [ls-refs.c:188]
 // die()s).
 //
 // Mid-args EOF is reported as [io.ErrUnexpectedEOF] so callers can
 // distinguish a truncated request from a clean stream close.
+//
+// [protocol-caps.c::cap_object_info lines 87-99]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L87-L99
+// [protocol-caps.c:96-99]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L96-L99
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs, []string, error) {
 	var (
 		args wire.ObjectInfoArgs
@@ -128,9 +139,11 @@ func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs,
 		}
 		if pkt.Kind != pktline.Data {
 			// Delim/ResponseEnd are not part of the canonical command-args
-			// grammar (`protocol-caps.c:87` reads only NORMAL packets);
+			// grammar ([protocol-caps.c:87] reads only NORMAL packets);
 			// surface them as the same "unexpected line" shape canonical
 			// uses, with a synthetic placeholder for the line text.
+			//
+			// [protocol-caps.c:87]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L87
 			if err := writeObjectInfoErr(w,
 				fmt.Sprintf("object-info: unexpected line: '<pkt-kind=%d>'", pkt.Kind)); err != nil {
 				return wire.ObjectInfoArgs{}, nil, err
@@ -160,7 +173,7 @@ func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs,
 // writeObjectInfoResponse emits the per-OID metadata section for the
 // parsed args. The trailing flush is written by [handleObjectInfo].
 //
-// The branch structure mirrors `protocol-caps.c::send_info` exactly:
+// The branch structure mirrors [protocol-caps.c::send_info] exactly:
 //
 //   - Empty OID list → no output (the caller's flush is the response's
 //     sole pkt-line). Canonical: `send_info:44-45`.
@@ -171,6 +184,8 @@ func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs,
 //
 // Per-OID emission delegates to [emitObjectInfoLine], which is also
 // where the parse-failure / miss / corrupt-object branches live.
+//
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 	args wire.ObjectInfoArgs, oids []string) error {
 	if len(oids) == 0 {
@@ -188,9 +203,12 @@ func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.S
 	// capacity, eliminating the per-OID `strings.Builder` growth +
 	// `[]byte(...)` conversion allocs the previous shape produced.
 	// `WritePacket` copies the payload into its own length-prefixed
-	// scratch (`pkt-line.c:509`), so reusing this slice across calls is
-	// safe. Capacity: 64-char SHA-256 hex + ' ' + 20-digit decimal int64
-	// + '\n' = 86 bytes worst case; round up to 96.
+	// scratch ([pkt-line.c::format_packet]), so reusing this slice
+	// across calls is safe. Capacity: 64-char SHA-256 hex + ' ' +
+	// 20-digit decimal int64 + '\n' = 86 bytes worst case; round up
+	// to 96.
+	//
+	// [pkt-line.c::format_packet]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L146
 	var scratch [96]byte
 	line := scratch[:0]
 	for _, oid := range oids {
@@ -232,9 +250,11 @@ func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[
 	line []byte, oidHex string, wantSize bool) ([]byte, error) {
 	hash, err := objfmt.ParseHexAs[H](oidHex)
 	if err != nil {
-		// `protocol-caps.c:55-61`: malformed hex ⇒ inline ERR + continue.
+		// [protocol-caps.c:55-61]: malformed hex ⇒ inline ERR + continue.
 		// The bad hex is echoed verbatim into the message so a client
 		// trace shows the offending bytes.
+		//
+		// [protocol-caps.c:55-61]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L55-L61
 		return line, writeObjectInfoErr(w, fmt.Sprintf(
 			"object-info: protocol error, expected to get oid, not '%s'", oidHex))
 	}
@@ -245,7 +265,9 @@ func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[
 		// Hit. Build the line per canonical: `<oid>` then optional
 		// ` <size>` when wantSize is set. The caller-supplied scratch
 		// holds the payload until `WritePacket` copies it into its own
-		// length-prefixed scratch (`pkt-line.c:509`).
+		// length-prefixed scratch ([pkt-line.c::format_packet]).
+		//
+		// [pkt-line.c::format_packet]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L146
 		line = append(line, oidHex...)
 		if wantSize {
 			line = append(line, ' ')
@@ -287,11 +309,13 @@ func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[
 
 // writeObjectInfoErr emits a single `ERR <msg>\n` data pkt-line with no
 // trailing flush, mirroring canonical's `packet_writer_error`
-// (`pkt-line.c:693-701`). It differs from [writeERRPacket] in
+// ([pkt-line.c:693-701]). It differs from [writeERRPacket] in
 // `command_loop.go`: that helper writes ERR + flush as a complete
 // response terminator for the unknown-command path, whereas this
 // helper emits a single error pkt-line that is intended to interleave
 // with subsequent response pkt-lines.
+//
+// [pkt-line.c:693-701]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L693-L701
 func writeObjectInfoErr(w *pktline.Writer, msg string) error {
 	if err := w.WritePacket([]byte("ERR " + msg + "\n")); err != nil {
 		return fmt.Errorf("server: object-info: write ERR: %w", err)

@@ -2,11 +2,16 @@
 // `testdata/repos/<name>/` into a fresh `t.TempDir()`. The fixtures
 // are checked into the tree under a `dotgit/` directory rather than a
 // literal `.git/` because canonical Git refuses to track a path with a
-// `.git` component (`path.c::is_dotgit_path`); this package renames
-// the component on materialisation.
+// `.git` component ([read-cache.c::verify_path_internal] guards the
+// index with [is_hfs_dotgit] and [is_ntfs_dotgit] checks); this
+// package renames the component on materialisation.
 //
 // The package is test-support code and is never imported from
 // production paths.
+//
+// [read-cache.c::verify_path_internal]: https://github.com/git/git/blob/v2.54.0/read-cache.c#L987
+// [is_hfs_dotgit]: https://github.com/git/git/blob/v2.54.0/utf8.c#L784
+// [is_ntfs_dotgit]: https://github.com/git/git/blob/v2.54.0/path.c#L1415
 package testfixture
 
 import (

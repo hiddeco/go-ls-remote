@@ -70,10 +70,12 @@ func BenchmarkDecodeLSRefs(b *testing.B) {
 
 // buildBenchLSRefsStream encodes n synthetic ref lines as data packets
 // followed by a flush, matching the canonical v2 `ls-refs` response
-// framing (`gitprotocol-v2.adoc` §"ls-refs"). The attribute mix per ref
+// framing ([gitprotocol-v2.adoc §"ls-refs"]). The attribute mix per ref
 // — ~5% `symref-target:`, ~30% `peeled:`, the remainder plain — is
 // chosen to mirror a tag-heavy mirror's discovery output. OIDs are
 // synthesised from the index so the bytes are stable across runs.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
 func buildBenchLSRefsStream(b *testing.B, n int) *bytes.Buffer {
 	b.Helper()
 

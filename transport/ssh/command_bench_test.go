@@ -31,7 +31,7 @@ import (
 //     and `refs/tags/`.
 //   - `object-info/100-oids`: 100 unresolvable OIDs — the server
 //     emits the canonical `<oid> ` no-size shape per OID
-//     (`protocol-caps.c::send_info`) so the per-OID server response
+//     ([protocol-caps.c::send_info]) so the per-OID server response
 //     loop is exercised at scale without resolving real objects.
 //
 // The tracer axis isolates the [trace.PacketEvent] overhead the
@@ -51,6 +51,8 @@ import (
 // [Conn] is reused across iterations: the single-flight contract is
 // satisfied because each iteration drains its response through the
 // trailing flush before issuing the next request.
+//
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func BenchmarkConn_Command(b *testing.B) {
 	const oid = "0123456789abcdef0123456789abcdef01234567"
 	manyOIDs := make([]string, 100)

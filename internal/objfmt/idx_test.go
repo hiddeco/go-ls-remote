@@ -24,7 +24,7 @@ func idxFixture(t *testing.T, name string) string {
 // Canonical Git no longer emits version-1 idx files directly, so the
 // fixture set has to be produced by a helper here in order to exercise
 // the v1 branch of [OpenIdx]. The layout matches the v1 specification
-// in `Documentation/gitformat-pack.adoc` (lines 196-218):
+// in [Documentation/gitformat-pack.adoc lines 196-218]:
 //
 //	[256 × uint32 fanout]
 //	[N × (uint32 offset + 20-byte SHA-1)]
@@ -34,6 +34,8 @@ func idxFixture(t *testing.T, name string) string {
 // The pack-trailer SHA-1 is fabricated; nothing in this file references
 // a real `.pack`. The idx-trailer SHA-1 is computed over every byte
 // preceding it so [Idx.VerifyChecksum] accepts the result.
+//
+// [Documentation/gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
 func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	t.Helper()
 	// Sort by SHA so the binary search invariant holds.
@@ -165,8 +167,10 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects v1 idx with non-monotonic fanout", func(t *testing.T) {
 		// Synthesise a v1 idx then patch fanout[5] to a value larger
-		// than fanout[6]. Mirrors `packfile.c:215-220`, which rejects
+		// than fanout[6]. Mirrors [packfile.c:215-220], which rejects
 		// non-monotonic indices with "non-monotonic index ...".
+		//
+		// [packfile.c:215-220]: https://github.com/git/git/blob/v2.54.0/packfile.c#L215-L220
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})

@@ -25,11 +25,11 @@ import (
 // alternate's commonDir is the parent of its `objects/` directory; a
 // repeat match against `seen` is reported as a cycle wrapping
 // [ErrCorruptObject]. The canonical Git equivalent
-// (`odb.c::odb_is_source_usable`) silently drops the duplicate, but for
+// ([odb.c::odb_is_source_usable]) silently drops the duplicate, but for
 // a read-only library callers are better served by surfacing the
 // misconfiguration than by quietly papering over it.
 //
-// Parsing follows `odb.c::parse_alternates`:
+// Parsing follows [odb.c::parse_alternates]:
 //
 //   - lines separated by `\n`, with a tolerated trailing `\r`,
 //   - a leading `#` makes the line a comment and skips it,
@@ -45,6 +45,9 @@ import (
 // (the path no longer points at a usable repository, or the cycle
 // check trips) closes every alternate already opened on this call so
 // the caller never sees a partially-constructed chain.
+//
+// [odb.c::odb_is_source_usable]: https://github.com/git/git/blob/v2.54.0/odb.c#L92
+// [odb.c::parse_alternates]: https://github.com/git/git/blob/v2.54.0/odb.c#L135
 func openAlternates[H objfmt.Hash](commonDir string, seen map[string]bool) ([]*Store[H], error) {
 	path := filepath.Join(commonDir, "objects", "info", "alternates")
 	raw, err := os.ReadFile(path)
@@ -113,11 +116,13 @@ func openAlternates[H objfmt.Hash](commonDir string, seen map[string]bool) ([]*S
 
 // parseAlternates splits an `objects/info/alternates` payload into the
 // fully-resolved object-directory paths it names, mirroring canonical
-// Git's `odb.c::parse_alternates`. The grammar is documented on
+// Git's [odb.c::parse_alternates]. The grammar is documented on
 // [openAlternates]; this helper handles only the byte-level decoding
 // (line splitting, comment skipping, C-style unquoting, relative-path
 // resolution, realpath canonicalization), leaving repository validation
 // and cycle detection to the caller.
+//
+// [odb.c::parse_alternates]: https://github.com/git/git/blob/v2.54.0/odb.c#L135
 func parseAlternates(raw []byte, relativeBase string) []string {
 	var out []string
 	for line := range bytes.SplitSeq(raw, []byte{'\n'}) {
@@ -194,7 +199,7 @@ func canonicalRepoDir(p string) string {
 // unquoteCStyle decodes a C-style quoted byte slice that begins with
 // `"`. Returns the unquoted string and true on success, or `("", false)`
 // on any malformed input. The accepted escapes mirror canonical Git's
-// `quote.c::unquote_c_style`: `\"`, `\\`, `\a`, `\b`, `\f`, `\n`, `\r`,
+// [quote.c::unquote_c_style]: `\"`, `\\`, `\a`, `\b`, `\f`, `\n`, `\r`,
 // `\t`, `\v`, plus three-digit octal `\nnn` whose first digit is in
 // `0..3` (so the value fits in a byte).
 //
@@ -202,6 +207,8 @@ func canonicalRepoDir(p string) string {
 // closing quote: the alternates parser feeds whole lines, so anything
 // after the close-quote is discarded. Callers needing endp-style
 // look-ahead should compose their own driver.
+//
+// [quote.c::unquote_c_style]: https://github.com/git/git/blob/v2.54.0/quote.c#L403
 func unquoteCStyle(in []byte) (string, bool) {
 	if len(in) == 0 || in[0] != '"' {
 		return "", false

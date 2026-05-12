@@ -326,8 +326,10 @@ func collectLSRefs(seq iter.Seq2[RawRef, error]) (refs []RawRef, lastErr error) 
 
 // buildLSRefsStream encodes payloads as data packets followed by a
 // flush, matching the canonical v2 `ls-refs` response framing
-// (`gitprotocol-v2.adoc` §"ls-refs"). Each payload should already
+// ([gitprotocol-v2.adoc §"ls-refs"]). Each payload should already
 // carry its trailing LF.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
 func buildLSRefsStream(t *testing.T, payloads ...string) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -555,7 +557,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 // readLSRefsRequest walks an encoded `ls-refs` request stream and
 // returns the recovered argument set. The wire shape it expects
-// mirrors `EncodeLSRefs` (and `gitprotocol-v2.adoc` §"ls-refs"
+// mirrors `EncodeLSRefs` (and [gitprotocol-v2.adoc §"ls-refs"]
 // command-request): a `command=ls-refs` data packet, zero or more
 // capability-echo data packets, a `0001` delim, then the body of
 // `peel`, `symrefs`, `unborn`, and `ref-prefix <p>` lines closed by a
@@ -563,9 +565,12 @@ func TestDecodeLSRefs(t *testing.T) {
 // test.
 //
 // Argument order is canonical (`peel`, `symrefs`, `unborn`, then
-// `ref-prefix` in slice order) per `connect.c::get_remote_refs` lines
-// 564-597, so the helper records each flag independently rather than
+// `ref-prefix` in slice order) per [connect.c::get_remote_refs lines 564-597],
+// so the helper records each flag independently rather than
 // asserting position.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
+// [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
 	t.Helper()
 	r := pktline.NewReader(bytes.NewReader(raw))
@@ -612,7 +617,7 @@ func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
 
 // TestLSRefs_attrSemantics pins the v2 `ls-refs` ref-line attribute
 // rules that `parseLSRefsLine` derives from
-// `connect.c::process_ref_v2` lines 395-470. The parent
+// [connect.c::process_ref_v2 lines 395-470]. The parent
 // `TestDecodeLSRefs` exercises the happy path; this test locks the
 // rules that make the decoder forward-compatible with future
 // attributes:
@@ -633,6 +638,8 @@ func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
 //     arm in `process_ref_v2` is implicit (no `else` branch runs
 //     after the two `skip_prefix` checks fail). New attributes added
 //     by future Git versions therefore must not break older clients.
+//
+// [connect.c::process_ref_v2 lines 395-470]: https://github.com/git/git/blob/v2.54.0/connect.c#L395-L470
 func TestLSRefs_attrSemantics(t *testing.T) {
 	const (
 		oidTag   = "1111111111111111111111111111111111111111"
@@ -731,7 +738,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 // `DecodeLSRefs` reads the server response (per-ref data packets
 // terminated by flush) — the two are *not* mirror images of each
 // other, the same asymmetry that motivated `TestObjectInfo_roundTrip`
-// (`protocol-caps.c::cap_object_info` vs `protocol-caps.c::send_info`).
+// ([protocol-caps.c::cap_object_info] vs [protocol-caps.c::send_info]).
 //
 // Each case encodes a `RefsArgs` covering a combination of the three
 // boolean flags, re-parses the produced pkt-line stream via
@@ -739,6 +746,9 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 // trip. The `unborn` cases supply a capability set advertising
 // `ls-refs=unborn` so `EncodeLSRefs` does not gate the flag away — the
 // gating itself is exercised by `TestEncodeLSRefs`.
+//
+// [protocol-caps.c::cap_object_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L79
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func TestLSRefs_roundTrip(t *testing.T) {
 	unbornCaps := RawCapabilities{{Name: "ls-refs", Value: "unborn"}}
 

@@ -12,7 +12,7 @@ import "strings"
 // (a value capability). Only the first `=` separates name from value;
 // later `=` bytes belong to the value. Values never contain whitespace
 // — canonical Git stops the value at the next space, tab, or newline
-// in `connect.c::parse_feature_value` (see lines 614-659), and this
+// in [connect.c::parse_feature_value (lines 614-659)], and this
 // implementation matches that behaviour.
 //
 // The parser is total over byte input: it never reports an error.
@@ -21,10 +21,13 @@ import "strings"
 // matching that contract keeps the API simple. Empty input or
 // whitespace-only input returns an empty slice.
 //
-// The substring-match guard at `connect.c:629`
+// The substring-match guard at [connect.c:629]
 // (`feature_list == found || isspace(found[-1])`) prevents `multi`
 // from matching the prefix of `multi_ack`. Tokenising up front makes
 // that guard automatic: distinct tokens never alias one another.
+//
+// [connect.c::parse_feature_value (lines 614-659)]: https://github.com/git/git/blob/v2.54.0/connect.c#L614-L659
+// [connect.c:629]: https://github.com/git/git/blob/v2.54.0/connect.c#L629
 func ParseCapabilities(s string) RawCapabilities {
 	if len(s) == 0 {
 		return nil
@@ -42,10 +45,12 @@ func ParseCapabilities(s string) RawCapabilities {
 }
 
 // isWireSpace reports whether r is whitespace per canonical Git's
-// `isspace` usage in `connect.c::parse_feature_value`: space, tab,
+// `isspace` usage in [connect.c::parse_feature_value]: space, tab,
 // or newline. Carriage return is not in the canonical set, but it
 // is bracketed by the same guards in practice — the wire never emits
 // CR inside a capability list.
+//
+// [connect.c::parse_feature_value]: https://github.com/git/git/blob/v2.54.0/connect.c#L614
 func isWireSpace(r rune) bool {
 	switch r {
 	case ' ', '\t', '\n':

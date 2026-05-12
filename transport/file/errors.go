@@ -26,8 +26,10 @@ var (
 	// repository on disk (`objstore.ErrNotARepo`), or its
 	// percent-escapes are malformed and the URL cannot be resolved at
 	// all. Both shapes are callable equivalents to canonical Git's
-	// `repository '%s' not found` (`remote-curl.c::discover_refs`,
+	// `repository '%s' not found` ([remote-curl.c::discover_refs],
 	// `HTTP_MISSING_TARGET`).
+	//
+	// [remote-curl.c::discover_refs]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L465
 	ErrNotFound = &transport.SchemeError{
 		Parent: transport.ErrNotFound,
 		Msg:    "transport/file: repository not found",

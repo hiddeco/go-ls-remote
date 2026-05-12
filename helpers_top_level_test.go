@@ -277,12 +277,15 @@ func TestDefaultBranch_v0(t *testing.T) {
 // TestDefaultBranch_v2_unborn pins that an unborn HEAD on a v2 server
 // surfaces its symref target rather than collapsing to
 // [ErrNoDefaultBranch]. Canonical Git's discovery client passes the
-// `unborn` argument on its `ls-refs` request (`connect.c:591-592`),
+// `unborn` argument on its `ls-refs` request ([connect.c:591-592]),
 // gated by the server's `ls-refs=unborn` capability advertisement;
-// without it, the server's `ls-refs.c:135-136` skips HEAD entirely on
+// without it, the server's [ls-refs.c:135-136] skips HEAD entirely on
 // an unborn repository. `DefaultBranch` must mirror canonical Git and
 // set `Unborn: true` on its internal request so the symref target is
 // reported on every repository state — born, detached, or unborn.
+//
+// [connect.c:591-592]: https://github.com/git/git/blob/v2.54.0/connect.c#L591-L592
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestDefaultBranch_v2_unborn(t *testing.T) {
 	store := openFixtureStore(t, "unborn-head")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))

@@ -269,11 +269,13 @@ func TestStorePeel_DepthBoundShortChainStillResolves(t *testing.T) {
 }
 
 func TestStorePeel_UnknownOIDIsNotAnError(t *testing.T) {
-	// Canonical Git's `peel_to_object` returns NULL for an OID it
-	// cannot find; the API mirrors that with (zero, false, nil)
-	// rather than wrapping `os.ErrNotExist`. Callers that want a
-	// "does this OID exist" probe build it on top of `Lookup` /
-	// `Find`, not on top of Peel.
+	// Canonical Git's [object-name.c::repo_peel_to_type] returns
+	// NULL for an OID it cannot find; the API mirrors that with
+	// (zero, false, nil) rather than wrapping `os.ErrNotExist`.
+	// Callers that want a "does this OID exist" probe build it on
+	// top of `Lookup` / `Find`, not on top of Peel.
+	//
+	// [object-name.c::repo_peel_to_type]: https://github.com/git/git/blob/v2.54.0/object-name.c#L882
 	s := openStoreFromFixture(t, "loose-objects")
 
 	missing := hashFromHex(t,

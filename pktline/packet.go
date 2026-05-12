@@ -11,7 +11,7 @@
 // `length - 4` bytes long.
 //
 // The format is specified in canonical Git's
-// `Documentation/gitprotocol-common.adoc` and implemented in
+// [Documentation/gitprotocol-common.adoc] and implemented in
 // `pkt-line.c`.
 //
 // # Tracer integration
@@ -20,6 +20,8 @@
 // hooks via [WithReaderTracer] and [WithWriterTracer]. When wired in,
 // every packet read or written emits a `trace.PacketEvent`. Without a
 // tracer, the codec performs no instrumentation work.
+//
+// [Documentation/gitprotocol-common.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-common.adoc
 package pktline
 
 // MaxPayload is the largest payload, in bytes, a single pkt-line may

@@ -11,8 +11,11 @@ import (
 
 // idxV2OverflowMSB marks an offset entry whose lower 31 bits index
 // the 64-bit overflow table rather than encoding the offset directly.
-// Per `Documentation/gitformat-pack.adoc` lines 304-312 and the read
-// path in `packfile.c::nth_packed_object_offset`.
+// Per [Documentation/gitformat-pack.adoc lines 304-312] and the read
+// path in [packfile.c::nth_packed_object_offset].
+//
+// [Documentation/gitformat-pack.adoc lines 304-312]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L304-L312
+// [packfile.c::nth_packed_object_offset]: https://github.com/git/git/blob/v2.54.0/packfile.c#L2055
 const idxV2OverflowMSB uint32 = 0x80000000
 
 // findOffsetV2 binary-searches the v2 sorted-name table, falling
@@ -57,9 +60,11 @@ func (i *Idx[H]) findOffsetV2(h H) (int64, bool) {
 // named object as recorded in the idx. ok is false on a miss, on a
 // v1 idx (which does not store CRCs), or before the idx is opened.
 //
-// The CRC table is new in v2 — see `gitformat-pack.adoc` lines
-// 299-302 — and lets repacking copy compressed entries verbatim while
+// The CRC table is new in v2 — see [gitformat-pack.adoc lines
+// 299-302] — and lets repacking copy compressed entries verbatim while
 // still detecting bit-rot at copy time.
+//
+// [gitformat-pack.adoc lines 299-302]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L299-L302
 func (i *Idx[H]) FindCRC32(h H) (uint32, bool) {
 	if i.ver != 2 || i.count == 0 {
 		return 0, false
@@ -82,8 +87,11 @@ func (i *Idx[H]) FindCRC32(h H) (uint32, bool) {
 // recorded in the idx.
 //
 // In both v1 and v2 the pack-trailer copy sits immediately before the
-// idx self-checksum at the end of the file (`gitformat-pack.adoc`
-// lines 213-218 and 314-319).
+// idx self-checksum at the end of the file ([gitformat-pack.adoc
+// lines 213-218] and [gitformat-pack.adoc lines 314-319]).
+//
+// [gitformat-pack.adoc lines 213-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L213-L218
+// [gitformat-pack.adoc lines 314-319]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L314-L319
 func (i *Idx[H]) PackChecksum() H {
 	var h H
 	hashLen := len(h)
@@ -99,8 +107,10 @@ func (i *Idx[H]) PackChecksum() H {
 // trailer.
 //
 // The trailer is the *idx* self-hash, not the pack-trailer copy that
-// sits just before it (`gitformat-pack.adoc` lines 314-319). Use
+// sits just before it ([gitformat-pack.adoc lines 314-319]). Use
 // [Idx.PackChecksum] to read the pack-trailer copy.
+//
+// [gitformat-pack.adoc lines 314-319]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L314-L319
 func (i *Idx[H]) VerifyChecksum() error {
 	var zero H
 	hashLen := len(zero)

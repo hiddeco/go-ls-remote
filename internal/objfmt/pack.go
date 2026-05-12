@@ -28,7 +28,7 @@ type Pack[H Hash] struct {
 	nr   uint32
 }
 
-// Pack header layout per `Documentation/gitformat-pack.adoc`:
+// Pack header layout per [Documentation/gitformat-pack.adoc]:
 //
 //	'PACK'                  4 bytes magic
 //	uint32 version (BE)     2 (currently emitted) or 3 (reserved)
@@ -40,6 +40,8 @@ type Pack[H Hash] struct {
 // hash algorithm is determined out of band from the repository's
 // `extensions.objectFormat` config and asserted by the caller via the
 // `algo` argument to [OpenPack].
+//
+// [Documentation/gitformat-pack.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc
 
 // OpenPack opens path and parses the 12-byte pack header.
 //

@@ -30,11 +30,13 @@ var (
 )
 
 // URL is the parsed form of a Git remote URL. It accepts the same set
-// of URL forms canonical Git accepts in `connect.c::parse_connect_url`.
+// of URL forms canonical Git accepts in [connect.c::parse_connect_url].
 //
 // Field order is chosen so 16-byte string headers and the slice-shaped
 // fields cluster naturally; the struct has no inter-field padding on
 // 64-bit platforms.
+//
+// [connect.c::parse_connect_url]: https://github.com/git/git/blob/v2.54.0/connect.c#L1086
 type URL struct {
 	Scheme string // canonical: "https", "http", "ssh", "git", or "file"
 	User   string // userinfo: "user", "user:pass", or ""
@@ -89,19 +91,23 @@ func ParseURL(s string) (*URL, error) {
 	}
 
 	// Bare absolute path → `file` scheme. Canonical Git treats this as
-	// `file://...` in `connect.c::url_is_local`. Relative paths fall
-	// through and are rejected as unrecognised — they are ambiguous
+	// `file://...` in [connect.c::url_is_local_not_ssh]. Relative paths
+	// fall through and are rejected as unrecognised — they are ambiguous
 	// with scp-style URLs missing the colon and with garbage inputs.
+	//
+	// [connect.c::url_is_local_not_ssh]: https://github.com/git/git/blob/v2.54.0/connect.c#L710
 	if strings.HasPrefix(s, "/") {
 		u.Scheme = "file"
 		u.Path = s
 		return u, nil
 	}
 
-	// scp-style: `[user@]host:path`. Per `connect.c::parse_connect_url`
+	// scp-style: `[user@]host:path`. Per [connect.c::parse_connect_url]
 	// the first `:` outside an IPv6 bracket and before any `/` is the
 	// host/path separator; scp-style has no port, so `host:22:rest`
 	// parses as host=`host`, path=`22:rest`.
+	//
+	// [connect.c::parse_connect_url]: https://github.com/git/git/blob/v2.54.0/connect.c#L1086
 	if i, ok := scpSeparator(s); ok {
 		u.Scheme = "ssh"
 		hostPart := s[:i]

@@ -71,9 +71,11 @@ type refRecord[H objfmt.Hash] struct {
 	ValueType uint8
 }
 
-// reftable.adoc §"ref record" — the low 3 bits of the second varint in
+// [reftable.adoc § ref record] — the low 3 bits of the second varint in
 // each ref record carry value_type. These constants name the four
 // defined values; 0x4..0x7 are reserved by the spec.
+//
+// [reftable.adoc § ref record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-record
 const (
 	refValueDeletion uint8 = 0x0
 	refValueSingle   uint8 = 0x1
@@ -122,8 +124,10 @@ const (
 // type parameter removes a redundant runtime argument and lets the
 // compiler emit the value/peeled copies as constant-length moves.
 //
-// See `reftable/record.c::reftable_ref_record_decode` for the
+// See [reftable/record.c::reftable_ref_record_decode] for the
 // canonical implementation.
+//
+// [reftable/record.c::reftable_ref_record_decode]: https://github.com/git/git/blob/v2.54.0/reftable/record.c#L360
 func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex uint64) (refRecord[H], int, error) {
 	var zero refRecord[H]
 	hashSize := len(zero.Value)
@@ -142,7 +146,9 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex
 	// Detect minUpdateIndex + delta wrapping uint64. The sum is not
 	// stored — the public [RefRecord] does not carry update_index, and
 	// [refRecord] has been trimmed to match — but the check still flags
-	// on-disk corruption that reftable.adoc §"ref record" disallows.
+	// on-disk corruption that [reftable.adoc § ref record] disallows.
+	//
+	// [reftable.adoc § ref record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-record
 	if delta > math.MaxUint64-minUpdateIndex {
 		return zero, 0, fmt.Errorf("reftable: min %d + delta %d wraps uint64: %w", minUpdateIndex, delta, ErrUpdateIndexOverflow)
 	}
@@ -187,7 +193,9 @@ func decodeRefRecord[H objfmt.Hash](buf, prevKey, scratch []byte, minUpdateIndex
 		rec.Target = rest[:targetLen]
 		consumed += n3 + int(targetLen)
 	default:
-		// 0x4..0x7 are reserved per reftable.adoc §"ref record".
+		// 0x4..0x7 are reserved per [reftable.adoc § ref record].
+		//
+		// [reftable.adoc § ref record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-record
 		return zero, 0, fmt.Errorf("reftable: value_type %#x: %w", valueType, ErrUnsupportedValueType)
 	}
 

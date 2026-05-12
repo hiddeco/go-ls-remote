@@ -16,7 +16,9 @@ import (
 // handling, separator validation, and comment/blank-line treatment.
 //
 // The reference is canonical Git's
-// `refs/packed-backend.c::parse_packed_refs_line`.
+// [refs/packed-backend.c::next_record].
+//
+// [refs/packed-backend.c::next_record]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L886
 func TestParsePackedRefs(t *testing.T) {
 	// SHA-1 fixture OIDs. Forty hex chars each so the parser's
 	// length check passes.
@@ -85,11 +87,13 @@ func TestParsePackedRefs(t *testing.T) {
 		},
 		{
 			// Canonical Git pins the traits header to the very first
-			// byte of the file: `refs/packed-backend.c:719` checks
+			// byte of the file: [refs/packed-backend.c:719] checks
 			// `*snapshot->buf == '#'` and only consumes one line. A
 			// `# pack-refs with:` line that follows ref lines is not a
 			// header — it is treated as a body comment and the traits
 			// remain at their zero value.
+			//
+			// [refs/packed-backend.c:719]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L719
 			name: "header_after_ref_is_not_parsed_as_traits",
 			input: hexA + " refs/heads/main\n" +
 				"# pack-refs with: sorted\n" +
@@ -188,11 +192,13 @@ func TestParsePackedRefs(t *testing.T) {
 		},
 		{
 			// Canonical Git's record iterator consumes one peel line
-			// per record (`refs/packed-backend.c:952`). A second
+			// per record ([refs/packed-backend.c:952]). A second
 			// `^<oid>` line is the start of the next record, which
 			// `parse_oid_hex_algop` then rejects because `^` is not a
 			// hex digit. The Go parser surfaces the same condition as
 			// an `ErrCorruptObject`-wrapped error.
+			//
+			// [refs/packed-backend.c:952]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L952
 			name: "double_peel_rejected",
 			input: hexC + " refs/tags/v1\n" +
 				"^" + hexD + "\n" +
@@ -300,12 +306,14 @@ func TestParsePackedRefs(t *testing.T) {
 			wantErrIs: ErrCorruptObject,
 		},
 		{
-			// Canonical `sort_snapshot` (`refs/packed-backend.c:380`)
+			// Canonical `sort_snapshot` ([refs/packed-backend.c:380])
 			// verifies the sort on-the-fly during record iteration: on
 			// the first out-of-order pair the snapshot's `sorted` flag is
 			// cleared. The Go parser must do the same so a corrupt or
 			// hostile file claiming `sorted` cannot mislead downstream
 			// short-circuits.
+			//
+			// [refs/packed-backend.c:380]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L380
 			name: "sorted_trait_cleared_when_entries_out_of_order",
 			input: "# pack-refs with: sorted\n" +
 				hexA + " refs/heads/zebra\n" +
@@ -336,14 +344,18 @@ func TestParsePackedRefs(t *testing.T) {
 
 		// Refname-format validation rows. Canonical Git's packed-refs
 		// iterator runs `check_refname_format(name, REFNAME_ALLOW_ONELEVEL)`
-		// on every record (`refs/packed-backend.c:938`) and marks
+		// on every record ([refs/packed-backend.c:938]) and marks
 		// non-conforming names `REF_BAD_NAME | REF_ISBROKEN` so callers
 		// see a sanitized empty OID rather than the corrupt input. For
 		// our read-only library the equivalent is to refuse the file at
 		// parse time: a downstream consumer that received a "valid" ref
 		// pointing at a broken name would have no way to flag it. The
-		// rules are taken from `refs.c::check_refname_component` and the
-		// `refname_disposition` table on `refs.c:80`.
+		// rules are taken from [refs.c::check_refname_component] and the
+		// `refname_disposition` table on [refs.c:80].
+		//
+		// [refs/packed-backend.c:938]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L938
+		// [refs.c::check_refname_component]: https://github.com/git/git/blob/v2.54.0/refs.c#L192
+		// [refs.c:80]: https://github.com/git/git/blob/v2.54.0/refs.c#L80
 		{
 			name:      "refname_with_nul_byte_rejected",
 			input:     hexA + " refs/heads/ma\x00in\n",
@@ -494,9 +506,11 @@ func TestParsePackedRefs(t *testing.T) {
 		{
 			// Single-component name. Canonical Git passes
 			// `REFNAME_ALLOW_ONELEVEL` to `check_refname_format` from the
-			// packed-refs iterator (`refs/packed-backend.c:938`), so
+			// packed-refs iterator ([refs/packed-backend.c:938]), so
 			// names like `HEAD` are tolerated even though
 			// `git update-ref` would refuse to write them outside `refs/`.
+			//
+			// [refs/packed-backend.c:938]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L938
 			name:  "refname_single_component_accepted",
 			input: hexA + " HEAD\n",
 			want: want{

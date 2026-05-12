@@ -29,8 +29,8 @@ const gitRepoMount = "/repo.git"
 // in-process git-daemon-style server. The server listens on a
 // loopback ephemeral port, accepts an arbitrary number of concurrent
 // connections, peels the discovery-time pkt-line off each connection
-// (the server-side analog of canonical Git's `daemon.c::execute` at
-// `daemon.c:749`), and runs [internal/server.Serve] against store
+// (the server-side analog of canonical Git's [daemon.c::execute] at
+// [daemon.c:749]), and runs [internal/server.Serve] against store
 // for the remainder of the stream.
 //
 // The harness mirrors the [NewHTTPServer] return shape — a bare
@@ -45,8 +45,8 @@ const gitRepoMount = "/repo.git"
 // # Wire shape
 //
 // The initial pkt-line follows the grammar from
-// `gitprotocol-pack.adoc §"Extra Parameters"` and matches canonical
-// Git's `daemon.c::execute` at `daemon.c:749`:
+// [gitprotocol-pack.adoc §"Extra Parameters"] and matches canonical
+// Git's [daemon.c::execute] at [daemon.c:749]:
 //
 //	git-upload-pack <path> NUL host=<host[:port]> NUL [NUL version=<N> NUL]
 //
@@ -54,6 +54,10 @@ const gitRepoMount = "/repo.git"
 // presence of a `host=` field; the parsed values are discarded
 // because the server only hosts one store. Malformed handshakes
 // close the connection without invoking [internal/server.Serve].
+//
+// [daemon.c::execute]: https://github.com/git/git/blob/v2.54.0/daemon.c#L736
+// [daemon.c:749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func NewGitServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string {
 	t.Helper()
 
@@ -135,9 +139,12 @@ func (s *gitServer) handle(t testing.TB, conn net.Conn) {
 	w := pktline.NewWriter(conn)
 
 	// Read the initial discovery-time pkt-line — the server-side
-	// analog of `daemon.c::execute` at `daemon.c:749`. A read error
+	// analog of [daemon.c::execute] at [daemon.c:749]. A read error
 	// here (EOF, net-closed) is the client closing before the
 	// handshake completed, which is not actionable.
+	//
+	// [daemon.c::execute]: https://github.com/git/git/blob/v2.54.0/daemon.c#L736
+	// [daemon.c:749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
 	pkt, err := r.ReadPacket()
 	if err != nil {
 		return
@@ -162,18 +169,26 @@ func (s *gitServer) handle(t testing.TB, conn net.Conn) {
 
 // validateGitHandshake checks that payload satisfies the canonical
 // `git-upload-pack <path>\0host=<h>\0[ \0version=<N>\0 ]` grammar
-// from `gitprotocol-pack.adoc §"Extra Parameters"`. The parser
-// mirrors `daemon.c::execute` at `daemon.c:752-758` and
-// `daemon.c::parse_extra_args` at `daemon.c:623`: a leading
+// from [gitprotocol-pack.adoc §"Extra Parameters"]. The parser
+// mirrors [daemon.c::execute] at [daemon.c:752-758] and
+// [daemon.c::parse_extra_args] at [daemon.c:623]: a leading
 // command, a NUL-terminated path, then NUL-separated extended
 // fields beginning with `host=`. The harness discards the parsed
 // values; the function returns a non-nil error only when the
 // payload deviates from the shape badly enough that
 // [internal/server.Serve] would never produce a useful response.
+//
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [daemon.c::execute]: https://github.com/git/git/blob/v2.54.0/daemon.c#L736
+// [daemon.c:752-758]: https://github.com/git/git/blob/v2.54.0/daemon.c#L752-L758
+// [daemon.c::parse_extra_args]: https://github.com/git/git/blob/v2.54.0/daemon.c#L623
+// [daemon.c:623]: https://github.com/git/git/blob/v2.54.0/daemon.c#L623
 func validateGitHandshake(payload []byte) error {
 	const prefix = "git-upload-pack "
 	// pkt-line payloads frequently carry a trailing `\n`; canonical
-	// Git's `execute` strips it before parsing (see `daemon.c:752`).
+	// Git's `execute` strips it before parsing (see [daemon.c:752]).
+	//
+	// [daemon.c:752]: https://github.com/git/git/blob/v2.54.0/daemon.c#L752
 	payload = bytes.TrimSuffix(payload, []byte{'\n'})
 
 	if !bytes.HasPrefix(payload, []byte(prefix)) {
@@ -190,9 +205,11 @@ func validateGitHandshake(payload []byte) error {
 	}
 	rest = rest[nul+1:]
 
-	// `parse_extra_args` (`daemon.c:623`) reads NUL-separated
+	// `parse_extra_args` ([daemon.c:623]) reads NUL-separated
 	// arguments. The first one must be `host=<value>`; subsequent
 	// entries are optional and live behind an additional NUL.
+	//
+	// [daemon.c:623]: https://github.com/git/git/blob/v2.54.0/daemon.c#L623
 	hostField := rest
 	if i := bytes.IndexByte(rest, 0); i >= 0 {
 		hostField = rest[:i]

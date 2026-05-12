@@ -74,9 +74,11 @@ func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 // any advertisement byte) before the command response. The
 // advertisement belongs to the GET probe; the POST body carries only
 // the command response per canonical Git's
-// `http-backend.c::service_rpc`. The test drives a single `ls-refs`
+// [http-backend.c::service_rpc]. The test drives a single `ls-refs`
 // request and asserts the first packet the server emits is a Data
 // packet whose payload is not `version 2\n`.
+//
+// [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
 	store := openEmptyStore(t)
 

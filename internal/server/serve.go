@@ -26,8 +26,8 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 //
 // For [transport.ProtocolV2] the advertisement begins with a single
 // data packet whose payload is `version 2\n` (see canonical Git's
-// `serve.c::protocol_v2_advertise_capabilities` and
-// `gitprotocol-v2.adoc` §"Capability Advertisement"), followed by one
+// [serve.c::protocol_v2_advertise_capabilities] and
+// [gitprotocol-v2.adoc §"Capability Advertisement"]), followed by one
 // data packet per advertised capability and a trailing flush. The
 // capability set and emission order are documented on
 // [writeV2Advertisement]. After the advertisement, Serve enters the
@@ -46,7 +46,7 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // ref in C-locale byte order, with peeled lines for annotated tags
 // and a trailing flush. An empty repository emits the
 // `<zero-oid> capabilities^{}\0<caps>\n` placeholder defined at
-// `upload-pack.c:1422-1428`. The cap list and emission rules are
+// [upload-pack.c:1422-1428]. The cap list and emission rules are
 // documented on [writeV0Advertisement]. v0 has no command loop:
 // canonical Git terminates the connection after the advertisement
 // when the client does not send a `want`, and Serve mirrors that by
@@ -59,6 +59,10 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // the ref set the advertisement and `ls-refs` handler enumerate, and
 // the object metadata the `object-info` handler resolves. Passing a
 // nil store is not permitted.
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
+// [gitprotocol-v2.adoc §"Capability Advertisement"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#capability-advertisement
+// [upload-pack.c:1422-1428]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1422-L1428
 func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	switch opts.PreferredProtocol {
@@ -79,7 +83,7 @@ func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Wri
 // would otherwise produce. It is the right entry point for the
 // smart-HTTP POST handler, which must return only the command
 // response — the advertisement is served by the GET probe. See
-// canonical Git's `http-backend.c::service_rpc` for the split.
+// canonical Git's [http-backend.c::service_rpc] for the split.
 //
 // The function is v2-only by definition: v0 has no command loop, so
 // `opts.PreferredProtocol` is ignored. Callers may leave the field
@@ -89,6 +93,8 @@ func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Wri
 // The contract for r, w, store, and the rest of opts (notably
 // [Options.Tracer]) matches [Serve]; consult that function's doc
 // for the termination paths and error shapes the loop surfaces.
+//
+// [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func ServeCommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	return runV2CommandLoop(ctx, r, w, store, opts)

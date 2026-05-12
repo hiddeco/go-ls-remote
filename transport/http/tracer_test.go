@@ -308,8 +308,10 @@ func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 	}
 	require.NotEmpty(t, outbound,
 		"the command request body Writer must emit outbound PacketEvents")
-	// Per `gitprotocol-v2.adoc` "Command Request" the body is
+	// Per [gitprotocol-v2.adoc §"Command Request"] the body is
 	// command + cap + delim + arg + flush — five packets minimum.
+	//
+	// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 	assert.GreaterOrEqual(t, len(outbound), 5,
 		"command request body emits one PacketEvent per pkt-line")
 	for _, p := range outbound {

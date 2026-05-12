@@ -1,11 +1,11 @@
 package objstore
 
 // Refname format rules. The validator below mirrors canonical Git's
-// `check_refname_format` (`refs.c:320`) called with
+// `check_refname_format` ([refs.c:320]) called with
 // `REFNAME_ALLOW_ONELEVEL`, the same flag the packed-refs iterator uses
-// (`refs/packed-backend.c:938`). Refnames are slash-separated path
+// ([refs/packed-backend.c:938]). Refnames are slash-separated path
 // components; each component is validated by the equivalent of
-// `check_refname_component` (`refs.c:192`), and a few rules apply to the
+// `check_refname_component` ([refs.c:192]), and a few rules apply to the
 // refname as a whole.
 //
 // Per-component rules:
@@ -25,7 +25,7 @@ package objstore
 //   - Does not end with `.`.
 //
 // Bytes >= 0x80 are accepted as ordinary component characters (the
-// canonical disposition table at `refs.c:80` leaves rows 8–15 zeroed,
+// canonical disposition table at [refs.c:80] leaves rows 8–15 zeroed,
 // i.e. disposition 0). Empty components — meaning a leading `/`,
 // trailing `/`, or `//` — are rejected because the per-component check
 // requires non-empty input.
@@ -33,7 +33,13 @@ package objstore
 // Single-component names like `HEAD` are accepted because the iterator
 // runs the validator with `REFNAME_ALLOW_ONELEVEL`. Without that flag
 // canonical Git would also reject a refname with fewer than two
-// components (`refs.c:315`).
+// components ([refs.c:315]).
+//
+// [refs.c:320]: https://github.com/git/git/blob/v2.54.0/refs.c#L320
+// [refs/packed-backend.c:938]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L938
+// [refs.c:192]: https://github.com/git/git/blob/v2.54.0/refs.c#L192
+// [refs.c:80]: https://github.com/git/git/blob/v2.54.0/refs.c#L80
+// [refs.c:315]: https://github.com/git/git/blob/v2.54.0/refs.c#L315
 func checkRefnameFormat(name string) bool {
 	if name == "" || name == "@" {
 		return false
@@ -58,10 +64,13 @@ func checkRefnameFormat(name string) bool {
 }
 
 // checkRefnameComponent validates a single slash-separated component of
-// a refname. The disposition rules follow `refs.c:192` and the
-// `refname_disposition` table on `refs.c:80`. The component is rejected
+// a refname. The disposition rules follow [refs.c:192] and the
+// `refname_disposition` table on [refs.c:80]. The component is rejected
 // when empty, when it begins with `.`, when it ends with `.lock`, when
 // it contains `..` or `@{`, or when it contains any forbidden byte.
+//
+// [refs.c:192]: https://github.com/git/git/blob/v2.54.0/refs.c#L192
+// [refs.c:80]: https://github.com/git/git/blob/v2.54.0/refs.c#L80
 func checkRefnameComponent(c string) bool {
 	if c == "" {
 		return false
@@ -103,7 +112,9 @@ func checkRefnameComponent(c string) bool {
 
 // hasDotLockSuffix reports whether the component ends with the
 // case-sensitive byte sequence `.lock`. Canonical Git uses the
-// equivalent `LOCK_SUFFIX` check at `refs.c:264`.
+// equivalent `LOCK_SUFFIX` check at [refs.c:264].
+//
+// [refs.c:264]: https://github.com/git/git/blob/v2.54.0/refs.c#L264
 func hasDotLockSuffix(c string) bool {
 	const suffix = ".lock"
 	if len(c) < len(suffix) {

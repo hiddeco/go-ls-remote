@@ -22,8 +22,10 @@ func TestCheckERRPacket(t *testing.T) {
 	})
 
 	t.Run("three-byte ERR without trailing space", func(t *testing.T) {
-		// `pkt-line.c:509-510` matches the literal four bytes `ERR `.
+		// [pkt-line.c:509-510] matches the literal four bytes `ERR `.
 		// A payload of just `ERR` is not a server error packet.
+		//
+		// [pkt-line.c:509-510]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L509-L510
 		assert.NoError(t, CheckERRPacket([]byte("ERR")))
 	})
 
@@ -51,7 +53,9 @@ func TestCheckERRPacket(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrServerRefused)
 		// The single trailing LF on the payload is stripped per the
-		// canonical-Git producer at `pkt-line.c:699`.
+		// canonical-Git producer at [pkt-line.c:699].
+		//
+		// [pkt-line.c:699]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L699
 		assert.Equal(t, "wire: server refused: boom", err.Error())
 	})
 

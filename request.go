@@ -41,7 +41,9 @@ package lsremote
 //     its capability list. On v0/v1 the wire has no concept of an
 //     unborn `HEAD`, so the flag is ignored.
 //
-// See `gitprotocol-v2.adoc §"ls-refs"` for the v2 wire contract.
+// See [gitprotocol-v2.adoc §"ls-refs"] for the v2 wire contract.
+//
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
 type RefsRequest struct {
 	// Prefixes restricts the returned refs to those whose names
 	// begin with one of the listed strings. Applied server-side on
@@ -84,7 +86,9 @@ type RefsRequest struct {
 //     v0/v1 handshakes the library never issues it and this flag is
 //     unused.
 //
-// See `gitprotocol-v2.adoc §"object-info"` for the v2 wire contract.
+// See [gitprotocol-v2.adoc §"object-info"] for the v2 wire contract.
+//
+// [gitprotocol-v2.adoc §"object-info"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#object-info
 type ObjectInfoRequest struct {
 	// Size asks the server to return the payload size in bytes for
 	// each queried object id. Maps to the `size` argument of v2

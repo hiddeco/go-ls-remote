@@ -61,10 +61,12 @@ func BenchmarkNewAdapter(b *testing.B) {
 // n ref records, alternating between branches and tags so the
 // adapter's per-ref split path is exercised against both shapes.
 // Records use HTAB as the canonical separator
-// (`gitprotocol-http.adoc` lines 158-200) and a fixed 40-char OID.
+// ([gitprotocol-http.adoc lines 158-200]) and a fixed 40-char OID.
 // The body is plain text, returned as a string so the timed loop
 // can wrap it in a [strings.Reader] without an extra allocation
 // per iteration.
+//
+// [gitprotocol-http.adoc lines 158-200]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L158-L200
 func buildBenchDumbBody(n int) string {
 	const oid = "0123456789abcdef0123456789abcdef01234567"
 	var sb strings.Builder

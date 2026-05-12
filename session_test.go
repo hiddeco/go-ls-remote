@@ -446,7 +446,7 @@ func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 
 // TestSession_ObjectInfo_sizeFalseSeam pins the wire-server seam on a
 // no-`size` `object-info` request. Canonical Git's
-// `protocol-caps.c::send_info` lines 47-48 skip the attrs PKT-LINE
+// [protocol-caps.c::send_info lines 47-48] skip the attrs PKT-LINE
 // entirely when the client did not request `size`, so the response is
 // per-OID `<oid>\n` rows followed by a flush — no attrs. The wire
 // decoder must recognise that shape and surface the OIDs, and the
@@ -457,6 +457,8 @@ func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 // regression in either layer (server elides attrs, decoder consumes the
 // first row as a degenerate attrs line, Session forgets to translate
 // the sentinel) is caught here rather than at the next phase boundary.
+//
+// [protocol-caps.c::send_info lines 47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
 func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
@@ -512,9 +514,11 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 
 	// Parse the captured request body as pkt-lines and assert no `size`
 	// line appears in the argument section. The wire shape pinned by
-	// `gitprotocol-v2.adoc` §"Command Request" places arguments after
+	// [gitprotocol-v2.adoc §"Command Request"] places arguments after
 	// the delim packet; pre-delim data lines carry the command name and
 	// capabilities, neither of which can equal `size` in this fixture.
+	//
+	// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 	pr := pktline.NewReader(bytes.NewReader(conn.lastCmdBody.Bytes()))
 	for {
 		pkt, err := pr.ReadPacket()

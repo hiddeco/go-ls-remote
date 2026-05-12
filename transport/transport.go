@@ -128,9 +128,11 @@ type Conn interface {
 //
 // The callback writes the complete frame — the `command=` line, every
 // capability line, the `delim-pkt`, every argument line, and the
-// closing `flush-pkt` — as documented in `gitprotocol-v2.adoc`
-// §"Command Request". Returning a non-nil error aborts the call
-// without dispatching a request; the transport surfaces the error to
-// its caller unchanged or wrapped in its own diagnostic envelope per
-// the transport's contract.
+// closing `flush-pkt` — as documented in
+// [gitprotocol-v2.adoc §"Command Request"]. Returning a non-nil error
+// aborts the call without dispatching a request; the transport surfaces
+// the error to its caller unchanged or wrapped in its own diagnostic
+// envelope per the transport's contract.
+//
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 type CommandBody func(w *pktline.Writer) error

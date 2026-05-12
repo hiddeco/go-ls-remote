@@ -33,12 +33,14 @@ type idxCatalog[H objfmt.Hash] struct {
 	// in descending order with the idx basename as a stable
 	// tiebreaker. [idxCatalog.Lookup]'s linear scan and
 	// [idxCatalog.AllPacks]'s iteration both walk the slice in this
-	// order, mirroring canonical Git's `packfile.c::sort_pack`:
+	// order, mirroring canonical Git's [packfile.c::sort_pack]:
 	// younger packs tend to hold more recent objects and to satisfy
 	// the next lookup. The tiebreaker is what stabilises the order
 	// when two packs land on the same mtime second (e.g. two packs
 	// freshly written by the same `WriteFile` loop) across
 	// filesystems with coarse mtime resolution.
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	packs []packEntry[H]
 
 	// idxByPack maps each open pack to its paired idx. The CRC
@@ -55,9 +57,11 @@ type idxCatalog[H objfmt.Hash] struct {
 // the pack-file mtime captured at open time. The pairing is built
 // once at construction; callers consume `idx` for offset lookups and
 // `pack` to read object bytes. `mtime` is used only by the
-// open-time sort that matches canonical Git's `packfile.c::sort_pack`
+// open-time sort that matches canonical Git's [packfile.c::sort_pack]
 // heuristic (younger first); lookups themselves never re-stat the
 // file.
+//
+// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 type packEntry[H objfmt.Hash] struct {
 	idx   *objfmt.Idx[H]
 	pack  *objfmt.Pack[H]
@@ -165,10 +169,12 @@ func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCata
 
 	// Sort by pack mtime (younger first) with idx basename as a
 	// stable tiebreaker, matching canonical Git's
-	// `packfile.c::sort_pack` heuristic. Younger packs tend to hold
+	// [packfile.c::sort_pack] heuristic. Younger packs tend to hold
 	// more recent objects and to satisfy the next lookup, and the
 	// basename tiebreaker keeps the order deterministic when two
 	// packs share an mtime second (or finer).
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	slices.SortFunc(c.packs, func(a, b packEntry[H]) int {
 		if c := b.mtime.Compare(a.mtime); c != 0 {
 			return c
@@ -183,7 +189,7 @@ func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCata
 // Lookup walks the catalog's packs in mtime-descending order
 // (younger first) with basename as a stable tiebreaker and returns
 // the first (Pack, offset) pair whose idx records h. The order
-// matches canonical Git's `packfile.c::sort_pack` heuristic so a
+// matches canonical Git's [packfile.c::sort_pack] heuristic so a
 // fresh pack written by a recent fetch is the first one consulted.
 // A miss surfaces as `(nil, 0, false, nil)` so the upper layer can
 // fall through to loose objects, alternates, or [ErrCorruptObject]
@@ -192,6 +198,8 @@ func openIdxCatalog[H objfmt.Hash](commonDir string, algo objfmt.Algo) (*idxCata
 // [objfmt.Idx.FindOffset] reports only a boolean today; the error slot
 // here is preserved for forward compatibility with a future shape that
 // may surface per-idx failures (e.g. a lazily-mapped read error).
+//
+// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 func (c *idxCatalog[H]) Lookup(h H) (*objfmt.Pack[H], int64, bool, error) {
 	for _, e := range c.packs {
 		if off, ok := e.idx.FindOffset(h); ok {

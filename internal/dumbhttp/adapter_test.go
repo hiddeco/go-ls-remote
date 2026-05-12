@@ -15,7 +15,9 @@ import (
 )
 
 // SHA-1 hashes from the canonical example in
-// `gitprotocol-http.adoc` lines 172-175.
+// [gitprotocol-http.adoc lines 172-175].
+//
+// [gitprotocol-http.adoc lines 172-175]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L172-L175
 const (
 	oidMaint  = "95dcfa3633004da0049d3d0fa03f80589cbcaf31"
 	oidMaster = "d049f6c27a2244e12041955e262a404c7faba355"

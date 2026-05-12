@@ -147,8 +147,10 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 	t.Run("rejects non-monotonic OIDF fanout", func(t *testing.T) {
 		// Build a clean midx, locate its OIDF chunk via the TOC, and
-		// patch fanout[5] above fanout[6]. Mirrors `midx.c:62-71`,
+		// patch fanout[5] above fanout[6]. Mirrors [midx.c:62-71],
 		// which rejects "oid fanout out of order".
+		//
+		// [midx.c:62-71]: https://github.com/git/git/blob/v2.54.0/midx.c#L62-L71
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
@@ -175,8 +177,10 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// past the end. A corrupt midx must not become a runtime
 		// slice-bounds panic at the downstream `midxBackend.Lookup`
 		// layer; reject at parse time instead. Canonical Git's
-		// `midx.c::nth_midxed_pack_int_id` likewise validates the
+		// [midx.c::nth_midxed_pack_int_id] likewise validates the
 		// pack-int-id against `num_packs`.
+		//
+		// [midx.c::nth_midxed_pack_int_id]: https://github.com/git/git/blob/v2.54.0/midx.c#L584
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
@@ -194,7 +198,9 @@ func TestMidx_OpenMidx(t *testing.T) {
 	t.Run("rejects v1 non-ascending pack names", func(t *testing.T) {
 		// Canonical Git rejects v1 midx files whose PNAM entries are
 		// not in strict-ascending lexicographic order. Mirrors
-		// `midx.c:213-218` ("multi-pack-index pack names out of order").
+		// [midx.c:213-218] ("multi-pack-index pack names out of order").
+		//
+		// [midx.c:213-218]: https://github.com/git/git/blob/v2.54.0/midx.c#L213-L218
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
@@ -211,7 +217,9 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 	t.Run("rejects v1 duplicate pack names", func(t *testing.T) {
 		// Canonical Git's check is `strcmp(...) <= 0`, which also
-		// rejects duplicate basenames. Mirrors `midx.c:213-218`.
+		// rejects duplicate basenames. Mirrors [midx.c:213-218].
+		//
+		// [midx.c:213-218]: https://github.com/git/git/blob/v2.54.0/midx.c#L213-L218
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{
@@ -256,9 +264,11 @@ func TestMidx_OpenMidx(t *testing.T) {
 		// `Midx.Find` (mirroring `bsearch_one_midx` in `midx.c`) only
 		// returns correct answers when OIDL is sorted; an unsorted OIDL
 		// is silent corruption at lookup time. Canonical Git's
-		// `midx_read_oid_lookup` (`midx.c:76-84`) does not validate
+		// `midx_read_oid_lookup` ([midx.c:76-84]) does not validate
 		// ordering at load — v0 adds this defense-in-depth check at
 		// parse time so a malformed file is rejected immediately.
+		//
+		// [midx.c:76-84]: https://github.com/git/git/blob/v2.54.0/midx.c#L76-L84
 		oidLow, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		oidHigh, err := ParseSHA1Hex("2222222222222222222222222222222222222222")
@@ -325,9 +335,11 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 	t.Run("rejects misaligned chunk offset", func(t *testing.T) {
 		// Patch the TOC entry for OIDF to a misaligned absolute
-		// offset (off by 1). Mirrors `chunk-format.c:127-130`, which
+		// offset (off by 1). Mirrors [chunk-format.c:127-130], which
 		// rejects "chunk id ... not 4-byte aligned" with
 		// `MIDX_CHUNK_ALIGNMENT = 4` in `midx.h`.
+		//
+		// [chunk-format.c:127-130]: https://github.com/git/git/blob/v2.54.0/chunk-format.c#L127-L130
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{

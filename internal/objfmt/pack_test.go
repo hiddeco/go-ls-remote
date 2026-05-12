@@ -68,11 +68,13 @@ func TestPack_OpenPack(t *testing.T) {
 	})
 
 	t.Run("accepts pack version 3", func(t *testing.T) {
-		// Version 3 is reserved by `gitformat-pack.adoc` but never
+		// Version 3 is reserved by [gitformat-pack.adoc] but never
 		// emitted by canonical Git; OpenPack must still accept it
 		// since the doc declares it valid. Construct a minimal
 		// zero-object v3 pack inline rather than checking in a
 		// fixture canonical Git would not produce.
+		//
+		// [gitformat-pack.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc
 		dir := t.TempDir()
 		hdr := make([]byte, 12)
 		copy(hdr, "PACK")

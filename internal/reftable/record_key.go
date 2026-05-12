@@ -7,7 +7,8 @@ import "fmt"
 //
 // The full key is reconstructed by combining a `prefix_length` slice
 // of prevKey with the new `suffix` parsed from buf. The on-disk layout
-// is (reftable.adoc §"ref record" / §"index record"):
+// is ([Documentation/technical/reftable.adoc § ref record] /
+// [Documentation/technical/reftable.adoc § index record]):
 //
 //	varint( prefix_length )
 //	varint( (suffix_length << 3) | extra )
@@ -22,8 +23,8 @@ import "fmt"
 //   - log records: `log_type`.
 //
 // Records sitting at a `restart_offset` always have prefix_length=0
-// (reftable.adoc §"ref record"), so a caller doing binary search via
-// the restart table can pass prevKey=nil.
+// ([Documentation/technical/reftable.adoc § ref record]), so a caller
+// doing binary search via the restart table can pass prevKey=nil.
 //
 // scratch is an optional caller-owned byte buffer. When `cap(scratch)
 // >= prefix_length+suffix_length`, decodeKey reuses the underlying
@@ -47,8 +48,12 @@ import "fmt"
 //   - [ErrVarintOverflow] wraps a 10-byte-plus varint, propagated from
 //     [decodeVarint].
 //
-// See `reftable/record.c::reftable_decode_key` for the canonical
+// See [reftable/record.c::reftable_decode_key] for the canonical
 // reference.
+//
+// [Documentation/technical/reftable.adoc § ref record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-record
+// [Documentation/technical/reftable.adoc § index record]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#index-record
+// [reftable/record.c::reftable_decode_key]: https://github.com/git/git/blob/v2.54.0/reftable/record.c#L193
 func decodeKey(buf, prevKey, scratch []byte) ([]byte, uint8, int, error) {
 	prefixLen, n1, err := decodeVarint(buf)
 	if err != nil {

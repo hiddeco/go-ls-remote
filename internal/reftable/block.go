@@ -31,8 +31,10 @@ var (
 	ErrLogBlockUnsupported = errors.New("reftable: log blocks not supported")
 )
 
-// reftable.adoc §"Ref block format" / §"Index block format" — the
+// [reftable.adoc § Ref block format] / reftable.adoc §"Index block format" — the
 // first byte of a block carries one of these four type tags.
+//
+// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 const (
 	blockTypeRef   byte = 'r'
 	blockTypeIndex byte = 'i'
@@ -70,8 +72,10 @@ type blockHeader struct {
 //     binary-searches the table with O(log restartCount) accesses.
 //
 // Eager decoding was the dominant per-block allocation at scale; see
-// `reftable/block.c::block_reader_init` for the canonical (also lazy)
+// [reftable/block.c::reftable_block_init] for the canonical (also lazy)
 // shape.
+//
+// [reftable/block.c::reftable_block_init]: https://github.com/git/git/blob/v2.54.0/reftable/block.c#L227
 type block struct {
 	header blockHeader
 
@@ -104,7 +108,7 @@ type block struct {
 // expressed in the same frame as the on-disk restart_offset values.
 // For every block except the first ref block in a file, the two
 // frames agree and firstByteOffset is 0. For the first ref block,
-// reftable.adoc §"Ref block format" states "all restart_offset in the
+// [reftable.adoc § Ref block format] states "all restart_offset in the
 // first block are relative to the start of the file (position 0), and
 // include the file header"; the caller passes firstByteOffset=24 (the
 // v1 header size) or 28 (v2) so parseBlock can rebase the table to
@@ -121,6 +125,8 @@ type block struct {
 //
 // The returned block's bytes field aliases buf; callers must not
 // mutate the underlying storage while the block is in use.
+//
+// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 	// Need at least the 4-byte header (block_type + uint24 block_len)
 	// before we can read block_len.
@@ -128,8 +134,10 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 		return block{}, fmt.Errorf("reftable: have %d bytes, need %d for block header: %w", len(buf), firstByteOffset+4, ErrTruncatedBlock)
 	}
 
-	// reftable.adoc §"Ref block format" — block_type is one byte,
+	// [reftable.adoc § Ref block format] — block_type is one byte,
 	// followed by uint24 block_len.
+	//
+	// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 	blockType := buf[firstByteOffset]
 	switch blockType {
 	case blockTypeRef, blockTypeIndex, blockTypeObj:
@@ -154,9 +162,11 @@ func parseBlock(buf []byte, firstByteOffset uint32) (block, error) {
 	}
 	bytes := buf[:blockLen]
 
-	// reftable.adoc §"Ref block format" — restart_count is the last
+	// [reftable.adoc § Ref block format] — restart_count is the last
 	// two bytes of the block payload; the restart_offset table of
 	// uint24 entries precedes it.
+	//
+	// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 	restartCount := binary.BigEndian.Uint16(bytes[blockLen-2:])
 	if restartCount == 0 {
 		return block{}, fmt.Errorf("reftable: empty restart table: %w", ErrTruncatedBlock)
@@ -221,9 +231,11 @@ func (b *block) restart(i int) uint32 {
 // (which equals the full key for restart records, since prefix_length
 // is 0 by spec) and compares it to probe.
 //
-// Mirrors `reftable/block.c::block_iter_seek_key`: we binary-search
+// Mirrors [reftable/block.c::block_iter_seek_key]: we binary-search
 // for the first restart strictly greater than probe and back up by
 // one to find the largest restart <= probe.
+//
+// [reftable/block.c::block_iter_seek_key]: https://github.com/git/git/blob/v2.54.0/reftable/block.c#L488
 func (b *block) seekRestart(cmp func(restartIdx int) int) int {
 	idx := sort.Search(int(b.header.restartCount), func(i int) bool {
 		return cmp(i) > 0
@@ -233,11 +245,13 @@ func (b *block) seekRestart(cmp func(restartIdx int) int) int {
 
 // be24 decodes a 3-byte big-endian unsigned integer.
 //
-// reftable.adoc encodes block_len and each restart_offset as uint24;
-// encoding/binary has no Uint24 helper. [parseHeader] spells the same
-// math out inline because it only needs to read one such value;
-// [parseBlock] reads many in a hot loop, so factoring the helper here
-// keeps the loop tight.
+// [Documentation/technical/reftable.adoc] encodes block_len and each
+// restart_offset as uint24; encoding/binary has no Uint24 helper.
+// [parseHeader] spells the same math out inline because it only needs
+// to read one such value; [parseBlock] reads many in a hot loop, so
+// factoring the helper here keeps the loop tight.
+//
+// [Documentation/technical/reftable.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc
 func be24(buf []byte) uint32 {
 	return uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
 }

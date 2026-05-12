@@ -73,7 +73,7 @@ func BenchmarkParseAdvertisement_v0(b *testing.B) {
 
 // buildBenchV0Advertisement encodes n synthetic ref lines as data
 // packets followed by a flush, matching the v0 ref-advertisement
-// framing (`gitprotocol-pack.adoc` §"Reference Discovery"): the head
+// framing ([gitprotocol-pack.adoc §"Reference Discovery"]): the head
 // data packet is the cap-bearing first ref line (`<oid> SP <refname>
 // NUL <cap-list>`), every subsequent data packet is a plain
 // `<oid> SP <refname>` body line, and an annotated tag is followed by
@@ -81,6 +81,8 @@ func BenchmarkParseAdvertisement_v0(b *testing.B) {
 // on the first line carries every `symref=` entry the response
 // references, so `applySymrefs` exercises its full O(symrefs * refs)
 // fan-out.
+//
+// [gitprotocol-pack.adoc §"Reference Discovery"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#reference-discovery
 //
 // The attribute mix per ref — ~5% symbolic, ~30% peeled, the remainder
 // plain — mirrors a tag-heavy mirror's advertisement output. OIDs are

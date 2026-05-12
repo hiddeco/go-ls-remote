@@ -41,7 +41,9 @@ func buildLSRefsRequest(argLines []string) []byte {
 // TestLSRefs_Empty_NoArgs pins the response for an empty repo with no
 // args: the unborn HEAD is suppressed (canonical Git only emits the
 // unborn line when the client has set both `unborn` and `symrefs`,
-// `ls-refs.c:135-136`), and there are no other refs.
+// [ls-refs.c:135-136]), and there are no other refs.
+//
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_NoArgs(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -51,8 +53,10 @@ func TestLSRefs_Empty_NoArgs(t *testing.T) {
 }
 
 // TestLSRefs_Empty_UnbornOnly pins that `unborn` alone is not
-// sufficient: canonical's gate at `ls-refs.c:136` requires
+// sufficient: canonical's gate at [ls-refs.c:136] requires
 // `data->unborn && data->symrefs && (flag & REF_ISSYMREF)`.
+//
+// [ls-refs.c:136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L136
 func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -65,7 +69,9 @@ func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
 // sufficient: HEAD's resolved OID is zero, so the non-unborn branch
 // of `send_possibly_unborn_head` would emit `unborn HEAD ...` but only
 // if `unborn` is set; with just `symrefs`, the unborn fallback gate is
-// closed (`ls-refs.c:135-136`).
+// closed ([ls-refs.c:135-136]).
+//
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -75,10 +81,12 @@ func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
 }
 
 // TestLSRefs_Empty_UnbornSymrefs pins the unborn-HEAD wire shape
-// (`ls-refs.c:91-94`): when `ref->oid == NULL`, canonical Git writes
+// ([ls-refs.c:91-94]): when `ref->oid == NULL`, canonical Git writes
 // `unborn %s` in place of the OID. The literal `unborn` token replaces
 // the hex OID, then the refname follows; with `symrefs` set, the
 // `symref-target:` attribute lands.
+//
+// [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 func TestLSRefs_Empty_UnbornSymrefs(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -113,7 +121,9 @@ func TestLSRefs_PackedRefsFullyPeeled_NoArgs(t *testing.T) {
 // TestLSRefs_PackedRefsFullyPeeled_Peel pins the `peel` arg: the
 // annotated tag gets a ` peeled:<oid>` suffix; HEAD and the branch do
 // not (HEAD is a commit, no peel). Canonical reference:
-// `ls-refs.c:111-115`.
+// [ls-refs.c:111-115].
+//
+// [ls-refs.c:111-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L111-L115
 func TestLSRefs_PackedRefsFullyPeeled_Peel(t *testing.T) {
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
@@ -154,7 +164,9 @@ func TestLSRefs_PackedRefsFullyPeeled_Symrefs(t *testing.T) {
 
 // TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs combines both attrs.
 // Order on the line is `symref-target:` then `peeled:` per
-// `ls-refs.c:95-115` — symrefs first, peel second.
+// [ls-refs.c:95-115] — symrefs first, peel second.
+//
+// [ls-refs.c:95-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95-L115
 func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
@@ -175,8 +187,10 @@ func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
 
 // TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix pins prefix
 // filtering: with `ref-prefix refs/tags/`, only the tag passes
-// `ref_match` (`ls-refs.c:54-67`). HEAD is filtered out because none of
+// `ref_match` ([ls-refs.c:54-67]). HEAD is filtered out because none of
 // the prefixes is a prefix of `HEAD`.
+//
+// [ls-refs.c:54-67]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L54-L67
 func TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix(t *testing.T) {
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
@@ -230,8 +244,10 @@ func TestLSRefs_DetachedHead_NoArgs(t *testing.T) {
 
 // TestLSRefs_DetachedHead_Symrefs pins that a detached HEAD never
 // carries a `symref-target:` attribute even when the client requests
-// `symrefs`: canonical's `ls-refs.c:95` gates emission on
+// `symrefs`: canonical's [ls-refs.c:95] gates emission on
 // `ref->flags & REF_ISSYMREF`, which is false for a detached HEAD.
+//
+// [ls-refs.c:95]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95
 func TestLSRefs_DetachedHead_Symrefs(t *testing.T) {
 	store := openStoreFromFixture(t, "detached-head")
 
@@ -298,9 +314,11 @@ func TestLSRefs_Reftable_Symrefs(t *testing.T) {
 }
 
 // TestLSRefs_UnknownArg pins the structured-error path for an
-// unrecognised argument: canonical's `ls-refs.c:188` calls `die()`. We
+// unrecognised argument: canonical's [ls-refs.c:188] calls `die()`. We
 // surface the same condition as a wrapped [wire.ErrServerRefused] after
 // emitting an `ERR ls-refs: unknown argument "<line>"` pkt-line + flush.
+//
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestLSRefs_UnknownArg(t *testing.T) {
 	store := openEmptyStore(t)
 

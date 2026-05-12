@@ -15,7 +15,7 @@ import (
 // The decompressed loose object is `<type-name> <size>\0<raw data>`,
 // where `<type-name>` is one of `commit`, `tree`, `blob`, or `tag` and
 // `<size>` is the ASCII-decimal byte length of the body. See the writer
-// side `format_object_header` in canonical Git's `object-file.c:111-120`.
+// side `format_object_header` in canonical Git's [object-file.c:111-120].
 //
 // On success body yields the raw object bytes (no header). Closing body
 // also closes the underlying zlib reader, so callers that only want the
@@ -30,12 +30,15 @@ import (
 // the body length, or extra deflate bytes were appended) surfaces as a
 // [ErrCorrupt]-wrapped error from Close, mirroring "garbage at end of
 // loose object" in canonical Git's `unpack_loose_rest`
-// (`object-file.c:282-328`). Callers that close without draining pay
+// ([object-file.c:282-328]). Callers that close without draining pay
 // nothing for the check; partial reads cannot meaningfully assert what
 // the trailer should have been.
 //
 // On error body is nil and the wrapped error chain reflects the cause:
 // zlib framing, header parsing, or unexpected EOF inside the stream.
+//
+// [object-file.c:111-120]: https://github.com/git/git/blob/v2.54.0/object-file.c#L111-L120
+// [object-file.c:282-328]: https://github.com/git/git/blob/v2.54.0/object-file.c#L282-L328
 func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadCloser, err error) {
 	zr, err := zlib.NewReader(r)
 	if err != nil {
@@ -77,11 +80,13 @@ func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadClose
 // rejected.
 //
 // Mirrors the manual digit-by-digit loop in canonical Git's
-// `object-file.c:369-380` (`parse_loose_header`), which comments "The
+// [object-file.c:369-380] (`parse_loose_header`), which comments "The
 // length must follow immediately, and be in canonical decimal format
 // (ie '010' is not valid)." `strconv.ParseInt` is too permissive for
 // the same input — it tolerates leading zeros, leading `+`, and
 // surrounding whitespace — so the validation is rolled here.
+//
+// [object-file.c:369-380]: https://github.com/git/git/blob/v2.54.0/object-file.c#L369-L380
 func parseLooseSize(s string) (int64, error) {
 	if len(s) == 0 {
 		return 0, fmt.Errorf("objfmt: empty loose object size: %w", ErrCorrupt)
@@ -167,7 +172,7 @@ func (b *looseBody) Read(p []byte) (int, error) {
 // the stream still has bytes to deliver, the writer's `<size>` field
 // disagrees with the deflate payload and the file is corrupt;
 // canonical Git surfaces the same condition as "garbage at end of
-// loose object" in `unpack_loose_rest` (`object-file.c:282-328`).
+// loose object" in `unpack_loose_rest` ([object-file.c:282-328]).
 // Callers that close without draining (header-only readers) skip the
 // check — a partial read carries no information about what the
 // trailer should have been.
@@ -176,7 +181,7 @@ func (b *looseBody) Read(p []byte) (int, error) {
 // `unpack_loose_rest` also rejects the dual case — trailing
 // compressed bytes appended after a clean `Z_STREAM_END` — by
 // checking `stream->avail_in != 0` once `git_inflate` returns
-// `Z_STREAM_END` (`object-file.c:321`). v0 catches the over-long
+// `Z_STREAM_END` ([object-file.c:321]). v0 catches the over-long
 // inflated-payload case (the `overrun` and post-drain probe paths
 // above) but not the trailing-compressed-bytes case: doing so would
 // require restructuring this body wrapper to expose the underlying
@@ -185,6 +190,9 @@ func (b *looseBody) Read(p []byte) (int, error) {
 // correctly when extra deflate bytes are present, so the divergence
 // is integrity-only, not semantic. Revisit if v0 grows write
 // support, or if integrity-only validation becomes a stated goal.
+//
+// [object-file.c:282-328]: https://github.com/git/git/blob/v2.54.0/object-file.c#L282-L328
+// [object-file.c:321]: https://github.com/git/git/blob/v2.54.0/object-file.c#L321
 func (b *looseBody) Close() error {
 	if b.closer == nil {
 		return nil

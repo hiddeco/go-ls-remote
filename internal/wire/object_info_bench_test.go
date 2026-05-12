@@ -15,15 +15,19 @@ var benchObjectInfoSink []RawObjectInfo
 
 // buildBenchObjectInfoStream serialises a server-side `object-info`
 // response into a contiguous byte slice the bench can rewind per
-// iteration. It mirrors `protocol-caps.c::send_info`'s success-path
+// iteration. It mirrors [protocol-caps.c::send_info]'s success-path
 // framing: with `size` requested, a `size\n` attrs PKT-LINE precedes
-// the `<oid> <size>\n` rows (`send_info:47-48`); without `size`, no
+// the `<oid> <size>\n` rows ([send_info:47-48]); without `size`, no
 // attrs PKT-LINE is emitted and rows are bare `<oid>\n`
-// (`send_info:63`). When withMissing is true every fourth row is
+// ([send_info:63]). When withMissing is true every fourth row is
 // replaced with the canonical `<oid> ` shape that `send_info` writes
 // when `odb_read_object_info` cannot resolve the OID —
 // `DecodeObjectInfo` filters those, so this exercises the drop path
 // alongside the resolved-row hot path.
+//
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
+// [send_info:47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
+// [send_info:63]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63
 func buildBenchObjectInfoStream(b *testing.B, n int, withSize, withMissing bool) []byte {
 	b.Helper()
 	var buf bytes.Buffer
@@ -74,7 +78,7 @@ func buildBenchObjectInfoStream(b *testing.B, n int, withSize, withMissing bool)
 // `strings.Cut`; both are on the hot path the bench protects.
 //
 // The two attribute shapes (`with-size` and `without-size`) reflect
-// the request-driven shape switch in `protocol-caps.c::send_info`:
+// the request-driven shape switch in [protocol-caps.c::send_info]:
 // when the client did not echo `size`, every row is the bare-OID
 // form, which skips `strconv.ParseInt` entirely. The mixed-with-empty
 // row uses the trailing-space `<oid> ` shape that `send_info` writes
@@ -82,7 +86,10 @@ func buildBenchObjectInfoStream(b *testing.B, n int, withSize, withMissing bool)
 // `DecodeObjectInfo` applies via `parseObjectInfoLine`'s drop signal.
 //
 // See `internal/wire/object_info.go` for the parser; canonical shape
-// is in `protocol-caps.c::send_info` (lines 40-77).
+// is in [protocol-caps.c::send_info (lines 40-77)].
+//
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
+// [protocol-caps.c::send_info (lines 40-77)]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L40-L77
 func BenchmarkDecodeObjectInfo(b *testing.B) {
 	type variant struct {
 		name        string

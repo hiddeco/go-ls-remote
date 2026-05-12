@@ -13,9 +13,11 @@ var ErrUnsupportedProtocol = errors.New("wire: unsupported protocol version")
 
 // ErrServerRefused is the wire-internal sentinel returned when a
 // decoder observes an `ERR <message>` data pkt-line per
-// `pkt-line.c:509-510`. The wrapped error carries the server's
+// [pkt-line.c:509-510]. The wrapped error carries the server's
 // message text after the four-byte `ERR ` prefix. The root `lsremote`
 // package re-wraps this sentinel into its public `*ProtocolError`
 // shape with the operation context; inside the wire package, callers
 // match with [errors.Is].
+//
+// [pkt-line.c:509-510]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L509-L510
 var ErrServerRefused = errors.New("wire: server refused")

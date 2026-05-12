@@ -143,7 +143,9 @@ func TestReadLooseHeader(t *testing.T) {
 
 	t.Run("rejects leading-zero size", func(t *testing.T) {
 		// Canonical decimal: `010` is not valid. See
-		// `object-file.c:369-380` (`parse_loose_header`).
+		// [object-file.c:369-380] (`parse_loose_header`).
+		//
+		// [object-file.c:369-380]: https://github.com/git/git/blob/v2.54.0/object-file.c#L369-L380
 		in := zlibLoose(t, "blob 010", make([]byte, 10))
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -224,8 +226,10 @@ func TestReadLooseHeader(t *testing.T) {
 		// `blob 5\x00helloEXTRA` — the header declares 5 body bytes but
 		// the stream produces 10. Canonical Git surfaces "garbage at
 		// end of loose object" via `unpack_loose_rest` in
-		// `object-file.c:282-328`. After draining exactly `size` bytes,
+		// [object-file.c:282-328]. After draining exactly `size` bytes,
 		// `Close` must surface the same corruption.
+		//
+		// [object-file.c:282-328]: https://github.com/git/git/blob/v2.54.0/object-file.c#L282-L328
 		in := zlibLoose(t, "blob 5", []byte("helloEXTRA"))
 		_, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.NoError(t, err)

@@ -144,7 +144,7 @@ func collectRefs(t *testing.T, s *lsremote.Session, args lsremote.RefsRequest) [
 //
 //   - Resolved HEAD: `DefaultBranch` returns [Entry.ExpectedDefaultBranch].
 //   - Unborn HEAD: the v2 `ls-refs` exchange the helper drives sets
-//     the `unborn` argument (mirroring `connect.c:591-592`), so the
+//     the `unborn` argument (mirroring [connect.c:591-592]), so the
 //     server emits an unborn HEAD entry whose `symref-target:` carries
 //     the branch name. `DefaultBranch` surfaces that target verbatim,
 //     so an unborn HEAD is indistinguishable from a resolved HEAD at
@@ -152,6 +152,8 @@ func collectRefs(t *testing.T, s *lsremote.Session, args lsremote.RefsRequest) [
 //   - Detached HEAD: HEAD is a raw OID with no symref attribute, so
 //     the helper returns a [*ProtocolError] whose chain matches
 //     [ErrNoDefaultBranch] regardless of the wire it travelled.
+//
+// [connect.c:591-592]: https://github.com/git/git/blob/v2.54.0/connect.c#L591-L592
 func checkDefaultBranch(t *testing.T, ctx context.Context,
 	ep endpoint, entry inttest.Entry, opts []lsremote.Option) {
 	t.Helper()

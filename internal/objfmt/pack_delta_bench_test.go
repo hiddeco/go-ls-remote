@@ -5,9 +5,11 @@ import "testing"
 // BenchmarkPack_ReadDeltaHeader characterises the per-hop cost the
 // `internal/objstore` delta walker pays when chasing an `OFS_DELTA`
 // or `REF_DELTA` chain: one zlib reader init, one short inflate, and
-// two little-endian 7-bit varint decodes per `delta.h` lines 85-102
+// two little-endian 7-bit varint decodes per [delta.h lines 85-102]
 // (`get_delta_hdr_size`). The walker calls `Pack.ReadDeltaHeader`
 // once per delta hop, so this is the hot path.
+//
+// [delta.h lines 85-102]: https://github.com/git/git/blob/v2.54.0/delta.h#L85-L102
 //
 // `ofs-delta.pack` places the OFS_DELTA at offset 207 with `BodyAt`
 // at 210 (header `0x69`, offset varint `0x80 0x43`). The deltified

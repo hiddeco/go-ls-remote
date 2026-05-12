@@ -21,11 +21,14 @@ import (
 var errPeelDepthExceeded = errors.New("objstore: peel depth exceeded")
 
 // maxPeelDepth bounds the number of tag-of-tag dereferences [Store.Peel]
-// is willing to chase. Matches canonical Git's `MAXIMUM_PEEL_REFCHAIN`
-// constant in `revision.c::peel_to_object`: a chain longer than this is
-// almost certainly a mis-authored cycle (Git itself never produces one),
-// and the bound keeps the stack and the cache from growing without
-// limit on adversarial input. Per-link cost is one loose-object read.
+// is willing to chase. Canonical Git's [object-name.c::repo_peel_to_type]
+// walks the chain without an explicit ceiling; this bound is a Go-side
+// defensive measure since a chain longer than this is almost certainly
+// a mis-authored cycle (Git itself never produces one), and the bound
+// keeps the stack and the cache from growing without limit on
+// adversarial input. Per-link cost is one loose-object read.
+//
+// [object-name.c::repo_peel_to_type]: https://github.com/git/git/blob/v2.54.0/object-name.c#L882
 const maxPeelDepth = 16
 
 // peelEntry is one cached decision in [Store.peelCache]. Both shapes
@@ -51,10 +54,11 @@ type peelEntry[H objfmt.Hash] struct {
 // chain of annotated tags) whose terminal target is something other
 // than another tag, in which case peeled carries that target's OID.
 // ok is false when oid is not a tag, when the chain exceeds the
-// 16-deep bound (matching canonical Git's `MAXIMUM_PEEL_REFCHAIN` in
-// `revision.c::peel_to_object`), or when the chain dereferences to an
-// OID this store cannot resolve. Per-call cost is O(1) for cached
-// entries and one loose-object read per uncached chain link.
+// 16-deep bound (a Go-side defensive cap; canonical Git's
+// [object-name.c::repo_peel_to_type] walks without an explicit limit),
+// or when the chain dereferences to an OID this store cannot resolve.
+// Per-call cost is O(1) for cached entries and one loose-object read
+// per uncached chain link.
 //
 // The error slot reports genuine failures only: a malformed tag body
 // (no `object` line, invalid hex, missing `type` line) wraps
@@ -95,6 +99,8 @@ type peelEntry[H objfmt.Hash] struct {
 // Peel. The OID-based API here cannot perform that short-circuit
 // because the peel hint belongs to the source ref, not to the value
 // the ref carries.
+//
+// [object-name.c::repo_peel_to_type]: https://github.com/git/git/blob/v2.54.0/object-name.c#L882
 func (s *Store[H]) Peel(oid H) (peeled H, ok bool, err error) {
 	// Fast path: a previous call on this OID has already decided.
 	s.peelMu.Lock()
@@ -107,10 +113,11 @@ func (s *Store[H]) Peel(oid H) (peeled H, ok bool, err error) {
 	peeled, ok, err = s.peelChain(oid, 0)
 	if errors.Is(err, errPeelDepthExceeded) {
 		// Depth overrun is reported to the caller as the "not peelable"
-		// shape (matching canonical Git's `peel_to_object` returning
-		// NULL), but is intentionally NOT cached: a future bump of
-		// [maxPeelDepth] should make a previously-overrunning chain
-		// resolvable on the next call without a Store restart.
+		// shape (matching canonical Git's [object-name.c::repo_peel_to_type]
+		// returning NULL on a chain that bottoms out), but is
+		// intentionally NOT cached: a future bump of [maxPeelDepth]
+		// should make a previously-overrunning chain resolvable on the
+		// next call without a Store restart.
 		var zero H
 		return zero, false, nil
 	}
@@ -175,8 +182,9 @@ func (s *Store[H]) peelChain(oid H, depth int) (H, bool, error) {
 	}
 	// Depth overrun. The internal sentinel routes around the
 	// [Store.Peel] cache write; the public surface still sees the
-	// "not peelable" shape (matching canonical Git's `peel_to_object`
-	// returning NULL).
+	// "not peelable" shape (matching canonical Git's
+	// [object-name.c::repo_peel_to_type] returning NULL on a chain
+	// that fails to resolve).
 	return zero, false, errPeelDepthExceeded
 }
 
@@ -219,8 +227,8 @@ func (s *Store[H]) readLooseTag(oid H) (objfmt.ObjectType, []byte, bool, error) 
 // parseTagBody extracts the dereferenced OID and type name from the
 // header lines of an annotated-tag object body.
 //
-// The body shape per `Documentation/gitformat-signature.adoc` and
-// `object-file.c::parse_tag_buffer`:
+// The body shape per [Documentation/gitformat-signature.adoc] and
+// [tag.c::parse_tag_buffer]:
 //
 //	object <hex>\n
 //	type <name>\n
@@ -233,6 +241,9 @@ func (s *Store[H]) readLooseTag(oid H) (objfmt.ObjectType, []byte, bool, error) 
 // is ignored. A missing `object` or `type` line, or a malformed OID,
 // surfaces as an error wrapping [ErrCorruptObject] so callers can
 // distinguish "this tag is broken" from "this is not a tag".
+//
+// [Documentation/gitformat-signature.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-signature.adoc
+// [tag.c::parse_tag_buffer]: https://github.com/git/git/blob/v2.54.0/tag.c#L130
 func parseTagBody[H objfmt.Hash](body []byte) (H, string, error) {
 	var zero H
 	scanner := bufio.NewScanner(bytes.NewReader(body))

@@ -18,10 +18,10 @@ import (
 // loop has already consumed the `command=ls-refs` line, the cap echoes,
 // and the trailing delim of the capability section; the handler reads
 // the command-args section up to the terminating flush and writes the
-// ref list followed by a flush. Canonical reference: `ls-refs.c::ls_refs`
-// lines 161-216 and `gitprotocol-v2.adoc` §"ls-refs".
+// ref list followed by a flush. Canonical reference: [ls-refs.c::ls_refs lines 161-216]
+// and [gitprotocol-v2.adoc §"ls-refs"].
 //
-// The output grammar is from `gitprotocol-v2.adoc` lines 230-239:
+// The output grammar is from [gitprotocol-v2.adoc lines 230-239]:
 //
 //	output = *ref flush-pkt
 //	ref = PKT-LINE(obj-id-or-unborn SP refname *(SP ref-attribute) LF)
@@ -29,7 +29,7 @@ import (
 //
 // Divergence from canonical Git: the `symref-target:` attribute is only
 // ever emitted for `HEAD`. Canonical Git also surfaces it for any
-// `refs/...` symref (`ls-refs.c:95-109`); our [objstore.Store.IterRefs]
+// `refs/...` symref ([ls-refs.c:95-109]); our [objstore.Store.IterRefs]
 // resolves non-HEAD symrefs to their terminal OID before yielding
 // `RefEntry`s, so a non-HEAD symref appears as a regular value ref to
 // this handler. The behaviour is consistent across backends: tests will
@@ -37,9 +37,15 @@ import (
 //
 // An unrecognised argument surfaces as a wrapped [wire.ErrServerRefused]
 // after emitting an `ERR ls-refs: unknown argument "<line>"\n` data
-// pkt-line + flush. Canonical's handler `die()`s at `ls-refs.c:188`; the
+// pkt-line + flush. Canonical's handler `die()`s at [ls-refs.c:188]; the
 // structured error lets the dispatcher's error path surface to callers
 // without re-decoding the response stream.
+//
+// [ls-refs.c::ls_refs lines 161-216]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L161-L216
+// [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
+// [gitprotocol-v2.adoc lines 230-239]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc?plain=1#L230-L239
+// [ls-refs.c:95-109]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95-L109
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func handleLSRefs[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 	store *objstore.Store[H], opts Options) error {
 	_ = opts
@@ -61,7 +67,7 @@ func handleLSRefs[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 
 // parseLSRefsArgs reads pkt-lines from r until the terminating flush of
 // the v2 command-args section and returns the parsed [wire.RefsArgs].
-// The accepted arguments mirror `ls-refs.c::ls_refs` lines 173-189:
+// The accepted arguments mirror [ls-refs.c::ls_refs lines 173-189]:
 // `peel`, `symrefs`, `unborn`, and `ref-prefix <p>`. Any other line
 // triggers the canonical "unexpected line" path: the handler emits a
 // structured ERR pkt-line + flush on w and returns a wrapped
@@ -69,6 +75,8 @@ func handleLSRefs[H objfmt.Hash](r *argsReader, w *pktline.Writer,
 //
 // Mid-args EOF is reported as [io.ErrUnexpectedEOF] so callers can
 // distinguish a truncated request from a clean stream close.
+//
+// [ls-refs.c::ls_refs lines 173-189]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L173-L189
 func parseLSRefsArgs(r *argsReader, w *pktline.Writer) (wire.RefsArgs, error) {
 	var args wire.RefsArgs
 	for {
@@ -84,8 +92,10 @@ func parseLSRefsArgs(r *argsReader, w *pktline.Writer) (wire.RefsArgs, error) {
 		}
 		if pkt.Kind != pktline.Data {
 			// Delim/ResponseEnd are not part of the canonical command-args
-			// grammar (`ls-refs.c:173` reads only NORMAL packets). Treat
+			// grammar ([ls-refs.c:173] reads only NORMAL packets). Treat
 			// them as unknown arguments and refuse the request.
+			//
+			// [ls-refs.c:173]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L173
 			return wire.RefsArgs{}, refuseUnknownArg(w, fmt.Sprintf("<pkt-kind=%d>", pkt.Kind))
 		}
 		line := string(trimTrailingLF(pkt.Data))
@@ -109,9 +119,11 @@ func parseLSRefsArgs(r *argsReader, w *pktline.Writer) (wire.RefsArgs, error) {
 // refuseUnknownArg emits the structured ERR pkt-line + flush and returns
 // a wrapped [wire.ErrServerRefused] so the dispatcher's error path
 // surfaces the refusal to callers. The on-wire shape mirrors canonical
-// Git's `die("unexpected line: '%s'", arg)` at `ls-refs.c:188` reframed
+// Git's `die("unexpected line: '%s'", arg)` at [ls-refs.c:188] reframed
 // as a protocol-level refusal: the client sees an `ERR` data pkt-line
 // it can decode via [wire.CheckERRPacket].
+//
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func refuseUnknownArg(w *pktline.Writer, arg string) error {
 	msg := fmt.Sprintf(`ls-refs: unknown argument %q`, arg)
 	if err := writeERRPacket(w, msg); err != nil {
@@ -127,7 +139,7 @@ func refuseUnknownArg(w *pktline.Writer, arg string) error {
 // remaining refs follow in C-locale byte order. The terminating flush
 // is written by [handleLSRefs].
 //
-// The HEAD-emission rules mirror `ls-refs.c::send_possibly_unborn_head`
+// The HEAD-emission rules mirror [ls-refs.c::send_possibly_unborn_head]
 // at lines 123-145:
 //
 //   - Resolved HEAD (`!head.Unborn && !head.OID.IsZero()`): emit as a
@@ -136,8 +148,8 @@ func refuseUnknownArg(w *pktline.Writer, arg string) error {
 //     gets `symref-target:`).
 //   - Unborn HEAD (`head.Unborn`): emit only when both
 //     [wire.RefsArgs.Unborn] and [wire.RefsArgs.Symrefs] are set
-//     (`ls-refs.c:135-136`). The OID slot is the literal token
-//     `unborn`, not a zero OID — `ls-refs.c:91-94` writes
+//     ([ls-refs.c:135-136]). The OID slot is the literal token
+//     `unborn`, not a zero OID — [ls-refs.c:91-94] writes
 //     `"unborn %s"` whenever `ref->oid == NULL`.
 //   - Bad/missing HEAD: skip silently (canonical's
 //     `send_possibly_unborn_head:131-132` returns early on resolve
@@ -149,6 +161,10 @@ func refuseUnknownArg(w *pktline.Writer, arg string) error {
 // [wire.RefsArgs.Peel] is set; the loose-refs HEAD does not carry a
 // packed peel hint, so the cheap `RefEntry.PeelKnown` short-circuit
 // does not apply.
+//
+// [ls-refs.c::send_possibly_unborn_head]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L123
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
+// [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 func writeLSRefsResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H], args wire.RefsArgs) error {
 	head, err := store.Head()
 	if err != nil {
@@ -168,8 +184,10 @@ func writeLSRefsResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store
 	// length and append into the existing capacity, eliminating the
 	// per-ref `strings.Builder` growth + `[]byte(...)` conversion
 	// allocs. `WritePacket` copies the payload into its own
-	// length-prefixed scratch (`pkt-line.c:509`), so reusing this
-	// slice across calls is safe.
+	// length-prefixed scratch ([pkt-line.c::format_packet]), so
+	// reusing this slice across calls is safe.
+	//
+	// [pkt-line.c::format_packet]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L146
 	var line []byte
 	for _, ref := range refs {
 		line = line[:0]
@@ -186,8 +204,10 @@ func writeLSRefsResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store
 
 // emitHead writes the HEAD pkt-line when the canonical
 // `send_possibly_unborn_head` rules admit it, subject to the same
-// prefix filter that applies to non-HEAD refs (`ls-refs.c:88`'s
+// prefix filter that applies to non-HEAD refs ([ls-refs.c:88]'s
 // `ref_match` check fires before any other gate).
+//
+// [ls-refs.c:88]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L88
 func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 	head objstore.Head[H], args wire.RefsArgs) error {
 	if !refMatch(args.Prefixes, "HEAD") {
@@ -217,9 +237,11 @@ func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 			return fmt.Errorf("server: ls-refs: write HEAD: %w", err)
 		}
 	case head.Unborn && args.Unborn && args.Symrefs:
-		// `ls-refs.c:91-94`: `ref->oid == NULL` ⇒ write `unborn` in
+		// [ls-refs.c:91-94]: `ref->oid == NULL` ⇒ write `unborn` in
 		// the OID slot. The unborn fallback only fires for symbolic
 		// HEADs, and `head.Symref` is non-empty by construction here.
+		//
+		// [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 		line := "unborn HEAD symref-target:" + head.Symref + "\n"
 		if err := w.WritePacket([]byte(line)); err != nil {
 			return fmt.Errorf("server: ls-refs: write unborn HEAD: %w", err)
@@ -227,7 +249,9 @@ func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 	default:
 		// Detached/zero/unborn HEAD that fails the gates above is
 		// silently skipped, mirroring `send_possibly_unborn_head:131-132`
-		// (bad ref) and the inverted condition at `ls-refs.c:135-136`.
+		// (bad ref) and the inverted condition at [ls-refs.c:135-136].
+		//
+		// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 	}
 	return nil
 }
@@ -277,9 +301,11 @@ func formatRefLine[H objfmt.Hash](dst []byte, store *objstore.Store[H],
 // When prefixes is non-empty, refs whose name does not begin with any
 // of the listed prefixes are dropped during iteration rather than
 // after the slice is built. Canonical Git collapses the same filter
-// into the per-ref callback at `ls-refs.c::send_ref` line 88; we do
+// into the per-ref callback at [ls-refs.c::send_ref line 88]; we do
 // it at collection time so a request with a bounded prefix set
 // does not allocate a slice scaled to the entire ref namespace.
+//
+// [ls-refs.c::send_ref line 88]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L88
 func collectLSRefsRefs[H objfmt.Hash](store *objstore.Store[H], prefixes []string) ([]objstore.RefEntry[H], error) {
 	var refs []objstore.RefEntry[H]
 	for entry, err := range store.IterRefs() {
@@ -298,9 +324,11 @@ func collectLSRefsRefs[H objfmt.Hash](store *objstore.Store[H], prefixes []strin
 }
 
 // refMatch returns true when refname is admitted by the prefix filter.
-// An empty prefix list admits every ref (`ls-refs.c::ref_match`
-// lines 54-67 returns 1 with no restriction). Otherwise, refname
+// An empty prefix list admits every ref ([ls-refs.c::ref_match lines 54-67]
+// returns 1 with no restriction). Otherwise, refname
 // matches when at least one prefix is a string-prefix of refname.
+//
+// [ls-refs.c::ref_match lines 54-67]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L54-L67
 func refMatch(prefixes []string, refname string) bool {
 	if len(prefixes) == 0 {
 		return true

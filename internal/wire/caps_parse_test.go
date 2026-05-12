@@ -72,10 +72,12 @@ func TestParseCapabilities(t *testing.T) {
 	})
 
 	t.Run("substring guard: searching for multi does not match multi_ack", func(t *testing.T) {
-		// canonical Git's `parse_feature_value` (connect.c:614-659) guards
+		// canonical Git's `parse_feature_value` ([connect.c:614-659]) guards
 		// against a substring of one feature matching the prefix of another.
 		// The slice-based parser tokenises rather than substring-searching,
 		// so the guard is automatic: a search for `multi` finds nothing.
+		//
+		// [connect.c:614-659]: https://github.com/git/git/blob/v2.54.0/connect.c#L614-L659
 		caps := ParseCapabilities("multi_ack thin-pack")
 		_, ok := caps.Get("multi")
 		assert.False(t, ok, "Get(multi) should not match multi_ack")
@@ -86,7 +88,9 @@ func TestParseCapabilities(t *testing.T) {
 	t.Run("equals sign in value is preserved", func(t *testing.T) {
 		// Only the first `=` separates name from value; subsequent ones
 		// belong to the value. This matches canonical's `*value == '='`
-		// check at `connect.c:640` which fires only on the first occurrence.
+		// check at [connect.c:640] which fires only on the first occurrence.
+		//
+		// [connect.c:640]: https://github.com/git/git/blob/v2.54.0/connect.c#L640
 		got := ParseCapabilities("foo=a=b=c")
 		assert.Equal(t, RawCapabilities{
 			{Name: "foo", Value: "a=b=c"},

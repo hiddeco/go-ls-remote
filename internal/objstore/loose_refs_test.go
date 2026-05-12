@@ -201,7 +201,9 @@ func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
 	// HEAD -> refs/heads/x -> refs/heads/y, where `y` carries an OID.
 	// The resolver follows both hops; `Head.Symref` is the terminal
 	// name (the symref that pointed at the OID), matching canonical
-	// `refs.c::resolve_ref_unsafe`'s `refname` return.
+	// [refs.c::resolve_ref_unsafe]'s `refname` return.
+	//
+	// [refs.c::resolve_ref_unsafe]: https://github.com/git/git/blob/v2.54.0/refs.c#L2075
 	dir := t.TempDir()
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	writeRefFile(t, dir, "HEAD", "ref: refs/heads/x\n")
@@ -222,8 +224,10 @@ func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
 
 func TestLooseRefs_Head_ChainExceedingMaxDepthFails(t *testing.T) {
 	// Six hops: HEAD -> a -> b -> c -> d -> e -> f. Canonical's cap is
-	// `SYMREF_MAXDEPTH = 5` (`refs/refs-internal.h:246`); v0 mirrors it
+	// `SYMREF_MAXDEPTH = 5` ([refs/refs-internal.h:246]); v0 mirrors it
 	// and the seventh lookup must surface ErrCorruptObject.
+	//
+	// [refs/refs-internal.h:246]: https://github.com/git/git/blob/v2.54.0/refs/refs-internal.h#L246
 	dir := t.TempDir()
 	writeRefFile(t, dir, "HEAD", "ref: refs/heads/a\n")
 	writeRefFile(t, dir, "refs/heads/a", "ref: refs/heads/b\n")
@@ -501,11 +505,13 @@ func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
 // TestLooseRefs_PeeledTrait_TagsKnowPeel exercises the `peeled`-trait
 // path in `toRefEntry`: under `# pack-refs with: peeled` (without
 // `fully-peeled`), a tag's missing `^peel` line is authoritative —
-// canonical Git's `next_record` (`refs/packed-backend.c:945`) sets
+// canonical Git's `next_record` ([refs/packed-backend.c:945]) sets
 // `REF_KNOWS_PEELED` for any ref whose name has the `refs/tags/`
 // prefix. Annotated tags with an explicit peel still surface the
 // recorded OID; commit-target lightweight tags surface a zero peel
 // with PeelKnown=true.
+//
+// [refs/packed-backend.c:945]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L945
 func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
 	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
 
@@ -529,9 +535,11 @@ func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
 
 // TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown pins down the
 // `refs/tags/` scope: the `peeled` trait says nothing about non-tag
-// refs (`refs/packed-backend.c:945` gates the `REF_KNOWS_PEELED` set
+// refs ([refs/packed-backend.c:945] gates the `REF_KNOWS_PEELED` set
 // on `starts_with(rec->refname, "refs/tags/")`). A branch ref without
 // `^peel` must surface PeelKnown=false even when the trait is set.
+//
+// [refs/packed-backend.c:945]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L945
 func TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown(t *testing.T) {
 	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
 

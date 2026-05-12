@@ -235,8 +235,10 @@ func TestEncodeObjectInfo(t *testing.T) {
 
 // buildObjectInfoStream encodes payloads as data packets followed by a
 // flush, matching the canonical v2 `object-info` response framing
-// (`gitprotocol-v2.adoc` §"object-info"). Each payload should already
+// ([gitprotocol-v2.adoc §"object-info"]). Each payload should already
 // carry its trailing LF.
+//
+// [gitprotocol-v2.adoc §"object-info"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#object-info
 func buildObjectInfoStream(t *testing.T, payloads ...string) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -256,10 +258,12 @@ func TestDecodeObjectInfo(t *testing.T) {
 	)
 
 	t.Run("empty (just flush)", func(t *testing.T) {
-		// `protocol-caps.c::send_info` lines 44-45 short-circuit on an
+		// [protocol-caps.c::send_info lines 44-45] short-circuit on an
 		// empty OID list and emit neither attrs nor per-OID lines — the
 		// response is a bare flush. The decoder must accept that as an
 		// empty result, not as a missing-attrs error.
+		//
+		// [protocol-caps.c::send_info lines 44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WriteFlush())
@@ -416,12 +420,14 @@ func TestDecodeObjectInfo(t *testing.T) {
 	})
 
 	t.Run("attrs line elided, single OID (canonical no-size)", func(t *testing.T) {
-		// `protocol-caps.c::send_info` lines 47-48 gate the `size\n` attrs
+		// [protocol-caps.c::send_info lines 47-48] gate the `size\n` attrs
 		// PKT-LINE on `info->size`; when the client did not request the
 		// `size` argument, canonical Git emits no attrs line at all and
 		// jumps straight to per-OID `<oid>\n` lines. The decoder must
 		// recognise the first packet as a per-OID line in that shape and
 		// not consume it as a degenerate attrs line.
+		//
+		// [protocol-caps.c::send_info lines 47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
 		buf := buildObjectInfoStream(t,
 			oid1+"\n",
 		)
@@ -452,11 +458,13 @@ func TestDecodeObjectInfo(t *testing.T) {
 // readRequestArgs walks an encoded `object-info` request stream and
 // returns the recovered `oid` arguments together with the size-flag.
 // The wire shape it expects mirrors `EncodeObjectInfo` (and
-// `gitprotocol-v2.adoc` §"object-info" lines 556-585): a
+// [gitprotocol-v2.adoc §"object-info" lines 556-585]): a
 // `command=object-info` data packet, zero or more capability-echo
 // data packets, a `0001` delim, then the body of `size` and `oid <hex>`
 // lines closed by a `0000` flush. A failure to match any of those
 // constraints fails the test.
+//
+// [gitprotocol-v2.adoc §"object-info" lines 556-585]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc?plain=1#L556-L585
 func readRequestArgs(t *testing.T, raw []byte) (oids []string, sizeFlag bool) {
 	t.Helper()
 	r := pktline.NewReader(bytes.NewReader(raw))
@@ -500,11 +508,15 @@ func readRequestArgs(t *testing.T, raw []byte) (oids []string, sizeFlag bool) {
 }
 
 // emitObjectInfoResponse serialises a server-side `object-info`
-// response from the given infos. It mirrors `protocol-caps.c::send_info`
+// response from the given infos. It mirrors [protocol-caps.c::send_info]
 // exactly: with `size` requested, the `size\n` attrs PKT-LINE precedes
-// the `<oid> <size>\n` rows (`send_info:47-48`); without `size`, no
+// the `<oid> <size>\n` rows ([send_info:47-48]); without `size`, no
 // attrs PKT-LINE is emitted at all and rows are bare `<oid>\n`
-// (`send_info:63`). The trailing flush closes the response.
+// ([send_info:63]). The trailing flush closes the response.
+//
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
+// [send_info:47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
+// [send_info:63]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63
 func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) *bytes.Buffer {
 	t.Helper()
 	payloads := make([]string, 0, 1+len(infos))
@@ -527,8 +539,8 @@ func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) 
 // header, `0001` delim, `size` plus `oid <hex>` body, flush) while
 // `DecodeObjectInfo` reads the server response (attrs line,
 // `<oid>[ <size>]` rows, flush) — the two are *not* mirror images of
-// each other (`protocol-caps.c::cap_object_info` vs
-// `protocol-caps.c::send_info`). The cases below therefore lock two
+// each other ([protocol-caps.c::cap_object_info] vs
+// [protocol-caps.c::send_info]). The cases below therefore lock two
 // independent loops:
 //
 //  1. Request: encode an `ObjectInfoArgs` plus OIDs, re-parse the
@@ -540,6 +552,9 @@ func emitObjectInfoResponse(t *testing.T, infos []RawObjectInfo, withSize bool) 
 //
 // Together the two loops keep encoder and decoder honest even though
 // no single function exercises both ends.
+//
+// [protocol-caps.c::cap_object_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L79
+// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func TestObjectInfo_roundTrip(t *testing.T) {
 	const (
 		oidA = "1111111111111111111111111111111111111111"

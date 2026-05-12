@@ -134,8 +134,11 @@ func readGitConfig(commonDir string) (storeConfig, error) {
 
 // parseObjectFormat maps the raw `extensions.objectFormat` value to an
 // [objfmt.Algo]. Comparison is case-insensitive, matching canonical
-// Git's `parse_extension_value` in `setup.c`. Anything other than
-// `sha1` or `sha256` returns [ErrUnsupportedFormat].
+// Git's [setup.c::handle_extension] (which dispatches `objectformat`
+// to `hash_algo_by_name`). Anything other than `sha1` or `sha256`
+// returns [ErrUnsupportedFormat].
+//
+// [setup.c::handle_extension]: https://github.com/git/git/blob/v2.54.0/setup.c#L652
 func parseObjectFormat(value string) (objfmt.Algo, error) {
 	switch strings.ToLower(value) {
 	case "sha1":
@@ -151,11 +154,13 @@ func parseObjectFormat(value string) (objfmt.Algo, error) {
 // parseRefStorage classifies the raw `extensions.refStorage` value.
 // It accepts a bare format name (`files`, `reftable`) or the
 // `<format>://<payload>` URI form documented in canonical Git's
-// `Documentation/config/extensions.adoc` § `extensions.refStorage`.
+// [Documentation/config/extensions.adoc lines 59-78].
 //
 // The payload is returned verbatim. Resolving relative payload paths
 // against the gitdir is the store opener's responsibility, so this
 // parser stays oblivious to filesystem layout.
+//
+// [Documentation/config/extensions.adoc lines 59-78]: https://github.com/git/git/blob/v2.54.0/Documentation/config/extensions.adoc?plain=1#L59-L78
 func parseRefStorage(value string) (refStorageSpec, error) {
 	scheme, payload, hasURI := strings.Cut(value, "://")
 	if !hasURI {

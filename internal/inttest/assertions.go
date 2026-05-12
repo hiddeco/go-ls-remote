@@ -71,11 +71,13 @@ func CompareRefs(t *testing.T, got []lsremote.Ref, want []ExpectedRef, fixtureNa
 //     with an empty [lsremote.Ref.Hash] and [lsremote.Ref.Symref] equal
 //     to [Entry.ExpectedDefaultBranch]. The caller must have requested
 //     `Unborn: true` and `Symrefs: true` on the [lsremote.RefsRequest];
-//     `ls-refs.c:135-136` skips HEAD altogether otherwise.
+//     [ls-refs.c:135-136] skips HEAD altogether otherwise.
 //   - Detached HEAD (`e.Detached`): exactly one `HEAD` entry must
 //     appear with a non-empty [lsremote.Ref.Hash] and no
 //     [lsremote.Ref.Symref] (`send_possibly_unborn_head` does not
 //     attach `symref-target:` to a detached HEAD).
+//
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func CompareHEAD(t *testing.T, got []lsremote.Ref, e Entry) {
 	t.Helper()
 

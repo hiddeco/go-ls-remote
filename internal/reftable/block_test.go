@@ -40,8 +40,10 @@ func buildBlock(blockType byte, blockLen int, restarts []uint32) []byte {
 // block of a file: a firstByteOffset-byte preamble (the file header,
 // zero-filled here) followed by the block header at offset
 // firstByteOffset. The stored block_len covers the preamble too, per
-// reftable.adoc §"Ref block format". restarts are written verbatim
+// [reftable.adoc § Ref block format]. restarts are written verbatim
 // (i.e. relative to position 0, including the preamble).
+//
+// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 func buildFirstRefBlock(blockLen, firstByteOffset int, restarts []uint32) []byte {
 	if blockLen < firstByteOffset+4+3*len(restarts)+2 {
 		panic("buildFirstRefBlock: blockLen too small")
@@ -145,8 +147,10 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("empty_restart_table", func(t *testing.T) {
-		// reftable.adoc §"Ref block format": "the restart_offset list,
+		// [reftable.adoc § Ref block format]: "the restart_offset list,
 		// which must not be empty".
+		//
+		// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 		buf := make([]byte, 8)
 		buf[0] = 'r'
 		putBE24(buf[1:4], 8)
@@ -162,13 +166,15 @@ func Test_parseBlock(t *testing.T) {
 		// firstByteOffset=24 → on-disk offsets {28, 40} become
 		// block-relative {4, 16}.
 		//
-		// reftable.adoc §"Ref block format": "all restart_offset in the
+		// [reftable.adoc § Ref block format]: "all restart_offset in the
 		// first block are relative to the start of the file (position 0),
 		// and include the file header. This forces the first
 		// restart_offset to be `28`."
 		// So we lay out a buffer with a 24-byte file-header preamble
 		// followed by the block payload; the block's stored block_len
 		// covers the preamble too.
+		//
+		// [reftable.adoc § Ref block format]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#ref-block-format
 		buf := buildFirstRefBlock(64, 24, []uint32{28, 40})
 		b, err := parseBlock(buf, 24)
 		require.NoError(t, err)

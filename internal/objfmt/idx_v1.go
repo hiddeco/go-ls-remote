@@ -6,7 +6,9 @@ import (
 )
 
 // v1 record stride: a uint32 offset followed by a 20-byte SHA-1.
-// Documented in `Documentation/gitformat-pack.adoc` lines 196-218.
+// Documented in [Documentation/gitformat-pack.adoc lines 196-218].
+//
+// [Documentation/gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
 const idxV1RecordSize = 4 + 20
 
 // FindOffset returns the byte offset of the named object in the
@@ -42,9 +44,11 @@ func (i *Idx[H]) findOffsetV1(h H) (int64, bool) {
 
 	// Fan-out: fanout[N] = number of object names whose first byte is
 	// ≤ N. Hence entries with first byte == prefix occupy indices
-	// [fanout[prefix-1], fanout[prefix]). See `gitformat-pack.adoc`
-	// lines 198-202 and the v1 read path in `packfile.c`'s
+	// [fanout[prefix-1], fanout[prefix]). See [gitformat-pack.adoc
+	// lines 198-202] and the v1 read path in `packfile.c`'s
 	// `nth_packed_object_offset`.
+	//
+	// [gitformat-pack.adoc lines 198-202]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L198-L202
 	prefix := h[0]
 	var lo, hi uint32
 	if prefix > 0 {

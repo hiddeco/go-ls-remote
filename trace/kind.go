@@ -8,10 +8,12 @@ package trace
 // values to PacketKind at every emission site.
 //
 // The on-wire 4-byte length prefix that determines a pkt-line's kind is
-// documented in `Documentation/gitprotocol-common.adoc` of canonical
-// Git: `0000` is the flush packet, `0001` the delimiter, `0002` the
-// response-end marker; any other value is a normal data packet whose
-// payload length is the prefix value minus four.
+// documented in [gitprotocol-common.adoc] of canonical Git: `0000` is
+// the flush packet, `0001` the delimiter, `0002` the response-end
+// marker; any other value is a normal data packet whose payload length
+// is the prefix value minus four.
+//
+// [gitprotocol-common.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-common.adoc
 type PacketKind uint8
 
 const (
@@ -27,7 +29,9 @@ const (
 	// PacketDelim identifies the delimiter control packet, on-wire `0001`.
 	// In v2 command requests it separates the capability list from the
 	// command-specific arguments; see canonical Git's
-	// `Documentation/gitprotocol-v2.adoc` §"Command Request".
+	// [gitprotocol-v2.adoc §"Command Request"].
+	//
+	// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 	PacketDelim
 
 	// PacketResponseEnd identifies the response-end control packet,

@@ -129,8 +129,10 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // drainAdvertisement reads the v2 advertisement packets off the [Conn]'s
 // reader so the test is positioned to call [Conn.Command]. The
 // advertisement is `version 2\n` plus capability lines plus a trailing
-// flush per `serve.c::protocol_v2_advertise_capabilities`; the helper
+// flush per [serve.c::protocol_v2_advertise_capabilities]; the helper
 // reads packets until it consumes the flush.
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t *testing.T, c *Conn) {
 	t.Helper()
 	rdr := c.Advertisement()
@@ -220,9 +222,11 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	pkts := readAllPackets(t, rdr)
 	require.NotEmpty(t, pkts, "object-info must emit at least one packet")
 
-	// Per `protocol-caps.c::send_info`, an object-info request with
+	// Per [protocol-caps.c::send_info], an object-info request with
 	// `size` produces a `size\n` attrs line followed by a per-OID line.
 	// We assert both shapes.
+	//
+	// [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 	var hasSize bool
 	for _, p := range pkts {
 		if p.Kind != pktline.Data {
@@ -315,8 +319,8 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 	_ = readAllPackets(t, rdr)
 
 	// Verify the on-wire request body matches the canonical v2
-	// command-request grammar from `gitprotocol-v2.adoc` §"Command
-	// Request":
+	// command-request grammar from
+	// [gitprotocol-v2.adoc §"Command Request"]:
 	//
 	//     PKT-LINE("command=ls-refs\n")
 	//     PKT-LINE("object-format=sha1\n")
@@ -325,6 +329,7 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 	//     PKT-LINE("symrefs\n")
 	//     0000                              <- flush
 	//
+	// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 	pr := pktline.NewReader(bytes.NewReader(captured))
 	want := []struct {
 		kind pktline.Kind

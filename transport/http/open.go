@@ -28,22 +28,28 @@ import (
 // detected them.
 //
 // The probe shape mirrors canonical Git's
-// `remote-curl.c::discover_refs` (`remote-curl.c:465-577`): GET
+// [remote-curl.c::discover_refs] ([remote-curl.c:465-577]): GET
 // `<base>/info/refs?service=git-upload-pack` with the
 // `Git-Protocol` header carrying the negotiated wire version, then
 // dispatch on the response's status and content type. Smart vs
-// dumb selection follows `gitprotocol-http.adoc:230-281`: a
+// dumb selection follows [gitprotocol-http.adoc:230-281]: a
 // `200 OK` with `Content-Type: application/x-git-upload-pack-advertisement`
 // is the smart path; any other content type on a `200 OK` is the
 // dumb path.
 //
 // Redirects honour [Transport.followRedirects]
-// (`Documentation/config/http.adoc:359-365`); the per-call
+// ([Documentation/config/http.adoc:359-365]); the per-call
 // [probeRedirector] enforces both the policy and the cross-origin
-// auth-strip rule modelled on `http.c::update_url_from_redirect`.
+// auth-strip rule modelled on [http.c::update_url_from_redirect].
 // `FollowRedirectsInitial` and `FollowRedirectsAlways` both follow
 // redirects on this GET probe; they diverge on the command POST,
 // where `Initial` rejects 3xx and `Always` follows.
+//
+// [remote-curl.c::discover_refs]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L465
+// [remote-curl.c:465-577]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L465-L577
+// [gitprotocol-http.adoc:230-281]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L230-L281
+// [Documentation/config/http.adoc:359-365]: https://github.com/git/git/blob/v2.54.0/Documentation/config/http.adoc?plain=1#L359-L365
+// [http.c::update_url_from_redirect]: https://github.com/git/git/blob/v2.54.0/http.c#L2268
 func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (transport.Conn, error) {
 	redir := &probeRedirector{
 		policy: t.followRedirects,
@@ -88,15 +94,17 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 		// current [CredentialResolver] interface does not accept a
 		// challenge argument; widening it lands in a follow-up
 		// change. Until then the retry matches
-		// `remote-curl.c::http_request_reauth` at a coarser grain.
+		// [http.c::http_request_recoverable] at a coarser grain.
 		//
 		// The retry uses the URL the 401 came from — i.e. the
 		// post-redirect URL when the chain redirected before the
 		// challenge — rather than the original probe URL. That
 		// matches what the resolver expects (the resolver was
 		// consulted with the URL the 401 was received from) and is
-		// what canonical Git's `http_request_reauth` does as a
+		// what canonical Git's HTTP_REAUTH retry loop does as a
 		// matter of course.
+		//
+		// [http.c::http_request_recoverable]: https://github.com/git/git/blob/v2.54.0/http.c#L2330
 		retryURL := probeURL
 		if resp.Request != nil && resp.Request.URL != nil {
 			retryURL = resp.Request.URL.String()
@@ -193,7 +201,7 @@ type connConfig struct {
 
 // handleOK splits the smart and dumb branches off a `200 OK` response.
 // The smart branch validates the `# service=git-upload-pack` preamble
-// per `gitprotocol-http.adoc:274-286` and hands the post-preamble
+// per [gitprotocol-http.adoc:274-286] and hands the post-preamble
 // reader to a [Conn]. The dumb branch wraps the body in
 // [dumbhttp.NewAdapter], producing a synthetic v0-shaped pkt-line
 // stream the wire layer can consume uniformly with the smart shape.
@@ -201,8 +209,11 @@ type connConfig struct {
 // The [Conn] records the URL the response actually came from, which
 // is the post-redirect URL when the probe followed a chain. The
 // command path reuses that URL as its base, so preserving it here is
-// what makes `http.c::update_url_from_redirect`-style chasing work
+// what makes [http.c::update_url_from_redirect]-style chasing work
 // end-to-end.
+//
+// [gitprotocol-http.adoc:274-286]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L274-L286
+// [http.c::update_url_from_redirect]: https://github.com/git/git/blob/v2.54.0/http.c#L2268
 func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
 	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
@@ -216,7 +227,7 @@ func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.C
 
 // handleSmart finalises a smart-HTTP probe response: it validates the
 // `# service=git-upload-pack` preamble per
-// `gitprotocol-http.adoc:274-286`, then constructs a [Conn] whose
+// [gitprotocol-http.adoc:274-286], then constructs a [Conn] whose
 // reader is positioned past the preamble. The dumb-HTTP path does NOT
 // invoke the preamble strip — `internal/dumbhttp` synthesises a v0
 // advertisement directly without a service preamble — so the strip
@@ -227,6 +238,8 @@ func handleOK(resp *http.Response, redacted string, cfg connConfig) (transport.C
 // response actually came from may differ from the original probe
 // URL, so the URL is taken from `resp.Request` (the final hop)
 // rather than the caller-known original.
+//
+// [gitprotocol-http.adoc:274-286]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L274-L286
 func handleSmart(resp *http.Response, redacted string, cfg connConfig) (transport.Conn, error) {
 	rdr := pktline.NewReader(resp.Body, inboundReaderOpts(cfg.tracer, finalRespURL(resp))...)
 	if err := stripSmartPreamble(rdr); err != nil {
@@ -304,7 +317,9 @@ func finalRespURL(resp *http.Response) string {
 // pkt-line and the flush that follows. After both reads the
 // [pktline.Reader] is positioned at the first byte of the actual
 // advertisement; from there the wire layer parses v0/v1/v2 framing
-// downstream. Behaviour matches `gitprotocol-http.adoc:281-287`.
+// downstream. Behaviour matches [gitprotocol-http.adoc:281-287].
+//
+// [gitprotocol-http.adoc:281-287]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L281-L287
 func stripSmartPreamble(r *pktline.Reader) error {
 	first, err := r.ReadPacket()
 	if err != nil {
@@ -435,14 +450,18 @@ func readServerExcerpt(body io.ReadCloser) string {
 const (
 	// smartAdvContentType is the response Content-Type a smart-HTTP
 	// server uses for the discovery advertisement
-	// (`gitprotocol-http.adoc:227`). Comparison is case-insensitive
+	// ([gitprotocol-http.adoc:227]). Comparison is case-insensitive
 	// and tolerant of trailing parameters such as `; charset=utf-8`;
 	// see [handleOK] for the parsing path.
+	//
+	// [gitprotocol-http.adoc:227]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L227
 	smartAdvContentType = "application/x-git-upload-pack-advertisement"
 
 	// smartPreamblePayload is the data-packet payload that opens a
 	// smart-HTTP advertisement, less the trailing newline. The wire
 	// includes the LF and clients are expected to ignore it
-	// (`gitprotocol-http.adoc:281-284`).
+	// ([gitprotocol-http.adoc:281-284]).
+	//
+	// [gitprotocol-http.adoc:281-284]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-http.adoc?plain=1#L281-L284
 	smartPreamblePayload = "# service=git-upload-pack"
 )

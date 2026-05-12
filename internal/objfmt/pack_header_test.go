@@ -138,7 +138,9 @@ func TestPack_ReadHeader(t *testing.T) {
 		// size=0, no continuation. The OFS varint 0x0c encodes the
 		// offset 12 with no continuation, so `OfsBase = 12 - 12 = 0`
 		// and `get_delta_base`'s `base_offset <= 0` guard
-		// (`packfile.c::1290`) fires.
+		// ([packfile.c:1290]) fires.
+		//
+		// [packfile.c:1290]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1290
 		path := writeMinPack(t, []byte{0x60, 0x0c})
 
 		p, err := OpenPack[SHA1Hash](path, SHA1)
@@ -273,7 +275,9 @@ func TestPack_ReadHeader(t *testing.T) {
 	t.Run("rejects reserved object type 5", func(t *testing.T) {
 		// Header byte 0x50 encodes type bits 0b101 = 5, the reserved
 		// type that canonical Git rejects in
-		// `packfile.c::unpack_object_header_buffer`.
+		// [packfile.c::unpack_object_header_buffer].
+		//
+		// [packfile.c::unpack_object_header_buffer]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1135
 		path := writeMinPack(t, []byte{0x50})
 
 		p, err := OpenPack[SHA1Hash](path, SHA1)

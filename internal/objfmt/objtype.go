@@ -3,7 +3,7 @@ package objfmt
 // ObjectType is the 3-bit type field encoded in pack object headers.
 //
 // Numeric values match canonical Git's `enum object_type` in
-// `object.h:97-107`:
+// [object.h:97-107]:
 //
 //	OBJ_COMMIT    = 1
 //	OBJ_TREE      = 2
@@ -14,11 +14,15 @@ package objfmt
 //
 // Value 5 is reserved for future expansion. The zero value is not a
 // valid pack type and is reported as the empty string by [String].
+//
+// [object.h:97-107]: https://github.com/git/git/blob/v2.54.0/object.h#L97-L107
 type ObjectType uint8
 
 // Pack object types as encoded in the 3-bit type field of a pack
-// object header. See `object.h:97-107` in canonical Git for the
+// object header. See [object.h:97-107] in canonical Git for the
 // authoritative numeric values.
+//
+// [object.h:97-107]: https://github.com/git/git/blob/v2.54.0/object.h#L97-L107
 const (
 	TypeCommit   ObjectType = 1
 	TypeTree     ObjectType = 2

@@ -9,7 +9,7 @@ import (
 // FuzzCheckERRPacket exercises [CheckERRPacket] with arbitrary byte
 // payloads. The contract under test is that the function is total —
 // it never panics — and that its returned error is constrained to two
-// shapes per `pkt-line.c:505-514`: either nil (no `ERR ` prefix) or an
+// shapes per [pkt-line.c:505-514]: either nil (no `ERR ` prefix) or an
 // error wrapping [ErrServerRefused] (the four-byte literal `ERR ` was
 // matched). No third concrete error is permitted. Seeds cover the
 // boundary cases the unit suite does not enumerate exhaustively:
@@ -17,6 +17,8 @@ import (
 // embedded NUL in the message, a normal payload that happens to begin
 // with `ERR ` (still a match — canonical Git uses `starts_with`), and
 // a 4 KiB payload to push the trim path.
+//
+// [pkt-line.c:505-514]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L505-L514
 func FuzzCheckERRPacket(f *testing.F) {
 	for _, seed := range checkERRPacketFuzzSeeds() {
 		f.Add(seed)
@@ -40,13 +42,17 @@ func checkERRPacketFuzzSeeds() [][]byte {
 		// Empty input.
 		nil,
 		// Three-byte `ERR` without the trailing space — must not match
-		// per `pkt-line.c:509-510`.
+		// per [pkt-line.c:509-510].
+		//
+		// [pkt-line.c:509-510]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L509-L510
 		[]byte("ERR"),
 		// Canonical `ERR <message>` shape, no trailing LF.
 		[]byte("ERR access denied"),
 		// Canonical shape with trailing LF — the producer at
-		// `pkt-line.c:699` does not append one, but framing layers
+		// [pkt-line.c:699] does not append one, but framing layers
 		// occasionally leave one in place.
+		//
+		// [pkt-line.c:699]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L699
 		[]byte("ERR access denied\n"),
 		// `ERR ` prefix followed by an empty message.
 		[]byte("ERR "),

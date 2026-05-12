@@ -175,11 +175,13 @@ func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 }
 
 func TestIdxCatalog_AllPacksOrderedByMtimeDesc(t *testing.T) {
-	// Mirror canonical Git's `packfile.c::sort_pack`: younger packs
+	// Mirror canonical Git's [packfile.c::sort_pack]: younger packs
 	// first, with basename as a stable tiebreaker. Stamping
 	// `three-objects.pack` younger than `ofs-delta.pack` flips the
 	// basename-sorted order, so a backend that still keyed on basename
 	// would yield the packs the wrong way round.
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	root := materializeFixture(t, "idx-multi")
 	gitDir := filepath.Join(root, ".git")
 	stampPackMtimes(t, gitDir, map[string]time.Time{

@@ -13,13 +13,17 @@ import "errors"
 // errors below cover only the codec-level violations.
 var (
 	// ErrInvalidHex is returned when a length-prefix byte is not a
-	// hexadecimal digit. Canonical Git's `pkt-line.c:381` accepts
+	// hexadecimal digit. Canonical Git's [pkt-line.c:381] accepts
 	// either case (`hexval`).
+	//
+	// [pkt-line.c:381]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L381
 	ErrInvalidHex = errors.New("pktline: invalid hex byte in length prefix")
 
 	// ErrInvalidLength is returned when the length prefix decodes to a
 	// value of 3 — the only sub-header value not assigned to a control
-	// packet. `pkt-line.c:446` rejects the same range.
+	// packet. [pkt-line.c:446] rejects the same range.
+	//
+	// [pkt-line.c:446]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L446
 	ErrInvalidLength = errors.New("pktline: invalid length prefix")
 
 	// ErrPayloadTooLarge is returned when the announced payload length

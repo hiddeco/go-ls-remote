@@ -17,9 +17,11 @@ import (
 )
 
 // Smart-HTTP content types as named by canonical Git's
-// `http-backend.c::get_info_refs` and `service_rpc`. The harness emits
+// [http-backend.c::get_info_refs] and `service_rpc`. The harness emits
 // them on the responses it serves; clients hitting the harness with
 // `transport/http` use the same constants.
+//
+// [http-backend.c::get_info_refs]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L540
 const (
 	httpSmartAdvContentType  = "application/x-git-upload-pack-advertisement"
 	httpSmartRespContentType = "application/x-git-upload-pack-result"
@@ -54,15 +56,18 @@ const httpRepoMount = "/repo.git"
 // preamble pkt-line and a flush before invoking
 // [internal/server.Serve] with a feed of `0000` — the empty client
 // request that drives Serve through its advertisement-only code path.
-// Canonical Git's `http-backend.c::get_info_refs` does the same:
+// Canonical Git's [http-backend.c::get_info_refs] does the same:
 // preamble, flush, then the upload-pack advertisement bytes verbatim.
 //
 // The command handler reads the request body and hands it to
 // [internal/server.ServeCommandLoop], which runs the v2 command-request
 // loop without re-emitting the leading advertisement. The split
-// mirrors canonical Git's `http-backend.c::service_rpc`: the POST
+// mirrors canonical Git's [http-backend.c::service_rpc]: the POST
 // response carries only the command response, while the GET probe
 // owns the advertisement.
+//
+// [http-backend.c::get_info_refs]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L540
+// [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func NewHTTPServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(httpHandler(t, store)))

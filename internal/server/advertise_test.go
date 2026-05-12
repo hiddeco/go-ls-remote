@@ -27,10 +27,12 @@ func pktLine(payload string) string {
 // runAdvertise runs [Serve] synchronously against the given store and
 // options, returning the bytes it emitted. The client-to-server side
 // is a [bytes.Reader] preloaded with a single flush packet — the v2
-// empty-request terminator from `serve.c::process_request` lines
-// 314-321 — so the v2 command loop exits cleanly. The v0 path returns
+// empty-request terminator from [serve.c::process_request lines 314-321]
+// — so the v2 command loop exits cleanly. The v0 path returns
 // before reading any client byte, so the preloaded flush is harmless
 // there too.
+//
+// [serve.c::process_request lines 314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Options) []byte {
 	t.Helper()
 
@@ -48,8 +50,11 @@ func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Op
 // advertisement against the `empty` fixture (sha1) with an explicit
 // agent string. The byte-pinned literal exercises the canonical
 // emission order (`agent`, `ls-refs`, `object-format`, `object-info`)
-// from `serve.c::protocol_v2_advertise_capabilities` and the pkt-line
-// framing from `pkt-line.c::packet_write`.
+// from [serve.c::protocol_v2_advertise_capabilities] and the pkt-line
+// framing from [pkt-line.c::packet_write].
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
+// [pkt-line.c::packet_write]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L244
 func TestServe_V2AdvertisementBytes(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -69,8 +74,10 @@ func TestServe_V2AdvertisementBytes(t *testing.T) {
 
 // TestServe_V2AdvertisementDefaultsAgent pins the fallback when
 // [Options.Agent] is empty: the server advertises
-// [wire.DefaultUserAgent], matching `serve.c::agent_advertise`
-// lines 25-31 (canonical Git falls back to `git_user_agent_sanitized`).
+// [wire.DefaultUserAgent], matching [serve.c::agent_advertise lines 25-31]
+// (canonical Git falls back to `git_user_agent_sanitized`).
+//
+// [serve.c::agent_advertise lines 25-31]: https://github.com/git/git/blob/v2.54.0/serve.c#L25-L31
 func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -84,9 +91,11 @@ func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 }
 
 // TestServe_V2AdvertisementSHA256 pins the `object-format` line for a
-// sha256 repository, matching `serve.c::object_format_advertise`
-// lines 53-58 (canonical Git emits the repository's
+// sha256 repository, matching [serve.c::object_format_advertise lines 53-58]
+// (canonical Git emits the repository's
 // `the_hash_algo->name`).
+//
+// [serve.c::object_format_advertise lines 53-58]: https://github.com/git/git/blob/v2.54.0/serve.c#L53-L58
 func TestServe_V2AdvertisementSHA256(t *testing.T) {
 	gitdir := testfixture.MaterializeRepo(t, "sha256")
 	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)

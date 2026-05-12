@@ -35,7 +35,9 @@ func cmdBody(cmd string, args, caps []string) transport.CommandBody {
 // reader up to and including the trailing flush so the test is
 // positioned to invoke [Conn.Command]. The advertisement shape is
 // `version 2\n` plus capability data lines plus a flush per
-// `serve.c::protocol_v2_advertise_capabilities`.
+// [serve.c::protocol_v2_advertise_capabilities].
+//
+// [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t testing.TB, c *Conn) {
 	t.Helper()
 	rdr := c.Advertisement()

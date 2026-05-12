@@ -40,14 +40,19 @@ import "fmt"
 //
 // Negotiation per canonical Git's `protocol.c`: the client announces a
 // preferred version and the server picks the highest it supports. See
-// `determine_protocol_version_client` and
-// `determine_protocol_version_server` in `protocol.c`.
+// [protocol.c::determine_protocol_version_client] and
+// [protocol.c::determine_protocol_version_server].
+//
+// [protocol.c::determine_protocol_version_client]: https://github.com/git/git/blob/v2.54.0/protocol.c#L85
+// [protocol.c::determine_protocol_version_server]: https://github.com/git/git/blob/v2.54.0/protocol.c#L49
 type ProtocolVersion int
 
 const (
 	// ProtocolV0 is the original wire protocol; the server's
 	// capability list rides on the first ref-line of the
-	// advertisement. See `gitprotocol-pack.adoc` §"Reference Discovery".
+	// advertisement. See [gitprotocol-pack.adoc §"Reference Discovery"].
+	//
+	// [gitprotocol-pack.adoc §"Reference Discovery"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#reference-discovery
 	ProtocolV0 ProtocolVersion = 0
 
 	// ProtocolV1 prefixes a v0 advertisement with a literal
@@ -55,7 +60,9 @@ const (
 	ProtocolV1 ProtocolVersion = 1
 
 	// ProtocolV2 is the modern stateless protocol with capability and
-	// command negotiation. See `gitprotocol-v2.adoc`.
+	// command negotiation. See [gitprotocol-v2.adoc].
+	//
+	// [gitprotocol-v2.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc
 	ProtocolV2 ProtocolVersion = 2
 )
 

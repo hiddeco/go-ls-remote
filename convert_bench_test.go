@@ -61,7 +61,9 @@ func Benchmark_convertCaps_v2Typical(b *testing.B) {
 // produces v0 advertisements from real `git upload-pack` banner bytes
 // would close the gap between this synthetic fixture and production
 // traffic; the banner bytes live in `git upload-pack`'s initial pkt-line
-// flush per `gitprotocol-pack.adoc` §"reference-discovery".
+// flush per [gitprotocol-pack.adoc §"reference-discovery"].
+//
+// [gitprotocol-pack.adoc §"reference-discovery"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#reference-discovery
 func Benchmark_convertCaps_v0WithSymrefs(b *testing.B) {
 	raw := wire.RawCapabilities{
 		{Name: "agent", Value: "git/2.44.0"},

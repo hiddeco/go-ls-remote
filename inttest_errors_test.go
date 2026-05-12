@@ -43,9 +43,11 @@ import (
 
 // httpAdvContentType matches the smart-HTTP advertisement content type
 // canonical Git sets on `info/refs?service=git-upload-pack` per
-// `http-backend.c::get_info_refs`. Tests that synthesise an
+// [http-backend.c::get_info_refs]. Tests that synthesise an
 // advertisement use this verbatim so the client's
 // `mime.ParseMediaType` branch lands on the smart path.
+//
+// [http-backend.c::get_info_refs]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L540
 const httpAdvContentType = "application/x-git-upload-pack-advertisement"
 
 // errOptsHTTP returns the option set the HTTP rows reuse: a registry

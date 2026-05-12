@@ -107,7 +107,7 @@ type SSHServer struct {
 // path (the form `transport/ssh` emits via `shellQuote`). After
 // replying success, it peels the leading extra-parameters pkt-line
 // the production client writes to stdin (see canonical Git's
-// `connect.c:1288-1298` and `gitprotocol-pack.adoc §"Extra Parameters"`)
+// [connect.c:1288-1298] and [gitprotocol-pack.adoc §"Extra Parameters"])
 // and then invokes [internal/server.Serve] with [transport.ProtocolV2]
 // for `Options.PreferredProtocol`. SSH is not split like HTTP — one
 // channel carries the full advertise-then-loop sequence — so
@@ -116,6 +116,9 @@ type SSHServer struct {
 // The generic parameter H is inferred from store; cross-fixture
 // callers that iterate [Entries] type-switch on [Entry.ObjectFormat]
 // once and call this function with the matching concrete store.
+//
+// [connect.c:1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
+// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func NewSSHServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) *SSHServer {
 	t.Helper()
 
@@ -317,10 +320,12 @@ func (s *SSHServer) handleSession(t testing.TB, ch ssh.Channel, reqs <-chan *ssh
 //
 // The peel mirrors canonical Git's `upload-pack` entry point: the
 // client writes `git-upload-pack <path>\0host=<h>\0\0version=<N>\0` as
-// the very first pkt-line on stdin (see `connect.c:1288-1298`), then
+// the very first pkt-line on stdin (see [connect.c:1288-1298]), then
 // switches into the v2 capability-advertise loop. Stripping that frame
 // here lets `Serve` read a clean v2 stream from the next byte without
 // having to know about the SSH/git-daemon entry shape.
+//
+// [connect.c:1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
 func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) {
 	defer func() { _ = ch.Close() }()
 
@@ -366,7 +371,7 @@ func isClientHangupError(err error) bool {
 // parseUploadPackCommand validates execCmd as
 // `git-upload-pack '<path>'` and returns the dequoted path. The
 // production transport emits the path through `shellQuote` (a port of
-// canonical Git's `sq_quote_buf` at `quote.c:28`); this helper reverses
+// canonical Git's [quote.c::sq_quote_buf]); this helper reverses
 // only the close-escape-reopen idiom that quoting produces. Commands
 // that fail the prefix check or that hold an unterminated quote
 // surface a non-nil error.
@@ -375,6 +380,8 @@ func isClientHangupError(err error) bool {
 // fixture binds one store per server, mounted at `sshRepoMount` — so
 // the validation exists chiefly to fail loudly when a future client
 // emits an unexpected shape.
+//
+// [quote.c::sq_quote_buf]: https://github.com/git/git/blob/v2.54.0/quote.c#L28
 func parseUploadPackCommand(execCmd string) (string, error) {
 	const prefix = "git-upload-pack "
 	if !strings.HasPrefix(execCmd, prefix) {
@@ -393,8 +400,10 @@ func parseUploadPackCommand(execCmd string) (string, error) {
 // sequence terminates prematurely.
 //
 // This is the inverse of `transport/ssh.shellQuote` (in turn ported
-// from `quote.c:28` in canonical Git). The harness needs only the
+// from [quote.c:28] in canonical Git). The harness needs only the
 // inverse direction; the production client owns the forward path.
+//
+// [quote.c:28]: https://github.com/git/git/blob/v2.54.0/quote.c#L28
 func sqDequote(s string) (string, error) {
 	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
 		return "", fmt.Errorf("not a single-quoted literal: %q", s)

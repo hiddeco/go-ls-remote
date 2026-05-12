@@ -20,8 +20,11 @@
 //   - [Stack] over a `tables.list` manifest, pre-merging the ref view
 //     across every table at construction ([OpenStack]).
 //
-// Format reference: canonical Git's `Documentation/technical/reftable.adoc`
-// and `reftable/table.c::parse_footer`.
+// Format reference: canonical Git's [Documentation/technical/reftable.adoc]
+// and [reftable/table.c::parse_footer].
+//
+// [Documentation/technical/reftable.adoc]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc
+// [reftable/table.c::parse_footer]: https://github.com/git/git/blob/v2.54.0/reftable/table.c#L43
 package reftable
 
 import (
@@ -62,10 +65,13 @@ var (
 	ErrTrailerChecksum = errors.New("reftable: trailer checksum mismatch")
 )
 
-// reftable.adoc §"Header (version 1)" / §"Header (version 2)" — the
+// [reftable.adoc § Header (version 1)] / [reftable.adoc § Header (version 2)] — the
 // header is 24 bytes for v1 and 28 bytes for v2 (an extra uint32
 // `hash_id`). Footer length is 5 × uint64 of section offsets plus a
 // uint32 CRC, prefixed with a copy of the header: 68 / 72 bytes.
+//
+// [reftable.adoc § Header (version 1)]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#header-version-1
+// [reftable.adoc § Header (version 2)]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#header-version-2
 const (
 	magic = "REFT"
 
@@ -77,7 +83,9 @@ const (
 	footerSizeV2 = headerSizeV2 + 5*8 + 4 // 72
 
 	// hash_id constants: 4-byte ASCII tags carried as a big-endian
-	// uint32 in v2 headers. reftable.adoc §"Header (version 2)".
+	// uint32 in v2 headers. [reftable.adoc § Header (version 2)].
+	//
+	// [reftable.adoc § Header (version 2)]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#header-version-2
 	hashIDSHA1   uint32 = 0x73686131 // 'sha1'
 	hashIDSHA256 uint32 = 0x73323536 // 's256'
 )
@@ -119,9 +127,11 @@ func (h header) footerSize() int {
 //
 // The returned [header] carries the version, block size, update-index
 // bounds, and resolved hash [objfmt.Algo]. v1 files have no on-disk
-// hash_id; the algo is implicitly SHA-1 per reftable.adoc §"Header
-// (version 1)". v2 files carry the four-byte ASCII tag `sha1` or
+// hash_id; the algo is implicitly SHA-1 per [reftable.adoc § Header (version 1)].
+// v2 files carry the four-byte ASCII tag `sha1` or
 // `s256` after `max_update_index`; any other tag is [ErrBadHashID].
+//
+// [reftable.adoc § Header (version 1)]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#header-version-1
 func parseHeader(buf []byte) (header, error) {
 	if len(buf) < headerSizeV1 {
 		return header{}, fmt.Errorf("reftable: have %d bytes, need %d for header: %w", len(buf), headerSizeV1, ErrShortFile)
@@ -169,13 +179,16 @@ func parseHeader(buf []byte) (header, error) {
 // the header already parsed from file's prefix.
 //
 // The footer begins with a byte-identical copy of the header
-// (reftable.adoc §"Footer"); verifyTrailer rejects files where the
+// ([reftable.adoc § Footer]); verifyTrailer rejects files where the
 // two diverge. The trailing four bytes are a CRC-32 over every
 // preceding footer byte — i.e. the header copy plus the five 8-byte
 // section offsets. Trailer integrity is CRC-32 (poly 0xedb88320,
 // stdlib `hash/crc32` with [crc32.IEEETable]); the spec calls this
 // the "trailer hash" but the canonical implementation in
-// `reftable/table.c::parse_footer` uses CRC-32.
+// [reftable/table.c::parse_footer] uses CRC-32.
+//
+// [reftable.adoc § Footer]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#footer
+// [reftable/table.c::parse_footer]: https://github.com/git/git/blob/v2.54.0/reftable/table.c#L43
 func verifyTrailer(file []byte, h header) error {
 	footerLen := h.footerSize()
 	headerLen := h.size()
@@ -186,15 +199,19 @@ func verifyTrailer(file []byte, h header) error {
 
 	footer := file[len(file)-footerLen:]
 
-	// reftable.adoc §"Footer" — the footer begins with a copy of the
+	// [reftable.adoc § Footer] — the footer begins with a copy of the
 	// file header. Canonical Git checks this with memcmp before
 	// parsing footer fields; mismatch is a format error.
+	//
+	// [reftable.adoc § Footer]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#footer
 	if string(footer[:headerLen]) != string(file[:headerLen]) {
 		return fmt.Errorf("reftable: footer header copy diverges from file header")
 	}
 
 	// CRC-32 covers every footer byte before the trailing 4-byte CRC
-	// itself. reftable/table.c:106 — `crc32(0, footer, f - footer)`.
+	// itself. [reftable/table.c:106] — `crc32(0, footer, f - footer)`.
+	//
+	// [reftable/table.c:106]: https://github.com/git/git/blob/v2.54.0/reftable/table.c#L106
 	want := binary.BigEndian.Uint32(footer[footerLen-4:])
 	got := crc32.Checksum(footer[:footerLen-4], crc32.IEEETable)
 	if got != want {

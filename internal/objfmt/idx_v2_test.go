@@ -71,7 +71,9 @@ func readOffsets(t *testing.T, path string) []offsetEntry {
 // supplying a value larger than `1<<31`. The resulting idx is only
 // loosely connected to a real pack — pack-trailer SHA-1 is fabricated
 // — but every other byte matches the canonical layout in
-// `Documentation/gitformat-pack.adoc` lines 285-319.
+// [Documentation/gitformat-pack.adoc lines 285-319].
+//
+// [Documentation/gitformat-pack.adoc lines 285-319]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L285-L319
 func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	t.Helper()
 	// Sort by oid so the binary search invariant holds.

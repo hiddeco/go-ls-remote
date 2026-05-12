@@ -202,7 +202,9 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	})
 
 	// Build PNAM with NUL-terminated entries, padded to a 4-byte
-	// boundary as canonical Git does (`midx-write.c::write_midx_pack_names`).
+	// boundary as canonical Git does ([midx-write.c::write_midx_pack_names]).
+	//
+	// [midx-write.c::write_midx_pack_names]: https://github.com/git/git/blob/v2.54.0/midx-write.c#L453
 	var pnam bytes.Buffer
 	for _, name := range fix.packs {
 		pnam.WriteString(name)

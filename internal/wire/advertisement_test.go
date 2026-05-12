@@ -196,10 +196,13 @@ func TestParseAdvertisement(t *testing.T) {
 		// caps trailer or a standalone v2 capability pkt-line.
 		//
 		// Canonical Git matches the same shape: `PACKET_READ_CHOMP_NEWLINE`
-		// in `pkt-line.c:466-467` strips only `\n`, and `connect.c:134`'s
+		// in [pkt-line.c:466-467] strips only `\n`, and [connect.c:134]'s
 		// `process_capabilities_v2` feeds the chomped buffer to the cap
 		// list verbatim. CR in either position is a wire-convention
 		// non-occurrence rather than something the parser actively rejects.
+		//
+		// [pkt-line.c:466-467]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L466-L467
+		// [connect.c:134]: https://github.com/git/git/blob/v2.54.0/connect.c#L134
 		const capPayload = "agent=git\r\n"
 
 		t.Run("v0 first ref line", func(t *testing.T) {

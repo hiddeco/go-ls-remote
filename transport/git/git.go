@@ -1,10 +1,12 @@
 // Package gitt implements the git-daemon transport for the `git://`
 // URL scheme. The transport speaks the native git wire protocol over a
 // plain TCP connection to a git-daemon process on port 9418
-// (git-daemon(1), `connect.c:git_connect`). No authentication or
+// (git-daemon(1), [connect.c::git_connect]). No authentication or
 // encryption is performed; the protocol is unauthenticated by design.
 // Construct a [Transport] with [New] and register it with a
 // `transport.Registry` to use the `git` scheme.
+//
+// [connect.c::git_connect]: https://github.com/git/git/blob/v2.54.0/connect.c#L1431
 package gitt
 
 import (

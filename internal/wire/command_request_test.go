@@ -13,8 +13,8 @@ import (
 )
 
 // TestEncodeV2CommandRequest_BodyShape pins the on-wire layout against
-// the canonical v2 command-request grammar from `gitprotocol-v2.adoc`
-// §"Command Request" and matched by `serve.c::process_request`:
+// the canonical v2 command-request grammar from [gitprotocol-v2.adoc
+// §"Command Request"] and matched by [serve.c::process_request]:
 //
 //	command-request = command-line *capability-line delim-pkt *arg-line flush-pkt
 //	command-line    = PKT-LINE("command=" cmd LF)
@@ -24,6 +24,9 @@ import (
 // A subtle reorder (delim-before-cap, missing trailing LF, missing
 // flush) would still parse on a lenient peer but diverge from the
 // canonical grammar, so each packet is checked in turn.
+//
+// [gitprotocol-v2.adoc §"Command Request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
+// [serve.c::process_request]: https://github.com/git/git/blob/v2.54.0/serve.c#L280
 func TestEncodeV2CommandRequest_BodyShape(t *testing.T) {
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
@@ -55,8 +58,10 @@ func TestEncodeV2CommandRequest_BodyShape(t *testing.T) {
 // TestEncodeV2CommandRequest_NoCapsNoArgs covers the minimal shape: a
 // command line, an empty capability section, the delim, an empty
 // argument section, and the closing flush. Canonical Git's
-// `serve.c::process_request` accepts this exact frame for a `command`
+// [serve.c::process_request] accepts this exact frame for a `command`
 // that takes no caps/args.
+//
+// [serve.c::process_request]: https://github.com/git/git/blob/v2.54.0/serve.c#L280
 func TestEncodeV2CommandRequest_NoCapsNoArgs(t *testing.T) {
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)

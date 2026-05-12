@@ -108,13 +108,13 @@ func Exists(ctx context.Context, rawURL string, opts ...Option) (bool, error) {
 // On v2 the helper issues `ls-refs` with `ref-prefix HEAD`, `symrefs`,
 // and `unborn`, then returns the [Ref.Symref] target attached to the
 // `HEAD` entry. The `unborn` argument mirrors canonical Git's
-// discovery client (`connect.c:591-592`). The wire layer silently
+// discovery client ([connect.c:591-592]). The wire layer silently
 // ignores it when the server has not advertised `ls-refs=unborn`, so
 // passing it here is always safe — older servers simply fall through
 // to the v0/v1-style capability-list scan below. With `unborn`, a
 // branch HEAD with no commits yet still surfaces as an unborn `HEAD`
 // entry whose `symref-target:` carries the branch name; without it
-// the server (`ls-refs.c:135-136`) would suppress HEAD entirely and
+// the server ([ls-refs.c:135-136]) would suppress HEAD entirely and
 // the helper would fall through to [ErrNoDefaultBranch]. When the v2 server does
 // not honour `symrefs` (or HEAD is detached and so carries no symref
 // target) the helper falls back to the v0/v1-style capability scan
@@ -138,6 +138,9 @@ func Exists(ctx context.Context, rawURL string, opts ...Option) (bool, error) {
 // capability). A dial failure whose chain matches [ErrNotFound] means
 // the repository itself is absent — the two sentinels are mutually
 // exclusive.
+//
+// [connect.c:591-592]: https://github.com/git/git/blob/v2.54.0/connect.c#L591-L592
+// [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func DefaultBranch(ctx context.Context, rawURL string, opts ...Option) (string, error) {
 	s, err := Dial(ctx, rawURL, opts...)
 	if err != nil {

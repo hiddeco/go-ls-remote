@@ -187,9 +187,11 @@ func runConcurrentAdvertise(t *testing.T, store *objstore.Store[objfmt.SHA1Hash]
 	t.Helper()
 
 	// A single flush in the inbound stream is the v2 empty-request
-	// terminator (`serve.c::process_request` lines 314-321); the v0
+	// terminator ([serve.c::process_request lines 314-321]); the v0
 	// path returns before reading any inbound byte, so the flush is
 	// harmless there.
+	//
+	// [serve.c::process_request lines 314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 	src := bytes.NewReader([]byte("0000"))
 	var sink bytes.Buffer
 	r := pktline.NewReader(src)

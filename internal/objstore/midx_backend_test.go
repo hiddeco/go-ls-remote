@@ -121,10 +121,12 @@ func TestMidxBackend_LookupMissReturnsNilError(t *testing.T) {
 func TestMidxBackend_AllPacksDeterministicOrder(t *testing.T) {
 	// `AllPacks` must yield every pack — midx-covered AND sibling — in
 	// a single mtime-desc order with basename as the stable
-	// tiebreaker, matching canonical Git's `packfile.c::sort_pack`.
+	// tiebreaker, matching canonical Git's [packfile.c::sort_pack].
 	// Stamping every pack to the same mtime exercises the tiebreaker:
 	// the order collapses to lexical basename order regardless of
 	// whether a pack is midx-covered.
+	//
+	// [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 	wantNames := []string{"midx-pack-1.idx", "midx-pack-2.idx", "three-objects.idx"}
 	for i := range 3 {
 		root := materializeFixture(t, "midx-with-siblings")

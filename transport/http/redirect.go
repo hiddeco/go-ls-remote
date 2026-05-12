@@ -25,9 +25,9 @@ var errRedirectTooMany = errors.New("transport/http: too many redirects")
 
 // probeRedirector carries the per-call state the [http.Client]'s
 // `CheckRedirect` hook needs to enforce the redirect policy
-// (`Documentation/config/http.adoc:359-365`) and the cross-origin
-// auth-strip rule modelled on `http.c::update_url_from_redirect`
-// (around `http.c:2268`).
+// ([Documentation/config/http.adoc:359-365]) and the cross-origin
+// auth-strip rule modelled on [http.c::update_url_from_redirect]
+// (around [http.c:2268]).
 //
 // One instance is constructed per [Transport.open] invocation. It
 // retains a reference to the resolver for the lifetime of the
@@ -43,6 +43,10 @@ var errRedirectTooMany = errors.New("transport/http: too many redirects")
 // through redirect follow-up requests, so the resolver is consulted
 // with the per-request context regardless of which call drove the
 // chain.
+//
+// [Documentation/config/http.adoc:359-365]: https://github.com/git/git/blob/v2.54.0/Documentation/config/http.adoc?plain=1#L359-L365
+// [http.c::update_url_from_redirect]: https://github.com/git/git/blob/v2.54.0/http.c#L2268
+// [http.c:2268]: https://github.com/git/git/blob/v2.54.0/http.c#L2268
 type probeRedirector struct {
 	policy FollowRedirects
 	max    int
@@ -71,8 +75,10 @@ type probeRedirector struct {
 // untouched; if the destination demands auth it returns 401 and the
 // caller's standard 401-retry path handles credential lookup at the
 // post-redirect URL. That layering keeps the anonymous-first probe
-// contract intact (`remote-curl.c::http_request_reauth` matches it on
+// contract intact ([http.c::http_request_recoverable] matches it on
 // the curl side).
+//
+// [http.c::http_request_recoverable]: https://github.com/git/git/blob/v2.54.0/http.c#L2330
 func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 	if r.policy == FollowRedirectsNever {
 		return errRedirectRejected
@@ -86,7 +92,7 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 		return errRedirectRejected
 	}
 	// Method-aware policy gate. Canonical Git's
-	// `Documentation/config/http.adoc:359-365` distinguishes the
+	// [Documentation/config/http.adoc:359-365] distinguishes the
 	// initial discovery GET from later POSTs: `initial` (the default)
 	// follows redirects on the GET but rejects them on the POST,
 	// `always` follows both, `never` rejects both. The above
@@ -96,6 +102,8 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 	// originating method is read from `via[0]` because `req.Method`
 	// can have been rewritten by stdlib for 301/302/303 hops on a POST
 	// (RFC 7231 §6.4.2-6.4.4).
+	//
+	// [Documentation/config/http.adoc:359-365]: https://github.com/git/git/blob/v2.54.0/Documentation/config/http.adoc?plain=1#L359-L365
 	if r.policy == FollowRedirectsInitial && len(via) > 0 && via[0].Method == http.MethodPost {
 		return errRedirectRejected
 	}
@@ -137,13 +145,15 @@ func (r *probeRedirector) check(req *http.Request, via []*http.Request) error {
 // origin boundary as Git defines it: a different host (case-insensitive)
 // or an `https`→`http` scheme downgrade. A scheme upgrade
 // (`http`→`https`) to the same host is NOT cross-origin, matching
-// canonical Git's behaviour around `http.c::update_url_from_redirect`
+// canonical Git's behaviour around [http.c::update_url_from_redirect]
 // (a redirect-to-https on the same host preserves credentials).
 //
 // The host comparison includes any explicit port: `example.com:8001`
 // and `example.com:8002` are different origins. `net/http` itself only
 // compares hostnames here, so a port change between same-named hosts
 // would otherwise leak `Authorization`.
+//
+// [http.c::update_url_from_redirect]: https://github.com/git/git/blob/v2.54.0/http.c#L2268
 func isCrossOrigin(prev, next *url.URL) bool {
 	if !strings.EqualFold(prev.Host, next.Host) {
 		return true

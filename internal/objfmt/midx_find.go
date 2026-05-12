@@ -22,9 +22,11 @@ const midxOOFFRecordSize = 8
 // ok is false if the OID is absent, if the offset slot has the LOFF
 // flag set but the file lacks an LOFF chunk (corruption), or if the
 // midx is closed. Lookups mirror canonical Git's `bsearch_one_midx`
-// (`midx.c`) and `nth_midxed_offset` (`midx.c::561-582`): a 256-entry
+// (`midx.c`) and `nth_midxed_offset` ([midx.c:561-582]): a 256-entry
 // fanout bounds a binary search across `OIDL`, then OOFF gives the
 // pack id and either a direct 31-bit offset or an LOFF index.
+//
+// [midx.c:561-582]: https://github.com/git/git/blob/v2.54.0/midx.c#L561-L582
 func (m *Midx[H]) Find(h H) (packIndex uint32, offset int64, ok bool) {
 	var zero H
 	hashLen := len(zero)

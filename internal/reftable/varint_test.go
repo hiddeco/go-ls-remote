@@ -11,7 +11,7 @@ import (
 func Test_decodeVarint(t *testing.T) {
 	t.Run("known_values", func(t *testing.T) {
 		// Encodings hand-derived from the canonical formula in
-		// reftable.adoc §"Varint encoding":
+		// [reftable.adoc § Varint encoding]:
 		//
 		//   val = buf[0] & 0x7f
 		//   while (buf[i] & 0x80) {
@@ -21,6 +21,8 @@ func Test_decodeVarint(t *testing.T) {
 		// The `+1` per continuation byte is the off-by-one that
 		// distinguishes reftable's varint from the protobuf-style
 		// encoding; it removes redundant zero encodings.
+		//
+		// [reftable.adoc § Varint encoding]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#varint-encoding
 		cases := []struct {
 			name  string
 			input []byte

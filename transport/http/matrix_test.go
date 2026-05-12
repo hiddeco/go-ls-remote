@@ -140,7 +140,9 @@ func testMatrixSmartV0Fallback(t *testing.T) {
 	}
 	assert.NotEmpty(t, first, "v0 advertisement must carry a data packet")
 	// The first v0 data packet carries an oid and `\x00` separator
-	// before the cap list (canonical `upload-pack.c::write_v0_ref`).
+	// before the cap list (canonical [upload-pack.c::write_v0_ref]).
+	//
+	// [upload-pack.c::write_v0_ref]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1231
 	assert.Contains(t, first, "\x00",
 		"v0 first ref packet must carry the NUL-delimited cap list")
 }

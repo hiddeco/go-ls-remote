@@ -67,9 +67,11 @@ const loose256BlobOID = "c60061d62336c6b760e2c4ec860873a193c61662e4f2a6aa5cb3cba
 // `threeCommitOID` in `internal/objstore/idx_catalog_test.go`.
 const packCommitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 
-// TestObjectInfo_Empty pins the empty-OID-list case (`protocol-caps.c:44-45`):
+// TestObjectInfo_Empty pins the empty-OID-list case ([protocol-caps.c:44-45]):
 // when the client asks for no OIDs, the server returns immediately
 // without an attrs line. The response is a single flush.
+//
+// [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_Empty(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -81,8 +83,10 @@ func TestObjectInfo_Empty(t *testing.T) {
 
 // TestObjectInfo_EmptySizeOnly pins that even with `size` requested, an
 // empty OID list yields just a flush. Canonical reference:
-// `protocol-caps.c:44-45` returns from `send_info` before the
+// [protocol-caps.c:44-45] returns from `send_info` before the
 // `if (info->size)` block can run.
+//
+// [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_EmptySizeOnly(t *testing.T) {
 	store := openEmptyStore(t)
 
@@ -94,7 +98,9 @@ func TestObjectInfo_EmptySizeOnly(t *testing.T) {
 
 // TestObjectInfo_Loose_SingleHit pins the simplest hit shape: one OID,
 // `size` requested, response is `size\n` attrs + `<oid> <size>\n` +
-// flush. Canonical reference: `protocol-caps.c:47-71`.
+// flush. Canonical reference: [protocol-caps.c:47-71].
+//
+// [protocol-caps.c:47-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L71
 func TestObjectInfo_Loose_SingleHit(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
@@ -113,10 +119,13 @@ func TestObjectInfo_Loose_SingleHit(t *testing.T) {
 }
 
 // TestObjectInfo_Loose_NoSizeAttr pins the no-attrs branch: the client
-// requests one OID without `size`. Per `protocol-caps.c:47-48` the
-// attrs line is skipped, and per `protocol-caps.c:63-71` each per-OID
+// requests one OID without `size`. Per [protocol-caps.c:47-48] the
+// attrs line is skipped, and per [protocol-caps.c:63-71] each per-OID
 // line is just `<oid>\n` with no trailing space (the `if (info->size)`
 // block at line 65 does not fire).
+//
+// [protocol-caps.c:47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
+// [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_Loose_NoSizeAttr(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 
@@ -183,7 +192,7 @@ func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 }
 
 // TestObjectInfo_MissingOID pins the canonical empty-size form for an
-// OID the server cannot resolve in its odb: per `protocol-caps.c:66-67`,
+// OID the server cannot resolve in its odb: per [protocol-caps.c:66-67],
 // `odb_read_object_info` failure yields `<oid> ` (with a trailing space
 // and no size value). The handler must NOT omit the row — byte
 // equivalence with canonical Git's `send_info` requires the empty-size
@@ -193,6 +202,8 @@ func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 // The wire decoder side ([wire.DecodeObjectInfo]) drops these rows so
 // callers see "missing" semantics, but the on-the-wire bytes match
 // canonical exactly.
+//
+// [protocol-caps.c:66-67]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L66-L67
 func TestObjectInfo_MissingOID(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
@@ -214,9 +225,11 @@ func TestObjectInfo_MissingOID(t *testing.T) {
 
 // TestObjectInfo_MissingOID_NoSize pins that without `size`, a missing
 // OID emits just `<oid>\n` (no trailing space). Canonical Git at
-// `protocol-caps.c:63-71` only enters the `<oid> ` empty-size branch
+// [protocol-caps.c:63-71] only enters the `<oid> ` empty-size branch
 // when `info->size` is set; otherwise the line is just
 // `strbuf_addstr(send_buffer, oid_str)`.
+//
+// [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_MissingOID_NoSize(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
@@ -260,10 +273,12 @@ func TestObjectInfo_MixedHitsAndMisses(t *testing.T) {
 }
 
 // TestObjectInfo_OIDParseError pins the `get_oid_hex_algop` error path
-// (`protocol-caps.c:55-61`): a malformed OID hex string triggers a
+// ([protocol-caps.c:55-61]): a malformed OID hex string triggers a
 // per-line `ERR object-info: protocol error, expected to get oid, not
 // '<hex>'\n` data pkt-line and the iteration CONTINUES to the next OID.
 // The bad OID is not added to the response.
+//
+// [protocol-caps.c:55-61]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L55-L61
 func TestObjectInfo_OIDParseError(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
@@ -287,11 +302,14 @@ func TestObjectInfo_OIDParseError(t *testing.T) {
 }
 
 // TestObjectInfo_UnknownArg pins the canonical "unexpected line" path
-// (`protocol-caps.c:96-99`): an unrecognised arg triggers a single ERR
+// ([protocol-caps.c:96-99]): an unrecognised arg triggers a single ERR
 // data pkt-line MID-STREAM and the arg parser CONTINUES to the next
-// line. This is different from `ls-refs.c:188`'s `die()`. The
+// line. This is different from [ls-refs.c:188]'s `die()`. The
 // recognised args (`size`, `oid <hex>`) still apply and a normal
 // response is emitted afterwards.
+//
+// [protocol-caps.c:96-99]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L96-L99
+// [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestObjectInfo_UnknownArg(t *testing.T) {
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)

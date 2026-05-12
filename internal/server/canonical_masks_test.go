@@ -21,12 +21,13 @@ const agentToken = "agent=$AGENT$\n"
 // this emulator:
 //
 //   - `fetch=` — canonical advertises `fetch=shallow wait-for-done`
-//     by default (`upload-pack.c::upload_pack_v2_capabilities`); this
+//     by default ([upload-pack.c::upload_pack_advertise]); this
 //     read-only emulator does not implement fetch and skips the
 //     capability.
 //   - `server-option` — canonical advertises by default
-//     (`serve.c::server_option_advertise`); the emulator does not
-//     service the optional extension.
+//     ([serve.c::always_advertise] is wired for the
+//     `server-option` slot in the capabilities array); the emulator
+//     does not service the optional extension.
 //   - `object-info` — this emulator advertises unconditionally
 //     because it implements the command; canonical 2.54 emits the
 //     cap only under `feature.experimental` config and the corpus is
@@ -35,6 +36,9 @@ const agentToken = "agent=$AGENT$\n"
 // The remaining caps (`agent`, `ls-refs`, `object-format`) must
 // survive byte-identical so the harness asserts equivalence on the
 // substantive common subset.
+//
+// [upload-pack.c::upload_pack_advertise]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1834
+// [serve.c::always_advertise]: https://github.com/git/git/blob/v2.54.0/serve.c#L19
 var advertisementDroppedCaps = [][]byte{
 	[]byte("fetch="),
 	[]byte("server-option"),
@@ -52,7 +56,7 @@ var advertisementDroppedCaps = [][]byte{
 // advertisement's `agent` capability, whose value diverges between
 // canonical Git (`git/<version>`) and this library
 // (`lsremote/0` by default; see [github.com/hiddeco/go-ls-remote/internal/wire.DefaultUserAgent]).
-// Canonical Git's `serve.c::agent_advertise` and this package's
+// Canonical Git's [serve.c::agent_advertise] and this package's
 // [writeV2Advertisement] are both compliant emissions; the mask
 // normalises both sides to a common token so the byte-equivalence
 // harness compares the substantive framing without flagging the
@@ -65,6 +69,8 @@ var advertisementDroppedCaps = [][]byte{
 // verbatim copy of in. The byte-equivalence harness will then
 // surface the framing issue from the substantive comparison rather
 // than half-rewriting the stream.
+//
+// [serve.c::agent_advertise]: https://github.com/git/git/blob/v2.54.0/serve.c#L25
 func maskAgent(in []byte) []byte {
 	return applyMask(in, nil)
 }
