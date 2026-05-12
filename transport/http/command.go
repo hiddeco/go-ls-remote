@@ -239,17 +239,39 @@ func handleCommandResponse(resp *http.Response, redacted string, credsApplied bo
 	case http.StatusOK:
 		return pktline.NewReader(resp.Body, inboundReaderOpts(tracer, finalRespURL(resp))...), nil
 	case http.StatusUnauthorized:
-		drainAndClose(resp.Body)
+		server := readServerExcerpt(resp.Body)
+		_ = resp.Body.Close()
+		cause := ErrAuthFailed
 		if !credsApplied {
-			return nil, ErrAuthRequired
+			cause = ErrAuthRequired
 		}
-		return nil, ErrAuthFailed
+		return nil, &ProtocolError{
+			URL:    redacted,
+			Op:     "command",
+			Status: resp.StatusCode,
+			Server: server,
+			Err:    cause,
+		}
 	case http.StatusForbidden:
-		drainAndClose(resp.Body)
-		return nil, ErrAuthFailed
+		server := readServerExcerpt(resp.Body)
+		_ = resp.Body.Close()
+		return nil, &ProtocolError{
+			URL:    redacted,
+			Op:     "command",
+			Status: resp.StatusCode,
+			Server: server,
+			Err:    ErrAuthFailed,
+		}
 	case http.StatusNotFound:
-		drainAndClose(resp.Body)
-		return nil, ErrNotFound
+		server := readServerExcerpt(resp.Body)
+		_ = resp.Body.Close()
+		return nil, &ProtocolError{
+			URL:    redacted,
+			Op:     "command",
+			Status: resp.StatusCode,
+			Server: server,
+			Err:    ErrNotFound,
+		}
 	}
 
 	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {

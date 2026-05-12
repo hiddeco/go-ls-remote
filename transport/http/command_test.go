@@ -993,3 +993,124 @@ func TestConn_Command_AccumulatesBodiesUntilClose(t *testing.T) {
 			"body %d must be closed by Conn.Close", i)
 	}
 }
+
+// TestCommand_NotFound_PropagatesServerExcerpt pins that a 404
+// command response surfaces the server's body excerpt on the
+// returned `*ProtocolError.Server`, while still matching the
+// public `ErrNotFound` sentinel via `errors.Is`.
+func TestCommand_NotFound_PropagatesServerExcerpt(t *testing.T) {
+	const wantExcerpt = "repository 'org/repo' not found"
+
+	store := openFixtureStore(t, "loose-only")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		pw := pktline.NewWriter(w)
+		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		require.NoError(t, pw.WriteFlush())
+		require.NoError(t, server.Serve(r.Context(),
+			pktline.NewReader(bytes.NewReader([]byte("0000"))),
+			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
+	})
+	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, wantExcerpt, http.StatusNotFound)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := openSmartTestConn(t, srv, "/repo.git")
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	assert.Nil(t, rdr)
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrNotFound),
+		"the sentinel must still match errors.Is after the rewrap; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe),
+		"a 404 carrying a body excerpt must surface as *ProtocolError; got %T", err)
+	assert.Equal(t, http.StatusNotFound, pe.Status,
+		"Status must reflect the response code")
+	assert.Contains(t, pe.Server, wantExcerpt,
+		"the body excerpt must be captured on pe.Server")
+}
+
+// TestCommand_AuthRequired_PropagatesServerExcerpt pins the 401
+// branch when no credentials were applied: the sentinel is
+// ErrAuthRequired and the body excerpt must survive.
+func TestCommand_AuthRequired_PropagatesServerExcerpt(t *testing.T) {
+	const wantExcerpt = "authentication required to access org/repo"
+
+	store := openFixtureStore(t, "loose-only")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		pw := pktline.NewWriter(w)
+		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		require.NoError(t, pw.WriteFlush())
+		require.NoError(t, server.Serve(r.Context(),
+			pktline.NewReader(bytes.NewReader([]byte("0000"))),
+			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
+	})
+	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, wantExcerpt, http.StatusUnauthorized)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	// No credential resolver: the command POST is sent anonymously and
+	// the 401 surfaces as ErrAuthRequired. Symmetry with the 5xx branch
+	// requires the body excerpt to survive on `*ProtocolError.Server`.
+	c := openSmartTestConn(t, srv, "/repo.git")
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	assert.Nil(t, rdr)
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrAuthRequired),
+		"with no creds applied the 401 sentinel must be ErrAuthRequired; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe))
+	assert.Equal(t, http.StatusUnauthorized, pe.Status)
+	assert.Contains(t, pe.Server, wantExcerpt)
+}
+
+// TestCommand_AuthFailed_PropagatesServerExcerpt pins the 403
+// branch: the sentinel is ErrAuthFailed and the body excerpt
+// (typically an SSO or repo-disabled message) must survive.
+func TestCommand_AuthFailed_PropagatesServerExcerpt(t *testing.T) {
+	const wantExcerpt = "SSO enrollment required for org/repo"
+
+	store := openFixtureStore(t, "loose-only")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", smartAdvHeader)
+		pw := pktline.NewWriter(w)
+		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		require.NoError(t, pw.WriteFlush())
+		require.NoError(t, server.Serve(r.Context(),
+			pktline.NewReader(bytes.NewReader([]byte("0000"))),
+			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
+	})
+	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, wantExcerpt, http.StatusForbidden)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := openSmartTestConn(t, srv, "/repo.git")
+	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	assert.Nil(t, rdr)
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, ErrAuthFailed),
+		"a 403 must reach ErrAuthFailed via errors.Is; got %v", err)
+
+	var pe *ProtocolError
+	require.True(t, errors.As(err, &pe))
+	assert.Equal(t, http.StatusForbidden, pe.Status)
+	assert.Contains(t, pe.Server, wantExcerpt)
+}
