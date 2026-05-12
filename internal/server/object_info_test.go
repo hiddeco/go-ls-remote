@@ -474,7 +474,21 @@ func TestEmitObjectInfoLine_AllocBudget(t *testing.T) {
 	// constants (response setup, attrs line) that amortise but do
 	// not round to exactly zero across 1000 OIDs. A regression in
 	// the emitter would land back at 6+ and trip the budget.
-	const maxAllocsPerOID = 5.01
+	//
+	// The `-race` budget carries roughly half an alloc/OID more
+	// because race instrumentation perturbs `sync.Pool`'s steady
+	// state: the extra heap pressure from the race runtime
+	// triggers GCs more frequently, and `sync.Pool` discards
+	// per-P entries on every GC cycle
+	// (`sync/pool.go::poolCleanup`). The pack-resolution path
+	// uses pooled scratch buffers, so periodic cold-path
+	// reallocation inflates the average. The inflation is a
+	// runtime characteristic, not a regression in the emitter;
+	// the non-race budget continues to pin the production shape.
+	maxAllocsPerOID := 5.01
+	if raceEnabled {
+		maxAllocsPerOID = 6.0
+	}
 
 	// Materialise the `pack-only` fixture and open without CRC so the
 	// budget is dominated by the emitter, not the per-object CRC pass.
@@ -511,7 +525,7 @@ func TestEmitObjectInfoLine_AllocBudget(t *testing.T) {
 
 	perOID := avg / float64(oidCount)
 	if perOID > maxAllocsPerOID {
-		t.Fatalf("post-fix allocs/OID = %.2f (total %.0f / %d OIDs), want <= %.1f",
+		t.Fatalf("post-fix allocs/OID = %.2f (total %.0f / %d OIDs), want <= %.2f",
 			perOID, avg, oidCount, maxAllocsPerOID)
 	}
 }
