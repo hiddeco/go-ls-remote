@@ -355,7 +355,8 @@ printf '%s\n' "0001-0001-aaaaaaaa.ref" >"$out/with-index-sha1/tables.list"
 noidx_repo="$work/without-index-sha1"
 init_reftable_repo "$noidx_repo" sha1
 commit_in "$noidx_repo" "without-index" "2020-01-02T03:04:05+00:00" >/dev/null
-single=$(ls "$noidx_repo"/.git/reftable/*.ref | head -1)
+noidx_refs=("$noidx_repo"/.git/reftable/*.ref)
+single="${noidx_refs[0]}"
 [ "$(footer_ref_index_position "$single")" = "0" ] \
     || { echo "without-index-sha1: ref_index_position!=0 in $single" >&2; exit 1; }
 rename_reftable_dir "$noidx_repo/.git/reftable" "$out/without-index-sha1"

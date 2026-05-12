@@ -109,7 +109,7 @@ git -C "$work" init -q --object-format=sha1 --initial-branch=main three
     GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
         git commit -q -m 'fixture'
     commit=$(git rev-parse HEAD)
-    tree=$(git rev-parse HEAD^{tree})
+    tree=$(git rev-parse 'HEAD^{tree}')
     blob=$(git rev-parse HEAD:hello.txt)
     printf '%s\n%s\n%s\n' "$commit" "$tree" "$blob" \
         | git pack-objects --stdout >"$out/three-objects.pack"
@@ -176,7 +176,7 @@ git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-three
     GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
         git commit -q -m 'fixture'
     commit=$(git rev-parse HEAD)
-    tree=$(git rev-parse HEAD^{tree})
+    tree=$(git rev-parse 'HEAD^{tree}')
     blob=$(git rev-parse HEAD:hello.txt)
     printf '%s\n%s\n%s\n' "$commit" "$tree" "$blob" \
         | git pack-objects --stdout >"$out/sha256-three.pack"
@@ -212,7 +212,7 @@ git -C "$work" init -q --object-format=sha1 --initial-branch=main midx-src
     GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
         git commit -q -m 'pack-1'
     c1=$(git rev-parse HEAD)
-    t1=$(git rev-parse HEAD^{tree})
+    t1=$(git rev-parse 'HEAD^{tree}')
     b1=$(git rev-parse HEAD:a.txt)
 
     printf 'midx pack-2 content\n' >b.txt
@@ -221,7 +221,7 @@ git -C "$work" init -q --object-format=sha1 --initial-branch=main midx-src
     GIT_COMMITTER_DATE='2020-01-02T04:05:06+00:00' \
         git commit -q -m 'pack-2'
     c2=$(git rev-parse HEAD)
-    t2=$(git rev-parse HEAD^{tree})
+    t2=$(git rev-parse 'HEAD^{tree}')
     b2=$(git rev-parse HEAD:b.txt)
 
     mkdir -p packs
@@ -259,9 +259,9 @@ for i in 1 2; do
         "$midx_host/objects/pack/midx-pack-$i.idx" \
         | sed '$d' >"$out/midx-pack-$i.offsets.txt"
 done
-ls "$midx_host/objects/pack/" \
-    | grep '^midx-pack-.*\.idx$' \
-    | sort >"$out/multi-pack-index.packnames"
+for idx in "$midx_host/objects/pack/"midx-pack-*.idx; do
+    basename "$idx"
+done | sort >"$out/multi-pack-index.packnames"
 
 # --- Multi-pack-index over two SHA-256 packs ---------------------------------
 # Same shape as above, but every step runs in a SHA-256 repo so the
@@ -280,7 +280,7 @@ git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-midx-
     GIT_COMMITTER_DATE='2020-01-02T03:04:05+00:00' \
         git commit -q -m 'pack-1'
     c1=$(git rev-parse HEAD)
-    t1=$(git rev-parse HEAD^{tree})
+    t1=$(git rev-parse 'HEAD^{tree}')
     b1=$(git rev-parse HEAD:a.txt)
 
     printf 'sha256 midx pack-2\n' >b.txt
@@ -289,7 +289,7 @@ git -C "$work" init -q --object-format=sha256 --initial-branch=main sha256-midx-
     GIT_COMMITTER_DATE='2020-01-02T04:05:06+00:00' \
         git commit -q -m 'pack-2'
     c2=$(git rev-parse HEAD)
-    t2=$(git rev-parse HEAD^{tree})
+    t2=$(git rev-parse 'HEAD^{tree}')
     b2=$(git rev-parse HEAD:b.txt)
 
     mkdir -p packs
@@ -325,8 +325,8 @@ for i in 1 2; do
         "$sha256_midx_host/objects/pack/sha256-midx-pack-$i.idx" \
         | sed '$d' >"$out/sha256-midx-pack-$i.offsets.txt"
 done
-ls "$sha256_midx_host/objects/pack/" \
-    | grep '^sha256-midx-pack-.*\.idx$' \
-    | sort >"$out/sha256-multi-pack-index.packnames"
+for idx in "$sha256_midx_host/objects/pack/"sha256-midx-pack-*.idx; do
+    basename "$idx"
+done | sort >"$out/sha256-multi-pack-index.packnames"
 
 echo "wrote fixtures into $out"
