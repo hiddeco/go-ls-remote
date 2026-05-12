@@ -45,7 +45,7 @@ func (f *fakeTracer) OnPacketEvent(e *PacketEvent) {
 	}
 	f.got = append(f.got, cloned)
 }
-func (f *fakeTracer) OnEvent(e Event)              { f.got = append(f.got, e) }
+func (f *fakeTracer) OnEvent(e Event) { f.got = append(f.got, e) }
 
 func TestTracer(t *testing.T) {
 	tr := &fakeTracer{}
