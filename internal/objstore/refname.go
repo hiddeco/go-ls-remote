@@ -49,10 +49,12 @@ func checkRefnameFormat(name string) bool {
 	}
 	// Walk the name component by component. The slash is not part of
 	// any component; the validator runs once per component and returns
-	// false on the first violation.
+	// false on the first violation. The trailing component (everything
+	// after the last slash, or the whole name when no slash is present)
+	// is checked once after the loop.
 	start := 0
-	for i := 0; i <= len(name); i++ {
-		if i < len(name) && name[i] != '/' {
+	for i := 0; i < len(name); i++ {
+		if name[i] != '/' {
 			continue
 		}
 		if !checkRefnameComponent(name[start:i]) {
@@ -60,7 +62,7 @@ func checkRefnameFormat(name string) bool {
 		}
 		start = i + 1
 	}
-	return true
+	return checkRefnameComponent(name[start:])
 }
 
 // checkRefnameComponent validates a single slash-separated component of
