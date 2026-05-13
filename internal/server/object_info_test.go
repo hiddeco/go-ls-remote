@@ -42,6 +42,7 @@ func buildObjectInfoRequest(argLines []string) []byte {
 // would drift if the fixture were ever regenerated.
 func querySize[H objfmt.Hash](t *testing.T, store *objstore.Store[H], oidHex string) int64 {
 	t.Helper()
+
 	hash, err := objfmt.ParseHexAs[H](oidHex)
 	require.NoError(t, err)
 	info, err := store.ObjectInfo(hash)
@@ -74,6 +75,7 @@ const packCommitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 // [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_Empty(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildObjectInfoRequest(nil))
@@ -90,6 +92,7 @@ func TestObjectInfo_Empty(t *testing.T) {
 // [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_EmptySizeOnly(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildObjectInfoRequest([]string{"size\n"}))
@@ -105,6 +108,7 @@ func TestObjectInfo_EmptySizeOnly(t *testing.T) {
 // [protocol-caps.c:47-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L71
 func TestObjectInfo_Loose_SingleHit(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -131,6 +135,7 @@ func TestObjectInfo_Loose_SingleHit(t *testing.T) {
 // [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_Loose_NoSizeAttr(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 
 	req := buildObjectInfoRequest([]string{
@@ -149,6 +154,7 @@ func TestObjectInfo_Loose_NoSizeAttr(t *testing.T) {
 // the same order interspersed with their resolved sizes.
 func TestObjectInfo_Loose_MultipleOIDs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 	treeSize := querySize(t, store, looseTreeOID)
@@ -181,6 +187,7 @@ func TestObjectInfo_Loose_MultipleOIDs(t *testing.T) {
 // loose case, but the test exercises a different `objstore` lookup.
 func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "pack-only")
 	commitSize := querySize(t, store, packCommitOID)
 
@@ -212,6 +219,7 @@ func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 // [protocol-caps.c:66-67]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L66-L67
 func TestObjectInfo_MissingOID(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
 
@@ -239,6 +247,7 @@ func TestObjectInfo_MissingOID(t *testing.T) {
 // [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_MissingOID_NoSize(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
 
@@ -259,6 +268,7 @@ func TestObjectInfo_MissingOID_NoSize(t *testing.T) {
 // hits with the empty-size form for the miss in caller order.
 func TestObjectInfo_MixedHitsAndMisses(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 	commitSize := querySize(t, store, looseCommitOID)
@@ -290,6 +300,7 @@ func TestObjectInfo_MixedHitsAndMisses(t *testing.T) {
 // [protocol-caps.c:55-61]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L55-L61
 func TestObjectInfo_OIDParseError(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -322,6 +333,7 @@ func TestObjectInfo_OIDParseError(t *testing.T) {
 // [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestObjectInfo_UnknownArg(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -349,6 +361,7 @@ func TestObjectInfo_UnknownArg(t *testing.T) {
 // response shape is the same as the sha1 case but with longer OIDs.
 func TestObjectInfo_SHA256(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture256(t, "loose-objects-sha256")
 	blobSize := querySize(t, store, loose256BlobOID)
 
@@ -383,6 +396,7 @@ func TestObjectInfo_SHA256(t *testing.T) {
 // mismatch in `Store.ObjectInfo`.
 func TestObjectInfo_CorruptObject(t *testing.T) {
 	t.Parallel()
+
 	dir := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "repos", "pack-only")
 	require.NoError(t, copyFixtureTree(src, dir))
@@ -471,6 +485,7 @@ func copyFixtureTree(src, dst string) error {
 // change written through to disk before the store is opened.
 func flipPackByte(t *testing.T, packPath string, off int64) {
 	t.Helper()
+
 	f, err := os.OpenFile(packPath, os.O_RDWR, 0o644)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()

@@ -17,6 +17,7 @@ import (
 // check.
 func writeMinPack(t *testing.T, body []byte) string {
 	t.Helper()
+
 	buf := make([]byte, 12, 12+len(body)+20)
 	copy(buf, "PACK")
 	binary.BigEndian.PutUint32(buf[4:8], 2)
@@ -28,8 +29,10 @@ func writeMinPack(t *testing.T, body []byte) string {
 
 func TestPack_ReadHeader(t *testing.T) {
 	t.Parallel()
+
 	t.Run("decodes a single-byte non-delta header", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -47,6 +50,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("decodes a multi-byte non-delta header", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -68,6 +72,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("decodes headers from a SHA-256 pack", func(t *testing.T) {
 		t.Parallel()
+
 		// Pack is SHA-256 so `algo.Size() == 32`; the peek size and
 		// any REF_DELTA stride change with the algo, but every
 		// non-delta header decodes the same way.
@@ -95,6 +100,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("decodes an OFS_DELTA header", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -112,6 +118,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("decodes a REF_DELTA header", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "ref-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -131,6 +138,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects offsets past EOF", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -141,6 +149,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects an OFS_DELTA whose base lands at or past the delta", func(t *testing.T) {
 		t.Parallel()
+
 		// Hand-crafted single-object pack with an OFS_DELTA at offset
 		// 12. The first header byte 0x60 encodes type=6 (OFS_DELTA),
 		// size=0, no continuation. The OFS varint 0x0c encodes the
@@ -163,6 +172,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects a pack header that overruns the peek buffer", func(t *testing.T) {
 		t.Parallel()
+
 		// Bytes 27..31 of the file are read as the type/size header
 		// when [Pack.ReadHeader] is called with `at=27`, since the
 		// peek slice is clamped by `r.Len() - at = 5`. All five bytes
@@ -189,6 +199,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects a pack header whose size shift overflows", func(t *testing.T) {
 		t.Parallel()
+
 		// Ten consecutive 0xFF bytes at offset 12: every iteration of
 		// the size loop bumps `shift` by 7, so after the tenth byte
 		// `shift = 4 + 9*7 = 67 >= 64` and the overflow guard fires.
@@ -210,6 +221,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects an OFS_DELTA offset that overruns the buffer", func(t *testing.T) {
 		t.Parallel()
+
 		// Read at offset 26 in a 32-byte file: the peek slice is six
 		// bytes. The first byte is type=6 (OFS_DELTA, 0x60); the
 		// remaining five bytes are 0xFF — every byte has the
@@ -238,6 +250,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects an OFS_DELTA offset varint that overflows", func(t *testing.T) {
 		t.Parallel()
+
 		// At offset 12 the peek slice is large enough to hold a full
 		// nine-byte continuation chain. The accumulated offset grows
 		// by ~7 bits per byte, so the eighth iteration produces an
@@ -263,6 +276,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects a REF_DELTA header that overruns the buffer", func(t *testing.T) {
 		t.Parallel()
+
 		// Read the type/size header at offset 15 of a 32-byte file:
 		// the peek slice is 17 bytes. A single 0x70 type byte
 		// (REF_DELTA, size=0) consumes one byte, leaving 16 — short
@@ -287,6 +301,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("rejects reserved object type 5", func(t *testing.T) {
 		t.Parallel()
+
 		// Header byte 0x50 encodes type bits 0b101 = 5, the reserved
 		// type that canonical Git rejects in
 		// [packfile.c::unpack_object_header_buffer].
@@ -306,6 +321,7 @@ func TestPack_ReadHeader(t *testing.T) {
 
 	t.Run("safe under concurrent calls on the same Pack", func(t *testing.T) {
 		t.Parallel()
+
 		// `Pack` is documented as safe for concurrent reads. The
 		// per-call peek scratch comes from a `sync.Pool`, so this
 		// test pins the contract: many goroutines hammering

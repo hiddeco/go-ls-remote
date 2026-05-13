@@ -57,6 +57,7 @@ import (
 //     ls-refs surfaces refs/heads/main from the reftable stack.
 func TestFixtureMatrix(t *testing.T) {
 	t.Parallel()
+
 	t.Run("empty", testMatrixEmpty)
 	t.Run("loose-only", testMatrixLooseOnly)
 	t.Run("packed-only", testMatrixPackedOnly)
@@ -80,6 +81,7 @@ func TestFixtureMatrix(t *testing.T) {
 // the interface methods.
 func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 	t.Helper()
+
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
@@ -113,6 +115,7 @@ func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 
 func testMatrixEmpty(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "empty")
 	c, caps := openMatrixConn(t, gitdir)
 
@@ -141,6 +144,7 @@ func testMatrixEmpty(t *testing.T) {
 
 func testMatrixLooseOnly(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	c, caps := openMatrixConn(t, gitdir)
 	assertHasCap(t, caps, "object-format=sha1")
@@ -162,6 +166,7 @@ func testMatrixLooseOnly(t *testing.T) {
 
 func testMatrixPackedOnly(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "packed-only")
 	c, _ := openMatrixConn(t, gitdir)
 
@@ -181,6 +186,7 @@ func testMatrixPackedOnly(t *testing.T) {
 
 func testMatrixMixed(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "mixed")
 	c, _ := openMatrixConn(t, gitdir)
 
@@ -200,6 +206,7 @@ func testMatrixMixed(t *testing.T) {
 
 func testMatrixUnbornHead(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "unborn-head")
 	c, caps := openMatrixConn(t, gitdir)
 	// The server advertises `ls-refs=unborn` so a v2 client knows the
@@ -230,6 +237,7 @@ func testMatrixUnbornHead(t *testing.T) {
 
 func testMatrixSHA256(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "sha256")
 	_, caps := openMatrixConn(t, gitdir)
 	// The fixture flips `extensions.objectFormat` to `sha256`; the
@@ -243,6 +251,7 @@ func testMatrixSHA256(t *testing.T) {
 
 func testMatrixMidxWithSiblings(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "midx-with-siblings")
 	c, _ := openMatrixConn(t, gitdir)
 
@@ -279,6 +288,7 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 
 func testMatrixWithAlternatesChain(t *testing.T) {
 	t.Parallel()
+
 	// The chain fixture ships three sibling repos (a/, b/, c/) under a
 	// single fixture root with no top-level dotgit/. `MaterializeRepo`
 	// would fail the test on that layout; `MaterializeRepoTree`
@@ -308,6 +318,7 @@ func testMatrixWithAlternatesChain(t *testing.T) {
 
 func testMatrixWithReftableContent(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "with-reftable-content")
 	c, caps := openMatrixConn(t, gitdir)
 	assertHasCap(t, caps, "object-format=sha1")
@@ -332,6 +343,7 @@ func testMatrixWithReftableContent(t *testing.T) {
 // absence) of well-formed ref lines, never on the precise byte stream.
 func dataLines(t *testing.T, rdr *pktline.Reader) []string {
 	t.Helper()
+
 	pkts := readAllPackets(t, rdr)
 	var lines []string
 	for _, p := range pkts {
@@ -347,6 +359,7 @@ func dataLines(t *testing.T, rdr *pktline.Reader) []string {
 // assertions can chain off it without re-scanning.
 func requireRefLine(t *testing.T, lines []string, substr string) string {
 	t.Helper()
+
 	for _, l := range lines {
 		if strings.Contains(l, substr) {
 			return l
@@ -363,6 +376,7 @@ func requireRefLine(t *testing.T, lines []string, substr string) string {
 // payloads.
 func requireDataLine(t *testing.T, lines []string, want string) {
 	t.Helper()
+
 	for _, l := range lines {
 		if strings.TrimRight(l, "\n") == want {
 			return
@@ -380,6 +394,7 @@ func requireDataLine(t *testing.T, lines []string, want string) {
 // the assertion only checks membership.
 func assertHasCap(t *testing.T, caps []string, want string) {
 	t.Helper()
+
 	if slices.Contains(caps, want) {
 		return
 	}

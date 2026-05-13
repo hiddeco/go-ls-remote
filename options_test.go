@@ -19,6 +19,7 @@ func (recordingTracer) OnEvent(trace.Event)              {}
 
 func TestDialConfigZeroValue(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	assert.Nil(t, c.registry,
 		"zero-value registry is nil so Dial can fall back to defaults")
@@ -32,6 +33,7 @@ func TestDialConfigZeroValue(t *testing.T) {
 
 func TestWithTransports(t *testing.T) {
 	t.Parallel()
+
 	reg := transport.NewRegistry()
 
 	var c dialConfig
@@ -43,6 +45,7 @@ func TestWithTransports(t *testing.T) {
 
 func TestWithTransports_Nil(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	WithTransports(nil).applyDial(&c)
 
@@ -52,6 +55,7 @@ func TestWithTransports_Nil(t *testing.T) {
 
 func TestWithTracer(t *testing.T) {
 	t.Parallel()
+
 	tr := recordingTracer{}
 
 	var c dialConfig
@@ -63,6 +67,7 @@ func TestWithTracer(t *testing.T) {
 
 func TestWithTracer_Nil(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	WithTracer(nil).applyDial(&c)
 
@@ -72,6 +77,7 @@ func TestWithTracer_Nil(t *testing.T) {
 
 func TestWithUserAgent(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	WithUserAgent("foo/1.0").applyDial(&c)
 
@@ -80,6 +86,7 @@ func TestWithUserAgent(t *testing.T) {
 
 func TestWithUserAgent_Empty(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	WithUserAgent("").applyDial(&c)
 
@@ -89,6 +96,7 @@ func TestWithUserAgent_Empty(t *testing.T) {
 
 func TestWithProtocol(t *testing.T) {
 	t.Parallel()
+
 	var c dialConfig
 	WithProtocol(ProtocolV2).applyDial(&c)
 
@@ -100,6 +108,7 @@ func TestWithProtocol(t *testing.T) {
 
 func TestWithProtocol_V0(t *testing.T) {
 	t.Parallel()
+
 	// Verify that pinning ProtocolV0 (the zero value of the integer
 	// type) round-trips through the pointer correctly — the whole reason
 	// dialConfig.protocol is a pointer rather than a plain value.
@@ -112,6 +121,7 @@ func TestWithProtocol_V0(t *testing.T) {
 
 func TestOptionComposition(t *testing.T) {
 	t.Parallel()
+
 	// Apply every option to a single config and confirm each took
 	// effect — the realistic call shape inside Dial.
 	reg := transport.NewRegistry()
@@ -137,6 +147,7 @@ func TestOptionComposition(t *testing.T) {
 
 func TestWithProtocol_IndependentPointers(t *testing.T) {
 	t.Parallel()
+
 	// Two separate WithProtocol calls must produce independent storage
 	// — re-applying WithProtocol to a fresh config must not see writes
 	// to a prior config's pointer.

@@ -18,6 +18,7 @@ import (
 // host-specific tempdir.
 func scaffoldAltRepo(t *testing.T, root string) {
 	t.Helper()
+
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "info"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "refs"), 0o755))
@@ -30,6 +31,7 @@ func scaffoldAltRepo(t *testing.T, root string) {
 
 func TestOpenAlternates_NoFile(t *testing.T) {
 	t.Parallel()
+
 	// A repository without `objects/info/alternates` must surface an
 	// empty chain with no error: alternates are optional.
 	root := materializeFixture(t, "empty")
@@ -42,6 +44,7 @@ func TestOpenAlternates_NoFile(t *testing.T) {
 
 func TestOpenAlternates_EmptyFile(t *testing.T) {
 	t.Parallel()
+
 	// An empty alternates file is valid and yields zero entries: the
 	// parser must skip without surfacing a parse error.
 	root := materializeFixture(t, "empty")
@@ -60,6 +63,7 @@ func TestOpenAlternates_EmptyFile(t *testing.T) {
 
 func TestOpenAlternates_CommentsOnly(t *testing.T) {
 	t.Parallel()
+
 	// Lines beginning with `#` are comments and skipped. A file that is
 	// pure comments yields zero entries.
 	root := materializeFixture(t, "empty")
@@ -78,6 +82,7 @@ func TestOpenAlternates_CommentsOnly(t *testing.T) {
 
 func TestOpenAlternates_SingleAbsolutePath(t *testing.T) {
 	t.Parallel()
+
 	// Absolute alternate path: the host-specific tempdir cannot be
 	// committed as a fixture, so build the parent + alternate inline.
 	// The resolved alternate must show up as a *Store[objfmt.SHA1Hash] in the returned
@@ -107,6 +112,7 @@ func TestOpenAlternates_SingleAbsolutePath(t *testing.T) {
 
 func TestOpenAlternates_SingleRelativePath(t *testing.T) {
 	t.Parallel()
+
 	// `with-alternates-relative/main` carries an alternates file
 	// pointing at the sibling `alt` repo via a relative path resolved
 	// against `main/.git/objects/`. After materialization the path
@@ -127,6 +133,7 @@ func TestOpenAlternates_SingleRelativePath(t *testing.T) {
 
 func TestOpenAlternates_QuotedPath(t *testing.T) {
 	t.Parallel()
+
 	// Build a quoted path with a space inside. The unquoter must strip
 	// the surrounding double quotes and the alternate must open against
 	// the literal directory name (`alt store`).
@@ -153,6 +160,7 @@ func TestOpenAlternates_QuotedPath(t *testing.T) {
 
 func TestUnquoteCStyle_BackslashEscapes(t *testing.T) {
 	t.Parallel()
+
 	// Tabletop check that the C-style unquoter handles every escape
 	// canonical Git's [quote.c::unquote_c_style] accepts: the quoted
 	// form must round-trip through the documented runes. Kept as a
@@ -182,6 +190,7 @@ func TestUnquoteCStyle_BackslashEscapes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, ok := unquoteCStyle([]byte(tc.in))
 			require.True(t, ok, "input %q should unquote", tc.in)
 			assert.Equal(t, tc.want, got)
@@ -191,6 +200,7 @@ func TestUnquoteCStyle_BackslashEscapes(t *testing.T) {
 
 func TestUnquoteCStyle_BrokenInputReturnsFalse(t *testing.T) {
 	t.Parallel()
+
 	// Malformed inputs return ok=false so the alternates parser can
 	// fall back to the literal line.
 	bad := []string{
@@ -203,6 +213,7 @@ func TestUnquoteCStyle_BrokenInputReturnsFalse(t *testing.T) {
 	for _, in := range bad {
 		t.Run(in, func(t *testing.T) {
 			t.Parallel()
+
 			_, ok := unquoteCStyle([]byte(in))
 			assert.False(t, ok, "input %q should not unquote", in)
 		})
@@ -211,6 +222,7 @@ func TestUnquoteCStyle_BrokenInputReturnsFalse(t *testing.T) {
 
 func TestOpenAlternates_MultipleEntriesPreserveOrder(t *testing.T) {
 	t.Parallel()
+
 	// Three alternates listed in a stable order; the returned slice
 	// must reflect the same order so callers traversing the chain see
 	// the configured priority.
@@ -251,6 +263,7 @@ func TestOpenAlternates_MultipleEntriesPreserveOrder(t *testing.T) {
 
 func TestOpenAlternates_TransitiveChain(t *testing.T) {
 	t.Parallel()
+
 	// `with-alternates-chain/a` -> b -> c. Opening A surfaces B as its
 	// sole alternate; B's own `s.alternates` carries C. The chain is
 	// per-Store[objfmt.SHA1Hash] rather than flattened into a single slice.
@@ -278,6 +291,7 @@ func TestOpenAlternates_TransitiveChain(t *testing.T) {
 
 func TestOpenAlternates_SelfCycle(t *testing.T) {
 	t.Parallel()
+
 	// `with-alternates-cycle/` lists its own `objects/` directory. The
 	// recursive open re-encounters the parent's canonical gitdir in the
 	// `seen` set and surfaces ErrCorruptObject naming that gitdir.
@@ -292,6 +306,7 @@ func TestOpenAlternates_SelfCycle(t *testing.T) {
 
 func TestOpenAlternates_ChainCycle(t *testing.T) {
 	t.Parallel()
+
 	// `with-alternates-cycle-chain/` is A -> B -> A. Opening A descends
 	// into B, which then re-encounters A's canonical gitdir on its own
 	// alternates lookup. The error must wrap ErrCorruptObject and name
@@ -310,6 +325,7 @@ func TestOpenAlternates_ChainCycle(t *testing.T) {
 
 func TestOpenAlternates_PopulatedOnOpen(t *testing.T) {
 	t.Parallel()
+
 	// End-to-end via the public `Open` entry point: a repo with an
 	// alternate must surface that alternate on `s.alternates` so the
 	// follow-up object-lookup methods can fan out across the chain.
@@ -330,6 +346,7 @@ func TestOpenAlternates_PopulatedOnOpen(t *testing.T) {
 
 func TestOpenAlternates_DiamondDAG(t *testing.T) {
 	t.Parallel()
+
 	// A -> [B, C], B -> D, C -> D. The shared leaf is reachable
 	// through two independent chains; canonical Git silently dedupes
 	// the global source list and we mirror that intent: neither chain
@@ -380,6 +397,7 @@ func TestOpenAlternates_DiamondDAG(t *testing.T) {
 
 func TestOpenAlternates_NonExistentTargetReturnsError(t *testing.T) {
 	t.Parallel()
+
 	// An alternates entry pointing at a path that is not a repository
 	// must surface an error wrapping the recursive `Open` failure with
 	// the alternate's own path for diagnostic context.

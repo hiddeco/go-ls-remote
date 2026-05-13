@@ -28,6 +28,7 @@ import (
 // `*ProtocolError` — the connection never reached the wire.
 func TestDial_invalidURL(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		url  string
@@ -39,6 +40,7 @@ func TestDial_invalidURL(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			s, err := Dial(t.Context(), tc.url)
 			assert.Nil(t, s)
 			require.Error(t, err)
@@ -59,6 +61,7 @@ func TestDial_invalidURL(t *testing.T) {
 // true.
 func TestDial_unsupportedScheme(t *testing.T) {
 	t.Parallel()
+
 	// `ssh://` parses but is not in the default HTTP-only registry.
 	s, err := Dial(t.Context(), "ssh://user@example.com/repo.git")
 	assert.Nil(t, s)
@@ -84,6 +87,7 @@ func TestDial_unsupportedScheme(t *testing.T) {
 // must be redacted before storage on `*ProtocolError.URL`.
 func TestDial_unsupportedScheme_redactsPassword(t *testing.T) {
 	t.Parallel()
+
 	_, err := Dial(t.Context(), "ssh://alice:secret@example.com/repo.git")
 	require.Error(t, err)
 
@@ -102,6 +106,7 @@ func TestDial_unsupportedScheme_redactsPassword(t *testing.T) {
 // separately).
 func TestDial_advertisementHappyPath_V2(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -131,6 +136,7 @@ func TestDial_advertisementHappyPath_V2(t *testing.T) {
 // populates `Session.refs`.
 func TestDial_advertisementHappyPath_V0(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -155,6 +161,7 @@ func TestDial_advertisementHappyPath_V0(t *testing.T) {
 // `errors.Is`.
 func TestDial_versionPin_mismatch(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -181,6 +188,7 @@ func TestDial_versionPin_mismatch(t *testing.T) {
 // dial layer.
 func TestDial_options_passthrough(t *testing.T) {
 	t.Parallel()
+
 	capt := &captureTransport{
 		schemes: []string{"https"},
 		conn: &stubConn{
@@ -222,6 +230,7 @@ func TestDial_options_passthrough(t *testing.T) {
 // (nil tracer, empty user-agent, nil preferred protocol).
 func TestDial_options_defaultsPassthrough(t *testing.T) {
 	t.Parallel()
+
 	capt := &captureTransport{
 		schemes: []string{"https"},
 		conn: &stubConn{
@@ -248,6 +257,7 @@ func TestDial_options_defaultsPassthrough(t *testing.T) {
 // exercised by `TestDial_options_passthrough`.
 func TestDial_defaultRegistryFallback(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -274,6 +284,7 @@ func TestDial_defaultRegistryFallback(t *testing.T) {
 // one via its own error chain.
 func TestDial_transportErrorPreservesSentinels(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -310,6 +321,7 @@ func TestDial_transportErrorPreservesSentinels(t *testing.T) {
 // same path end-to-end through Dial.
 func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
 	t.Parallel()
+
 	const garbage = "this is definitely not a pkt-line stream\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type",
@@ -352,6 +364,7 @@ func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
 // inspect with `errors.As`.
 func TestDial_transportOpenError_genericWrapping(t *testing.T) {
 	t.Parallel()
+
 	sentinel := errors.New("captureTransport: synthetic open failure")
 	capt := &captureTransport{
 		schemes: []string{"https"},
@@ -378,6 +391,7 @@ func TestDial_transportOpenError_genericWrapping(t *testing.T) {
 // the caller never sees a leaked half-open connection.
 func TestDial_advertisementError_closesConn(t *testing.T) {
 	t.Parallel()
+
 	closed := false
 	// An empty pkt-line stream causes ParseAdvertisement to surface
 	// `io.ErrUnexpectedEOF`, which is the cleanest way to drive the
@@ -406,6 +420,7 @@ func TestDial_advertisementError_closesConn(t *testing.T) {
 // is a sanity test, not a behavioural one.
 func TestSession_zeroValue(t *testing.T) {
 	t.Parallel()
+
 	var s Session
 	assert.Nil(t, s.conn)
 	assert.Empty(t, s.url)
@@ -422,6 +437,7 @@ func TestSession_zeroValue(t *testing.T) {
 // off a wrapping `*httpt.ProtocolError`) still get there.
 func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name       string
 		open       error
@@ -435,6 +451,7 @@ func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			capt := &captureTransport{
 				schemes: []string{"https"},
 				err:     tc.open,
@@ -468,6 +485,7 @@ func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
 // path failed silently.
 func TestDial_bridgeOpenError_fileNotFound(t *testing.T) {
 	t.Parallel()
+
 	dir := t.TempDir() // empty — not a Git repository
 	reg := transport.NewRegistry(filet.New())
 
@@ -493,6 +511,7 @@ func TestDial_bridgeOpenError_fileNotFound(t *testing.T) {
 // what makes the bridge work for third-party transports.
 func TestDial_bridgeOpenError_userTransport(t *testing.T) {
 	t.Parallel()
+
 	userSentinel := &transport.SchemeError{
 		Parent: transport.ErrNotFound,
 		Msg:    "transport/ssh: repository not found",
@@ -519,6 +538,7 @@ func TestDial_bridgeOpenError_userTransport(t *testing.T) {
 // sentinel and that an unknown error passes through unchanged.
 func Test_bridgeWireSentinel_joinsKnownSentinels(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name   string
 		in     error
@@ -535,6 +555,7 @@ func Test_bridgeWireSentinel_joinsKnownSentinels(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got := bridgeWireSentinel(tc.in)
 			require.ErrorIs(t, got, tc.in, "original cause must remain reachable")
 			if tc.public != nil {
@@ -569,6 +590,7 @@ func (s stubTransport) Open(_ context.Context, _ *transport.URL,
 // lifts that excerpt onto the outer `*lsremote.ProtocolError.Server`.
 func TestPopulateFromTransportError_SSH(t *testing.T) {
 	t.Parallel()
+
 	want := "ssh: handshake failed: server rejected every offered method"
 	stub := stubTransport{
 		schemes: []string{"ssh"},
@@ -597,6 +619,7 @@ func TestPopulateFromTransportError_SSH(t *testing.T) {
 // `file://` transport's corrupt-object branch (transport/file/open.go).
 func TestPopulateFromTransportError_File(t *testing.T) {
 	t.Parallel()
+
 	want := "objstore: corrupt object 0123abcd..."
 	stub := stubTransport{
 		schemes: []string{"file"},

@@ -38,12 +38,15 @@ import (
 // both axes.
 func TestRefs_AcrossAllTransports(t *testing.T) {
 	t.Parallel()
+
 	for _, entry := range inttest.Entries() {
 		t.Run(entry.Name, func(t *testing.T) {
 			t.Parallel()
+
 			for _, tp := range transports() {
 				t.Run(tp.name, func(t *testing.T) {
 					t.Parallel()
+
 					runEquivalence(t, entry, tp)
 				})
 			}
@@ -130,6 +133,7 @@ func runEquivalence(t *testing.T, entry inttest.Entry, tp transportSetup) {
 // any iterator-yielded error.
 func collectRefs(t *testing.T, s *lsremote.Session, args lsremote.RefsRequest) []lsremote.Ref {
 	t.Helper()
+
 	seq, err := s.Refs(t.Context(), args)
 	require.NoError(t, err)
 	var refs []lsremote.Ref
@@ -160,6 +164,7 @@ func checkDefaultBranch(ctx context.Context, t *testing.T,
 	ep endpoint, entry inttest.Entry, opts []lsremote.Option,
 ) {
 	t.Helper()
+
 	got, err := lsremote.DefaultBranch(ctx, ep.url, opts...)
 	if entry.Detached {
 		require.Error(t, err, "%s: detached HEAD must error", entry.Name)
@@ -207,6 +212,7 @@ func checkPrefixHelpers(ctx context.Context, t *testing.T,
 // iterator-yielded error as a test failure.
 func drain(t *testing.T, seq func(yield func(lsremote.Ref, error) bool)) []lsremote.Ref {
 	t.Helper()
+
 	var refs []lsremote.Ref
 	for ref, err := range seq {
 		require.NoError(t, err)
@@ -249,6 +255,7 @@ func transports() []transportSetup {
 // a registry wired with the default [httpt.Transport].
 func startHTTP(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 	t.Helper()
+
 	base := openServer(t, entry, gitdir, func(s any) string {
 		switch store := s.(type) {
 		case *objstore.Store[objfmt.SHA1Hash]:
@@ -270,6 +277,7 @@ func startHTTP(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 // [httpt.Transport] trusts the harness's self-signed certificate.
 func startHTTPS(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 	t.Helper()
+
 	var (
 		baseURL string
 		client  *http.Client
@@ -296,6 +304,7 @@ func startHTTPS(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 // in-memory ed25519 signer (the harness accepts any pubkey).
 func startSSH(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 	t.Helper()
+
 	var srv *inttest.SSHServer
 	openServer(t, entry, gitdir, func(s any) string {
 		switch store := s.(type) {
@@ -328,6 +337,7 @@ func startSSH(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 // with the default [gitt.Transport].
 func startGit(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 	t.Helper()
+
 	var url string
 	openServer(t, entry, gitdir, func(s any) string {
 		switch store := s.(type) {
@@ -352,6 +362,7 @@ func startGit(t *testing.T, entry inttest.Entry, gitdir string) endpoint {
 // nothing beyond URL construction.
 func startFile(t *testing.T, _ inttest.Entry, gitdir string) endpoint {
 	t.Helper()
+
 	return endpoint{
 		url:      "file://" + gitdir,
 		registry: transport.NewRegistry(filet.New()),
@@ -373,6 +384,7 @@ func openServer(t *testing.T, entry inttest.Entry, gitdir string,
 	fn func(store any) string,
 ) string {
 	t.Helper()
+
 	switch entry.ObjectFormat {
 	case lsremote.ObjectFormatSHA1:
 		store, err := objstore.Open[objfmt.SHA1Hash](gitdir)

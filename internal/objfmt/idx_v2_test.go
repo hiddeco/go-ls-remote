@@ -29,6 +29,7 @@ type offsetEntry struct {
 // without reimplementing pack parsing.
 func readOffsets(t *testing.T, path string) []offsetEntry {
 	t.Helper()
+
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
@@ -76,6 +77,7 @@ func readOffsets(t *testing.T, path string) []offsetEntry {
 // [Documentation/gitformat-pack.adoc lines 285-319]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L285-L319
 func writeV2Idx(t testing.TB, dir string, entries []v2Entry) string {
 	t.Helper()
+
 	// Sort by oid so the binary search invariant holds.
 	for i := 1; i < len(entries); i++ {
 		for j := i; j > 0 && bytes.Compare(entries[j-1].oid[:], entries[j].oid[:]) > 0; j-- {
@@ -143,8 +145,10 @@ type v2Entry struct {
 
 func TestIdx_FindOffset_v2(t *testing.T) {
 	t.Parallel()
+
 	t.Run("three-objects SHA-1 offsets match verify-pack", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -161,6 +165,7 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 
 	t.Run("sha256-three offsets match verify-pack", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -177,6 +182,7 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -190,6 +196,7 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 
 	t.Run("offset > 2 GiB resolves via overflow table", func(t *testing.T) {
 		t.Parallel()
+
 		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -216,8 +223,10 @@ func TestIdx_FindOffset_v2(t *testing.T) {
 
 func TestIdx_FindCRC32(t *testing.T) {
 	t.Parallel()
+
 	t.Run("returns the recorded CRC for present oids", func(t *testing.T) {
 		t.Parallel()
+
 		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -242,6 +251,7 @@ func TestIdx_FindCRC32(t *testing.T) {
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -255,6 +265,7 @@ func TestIdx_FindCRC32(t *testing.T) {
 
 	t.Run("v1 idx returns ok=false for every lookup", func(t *testing.T) {
 		t.Parallel()
+
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
@@ -271,8 +282,10 @@ func TestIdx_FindCRC32(t *testing.T) {
 
 func TestIdx_PackChecksum(t *testing.T) {
 	t.Parallel()
+
 	t.Run("matches the trailer of the paired pack", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -297,8 +310,10 @@ func TestIdx_PackChecksum(t *testing.T) {
 
 func TestIdx_VerifyChecksum(t *testing.T) {
 	t.Parallel()
+
 	t.Run("intact v2 SHA-1 idx verifies", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -307,6 +322,7 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 
 	t.Run("intact v2 SHA-256 idx verifies", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -315,6 +331,7 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 
 	t.Run("intact v1 idx verifies", func(t *testing.T) {
 		t.Parallel()
+
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
@@ -326,6 +343,7 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 
 	t.Run("a flipped byte fails verification", func(t *testing.T) {
 		t.Parallel()
+
 		// Copy the fixture so the original on-disk file is untouched.
 		dst := filepath.Join(t.TempDir(), "three-objects.idx")
 		src, err := os.Open(idxFixture(t, "three-objects.idx"))
@@ -361,8 +379,10 @@ func TestIdx_VerifyChecksum(t *testing.T) {
 
 func TestIdx_OffsetAfter(t *testing.T) {
 	t.Parallel()
+
 	t.Run("returns next-greater offset across the table", func(t *testing.T) {
 		t.Parallel()
+
 		// `three-objects.idx` records three entries at offsets 12, 131,
 		// and 179 (per the sidecar). OffsetAfter must return the next
 		// strictly-larger value regardless of OID-sort order, and report
@@ -391,6 +411,7 @@ func TestIdx_OffsetAfter(t *testing.T) {
 
 	t.Run("resolves through the v2 large-offset overflow", func(t *testing.T) {
 		t.Parallel()
+
 		// One entry sits in the small-offset slot, one spills into the
 		// 64-bit overflow table. OffsetAfter must walk both representations
 		// and pick the next-larger value across the unified offset space.
@@ -417,6 +438,7 @@ func TestIdx_OffsetAfter(t *testing.T) {
 
 	t.Run("hand-rolled v1 idx walks the offset slot", func(t *testing.T) {
 		t.Parallel()
+
 		// v1 has no overflow table; the offset slot is 32-bit and lives at
 		// the head of every record. The helper accepts the same shape used
 		// elsewhere; assert next-greater across two stable values.

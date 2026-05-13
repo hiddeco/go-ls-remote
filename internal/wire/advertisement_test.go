@@ -26,6 +26,7 @@ type packet struct {
 
 func buildAdvertisement(t *testing.T, pkts ...packet) *pktline.Reader {
 	t.Helper()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	for _, p := range pkts {
@@ -45,12 +46,14 @@ func buildAdvertisement(t *testing.T, pkts ...packet) *pktline.Reader {
 
 func TestParseAdvertisement(t *testing.T) {
 	t.Parallel()
+
 	v0 := transport.ProtocolV0
 	v1 := transport.ProtocolV1
 	v2 := transport.ProtocolV2
 
 	t.Run("v2 happy path collects caps until flush", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 2\n")},
 			packet{data: []byte("agent=git/2.45.0\n")},
@@ -70,6 +73,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("v0 flush only yields empty advertisement", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t, packet{kind: pktline.Flush})
 		ad, err := ParseAdvertisement(r, nil)
 		require.NoError(t, err)
@@ -80,6 +84,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("v0 data packet is the first ref line", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("0123456789abcdef0123456789abcdef01234567 HEAD\x00agent=git\n")},
 			packet{kind: pktline.Flush},
@@ -91,6 +96,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("v1 line then data is v1", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 1\n")},
 			packet{data: []byte("0123456789abcdef0123456789abcdef01234567 HEAD\x00agent=git\n")},
@@ -103,6 +109,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("explicit version 0 is rejected", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 0\n")},
 			packet{kind: pktline.Flush},
@@ -115,6 +122,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("unknown version digit is rejected", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 7\n")},
 			packet{kind: pktline.Flush},
@@ -127,6 +135,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("unknown version text is rejected", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version foo\n")},
 			packet{kind: pktline.Flush},
@@ -139,6 +148,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("truncated input surfaces EOF", func(t *testing.T) {
 		t.Parallel()
+
 		r := pktline.NewReader(bytes.NewReader(nil))
 		_, err := ParseAdvertisement(r, nil)
 		require.Error(t, err)
@@ -149,6 +159,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("want v2 matches server v2", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 2\n")},
 			packet{kind: pktline.Flush},
@@ -160,6 +171,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("want v2 mismatches server v0", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t, packet{kind: pktline.Flush})
 		_, err := ParseAdvertisement(r, &v2)
 		require.Error(t, err)
@@ -169,6 +181,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("want v0 matches server v0", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t, packet{kind: pktline.Flush})
 		ad, err := ParseAdvertisement(r, &v0)
 		require.NoError(t, err)
@@ -177,6 +190,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("want v1 mismatches server v2", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 2\n")},
 			packet{kind: pktline.Flush},
@@ -189,6 +203,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("nil want accepts any negotiated version", func(t *testing.T) {
 		t.Parallel()
+
 		// Repeats the v2 happy path with nil want for explicit clarity.
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 2\n")},
@@ -201,6 +216,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 	t.Run("CR before LF survives both v0 and v2 framing", func(t *testing.T) {
 		t.Parallel()
+
 		// Both the v0/v1 first-ref-line parser and the v2 capability
 		// pkt-line reader strip a trailing LF only — a payload ending in
 		// "\r\n" keeps the CR attached to the last token after framing.
@@ -222,6 +238,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 		t.Run("v0 first ref line", func(t *testing.T) {
 			t.Parallel()
+
 			r := buildAdvertisement(t,
 				packet{data: []byte(
 					"0123456789abcdef0123456789abcdef01234567" +
@@ -241,6 +258,7 @@ func TestParseAdvertisement(t *testing.T) {
 
 		t.Run("v2 capability pkt-line", func(t *testing.T) {
 			t.Parallel()
+
 			r := buildAdvertisement(t,
 				packet{data: []byte("version 2\n")},
 				packet{data: []byte(capPayload)},

@@ -26,9 +26,11 @@ import (
 // transport-level Conn would surface on both paths.
 func TestSession_ConcurrentHTTP(t *testing.T) {
 	t.Parallel()
+
 	for _, name := range []string{"http", "https"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			runHTTPConcurrent(t, lookupTransport(t, name))
 		})
 	}
@@ -43,9 +45,11 @@ func TestSession_ConcurrentHTTP(t *testing.T) {
 // regression that broke the serial path would surface here.
 func TestSession_SerialisedNonHTTP(t *testing.T) {
 	t.Parallel()
+
 	for _, name := range []string{"ssh", "git", "file"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			runSerialisedConcurrent(t, lookupTransport(t, name))
 		})
 	}
@@ -57,6 +61,7 @@ func TestSession_SerialisedNonHTTP(t *testing.T) {
 // in lockstep without duplicating the harness boilerplate.
 func lookupTransport(t *testing.T, name string) transportSetup {
 	t.Helper()
+
 	for _, tp := range transports() {
 		if tp.name == name {
 			return tp
@@ -71,6 +76,7 @@ func lookupTransport(t *testing.T, name string) transportSetup {
 // declares, which the test exercises through [Session.ObjectInfo].
 func concurrentEntry(t *testing.T) inttest.Entry {
 	t.Helper()
+
 	for _, e := range inttest.Entries() {
 		if e.Name == "loose-objects" {
 			return e

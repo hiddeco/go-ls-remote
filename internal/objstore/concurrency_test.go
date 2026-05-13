@@ -48,6 +48,7 @@ import (
 // the contention window the race detector gets to inspect.
 func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 	t.Parallel()
+
 	s := openConcurrencyFixture(t)
 
 	// Snapshot expectations once on the orchestrator so the worker loop
@@ -229,6 +230,7 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 // this test into a flake.
 func snapshotRefs(t *testing.T, s *Store[objfmt.SHA1Hash]) map[string]objfmt.SHA1Hash {
 	t.Helper()
+
 	out := make(map[string]objfmt.SHA1Hash)
 	for entry, err := range s.IterRefs() {
 		require.NoError(t, err)
@@ -244,6 +246,7 @@ func snapshotRefs(t *testing.T, s *Store[objfmt.SHA1Hash]) map[string]objfmt.SHA
 // detector to keep inspecting.
 func drainRefs(t *testing.T, s *Store[objfmt.SHA1Hash]) map[string]objfmt.SHA1Hash {
 	t.Helper()
+
 	out := make(map[string]objfmt.SHA1Hash)
 	for entry, err := range s.IterRefs() {
 		if err != nil {
@@ -354,6 +357,7 @@ func openConcurrencyFixture(t *testing.T) *Store[objfmt.SHA1Hash] {
 // dstObjects, creating the fanout subdirectory on demand.
 func copyLooseObject(t *testing.T, srcObjects, dstObjects, hex string) {
 	t.Helper()
+
 	srcPath := filepath.Join(srcObjects, hex[:2], hex[2:])
 	dstDir := filepath.Join(dstObjects, hex[:2])
 	require.NoError(t, os.MkdirAll(dstDir, 0o755))
@@ -366,6 +370,7 @@ func copyLooseObject(t *testing.T, srcObjects, dstObjects, hex string) {
 // created.
 func copyFile(t *testing.T, src, dst string) {
 	t.Helper()
+
 	in, err := os.Open(src)
 	require.NoError(t, err)
 	defer func() { _ = in.Close() }()

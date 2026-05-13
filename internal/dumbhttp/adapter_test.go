@@ -27,6 +27,7 @@ const (
 
 func TestNewAdapter_TypicalRefs(t *testing.T) {
 	t.Parallel()
+
 	body := "" +
 		oidMaint + "\trefs/heads/maint\n" +
 		oidMaster + "\trefs/heads/master\n" +
@@ -49,6 +50,7 @@ func TestNewAdapter_TypicalRefs(t *testing.T) {
 
 func TestNewAdapter_EmptyBody(t *testing.T) {
 	t.Parallel()
+
 	for _, tc := range []struct {
 		name string
 		body string
@@ -58,6 +60,7 @@ func TestNewAdapter_EmptyBody(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			pr := dumbhttp.NewAdapter(strings.NewReader(tc.body))
 			ad, err := wire.ParseAdvertisement(pr, nil)
 			require.NoError(t, err)
@@ -71,6 +74,7 @@ func TestNewAdapter_EmptyBody(t *testing.T) {
 
 func TestNewAdapter_PeeledTagOnFirstRef(t *testing.T) {
 	t.Parallel()
+
 	// First ref is an annotated tag whose peel line follows immediately.
 	// The adapter must emit the main line with the NUL/no-cap marker,
 	// then the peel as a subsequent ref pkt-line.
@@ -90,6 +94,7 @@ func TestNewAdapter_PeeledTagOnFirstRef(t *testing.T) {
 
 func TestNewAdapter_SpaceSeparatedTolerance(t *testing.T) {
 	t.Parallel()
+
 	// Some real-world dumb servers use a single space rather than the
 	// HTAB the spec mandates. The adapter falls back to whitespace
 	// splitting so the wire layer still receives a valid v0 stream.
@@ -108,6 +113,7 @@ func TestNewAdapter_SpaceSeparatedTolerance(t *testing.T) {
 
 func TestNewAdapter_MalformedLine(t *testing.T) {
 	t.Parallel()
+
 	// A line with only an OID (no refname) is malformed. Reading the
 	// synthesised pkt-line stream must surface an error wrapping
 	// [dumbhttp.ErrMalformedRefLine].
@@ -131,6 +137,7 @@ func TestNewAdapter_MalformedLine(t *testing.T) {
 
 func TestNewAdapter_OverlongRefLine(t *testing.T) {
 	t.Parallel()
+
 	// Construct a ref record whose `<oid> <SP> <refname>` payload
 	// exceeds the synthesis cap by one byte. The adapter must refuse
 	// it before encodePktLine wraps the 4-byte length prefix; the
@@ -166,6 +173,7 @@ func TestNewAdapter_OverlongRefLine(t *testing.T) {
 
 func TestNewAdapter_RefLineExceedsBufioCap(t *testing.T) {
 	t.Parallel()
+
 	// `bufio.Scanner`'s default `MaxScanTokenSize` is 64 KiB; a single
 	// line longer than that surfaces as `bufio.ErrTooLong` from the
 	// scanner before the adapter's `maxRefLineBytes` check fires.
@@ -194,6 +202,7 @@ func TestNewAdapter_RefLineExceedsBufioCap(t *testing.T) {
 
 func TestNewAdapter_BlankAndCommentLines(t *testing.T) {
 	t.Parallel()
+
 	body := "" +
 		"\n" +
 		"# a server-side comment\n" +
@@ -213,6 +222,7 @@ func TestNewAdapter_BlankAndCommentLines(t *testing.T) {
 
 func TestNewAdapter_TrailingCR(t *testing.T) {
 	t.Parallel()
+
 	// CRLF line endings — common from servers running on Windows or
 	// after a charset conversion. Trailing CR must be trimmed.
 	body := "" +
@@ -254,6 +264,7 @@ func (e *errReader) Read(p []byte) (int, error) {
 
 func TestNewAdapter_ReadErrorPropagation(t *testing.T) {
 	t.Parallel()
+
 	// One complete ref line followed by a hard read error. After the
 	// first synthesized pkt-line is consumed, the next ReadPacket call
 	// must surface errSentinel via errors.Is.

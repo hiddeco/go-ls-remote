@@ -33,9 +33,11 @@ import (
 // that omit it.
 func TestProtocolVersion(t *testing.T) {
 	t.Parallel()
+
 	for _, p := range Providers {
 		t.Run(p.Name, func(t *testing.T) {
 			t.Parallel()
+
 			p.skipIfOffline(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()

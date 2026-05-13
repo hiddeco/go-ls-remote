@@ -28,6 +28,7 @@ import (
 // [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 func openStoreFromFixture(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
@@ -42,6 +43,7 @@ func openStoreFromFixture(t *testing.T, name string) *objstore.Store[objfmt.SHA1
 // the SHA-256 path is exercised by exactly two tests.
 func openStoreFromFixture256(t *testing.T, name string) *objstore.Store[objfmt.SHA256Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
@@ -64,6 +66,7 @@ func openStoreFromFixture256(t *testing.T, name string) *objstore.Store[objfmt.S
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0EmptyRepoPlaceholder(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -87,6 +90,7 @@ func TestServe_V0EmptyRepoPlaceholder(t *testing.T) {
 // regardless of the placeholder ref's name.
 func TestServe_V0UnbornHeadPlaceholder(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "unborn-head")
 
 	got := runAdvertise(t, store, Options{
@@ -108,6 +112,7 @@ func TestServe_V0UnbornHeadPlaceholder(t *testing.T) {
 // [upload-pack.c:1262]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1262
 func TestServe_V0DefaultsAgent(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -129,6 +134,7 @@ func TestServe_V0DefaultsAgent(t *testing.T) {
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0DetachedHead(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "detached-head")
 
 	got := runAdvertise(t, store, Options{
@@ -171,6 +177,7 @@ func TestServe_V0DetachedHead(t *testing.T) {
 // [upload-pack.c:1268-1270]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1268-L1270
 func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	got := runAdvertise(t, store, Options{
@@ -211,6 +218,7 @@ func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 // [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
 func TestServe_V0SortedRefs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "mixed")
 
 	got := runAdvertise(t, store, Options{
@@ -275,6 +283,7 @@ func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.St
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0UnbornHeadWithStrayRefs(t *testing.T) {
 	t.Parallel()
+
 	strayOID := strings.Repeat("e", 40)
 	store := buildUnbornHeadStrayRefsFixture(t, strayOID)
 

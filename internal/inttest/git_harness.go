@@ -62,7 +62,7 @@ func NewGitServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string 
 	t.Helper()
 
 	var lc net.ListenConfig
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("inttest.NewGitServer: listen: %v", err)
 	}
@@ -161,7 +161,7 @@ func (s *gitServer) handle(t testing.TB, conn net.Conn) {
 		return
 	}
 
-	if err := s.serve(context.Background(), r, w); err != nil {
+	if err := s.serve(t.Context(), r, w); err != nil {
 		if !isGitClientHangupError(err) {
 			t.Errorf("inttest.NewGitServer: server.Serve returned %v", err)
 		}

@@ -9,8 +9,10 @@ import (
 
 func Test_decodeVarint(t *testing.T) {
 	t.Parallel()
+
 	t.Run("known_values", func(t *testing.T) {
 		t.Parallel()
+
 		// Encodings hand-derived from the canonical formula in
 		// [reftable.adoc § Varint encoding]:
 		//
@@ -43,6 +45,7 @@ func Test_decodeVarint(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
+
 				got, n, err := decodeVarint(tc.input)
 				require.NoError(t, err)
 				assert.Equal(t, tc.want, got)
@@ -53,6 +56,7 @@ func Test_decodeVarint(t *testing.T) {
 
 	t.Run("empty_buffer_rejected", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := decodeVarint(nil)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrTruncatedRecord, "want ErrTruncatedRecord, got %v", err)
@@ -60,6 +64,7 @@ func Test_decodeVarint(t *testing.T) {
 
 	t.Run("truncated_continuation", func(t *testing.T) {
 		t.Parallel()
+
 		// 0x80 sets the continuation bit but no further byte follows.
 		_, _, err := decodeVarint([]byte{0x80})
 		require.Error(t, err)
@@ -68,6 +73,7 @@ func Test_decodeVarint(t *testing.T) {
 
 	t.Run("overflow_eleven_bytes", func(t *testing.T) {
 		t.Parallel()
+
 		// Eleven bytes with the high bit on every byte: a malformed
 		// stream that would never terminate. 11 > varintMaxBytes.
 		buf := []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00}
@@ -78,6 +84,7 @@ func Test_decodeVarint(t *testing.T) {
 
 	t.Run("value_overflow", func(t *testing.T) {
 		t.Parallel()
+
 		// Ten 0xff continuation bytes terminated by 0x7f yields a
 		// running value that steps past uint64; canonical Git rejects
 		// this branch via the same shift check.

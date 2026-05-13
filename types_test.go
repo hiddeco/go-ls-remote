@@ -11,8 +11,10 @@ import (
 
 func TestRef(t *testing.T) {
 	t.Parallel()
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
+
 		var r Ref
 		assert.Empty(t, r.Name)
 		assert.Empty(t, r.Hash)
@@ -22,6 +24,7 @@ func TestRef(t *testing.T) {
 
 	t.Run("populated symref with peeled tag", func(t *testing.T) {
 		t.Parallel()
+
 		r := Ref{
 			Name:   "refs/tags/v1.0.0",
 			Hash:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -35,6 +38,7 @@ func TestRef(t *testing.T) {
 
 	t.Run("populated HEAD symref", func(t *testing.T) {
 		t.Parallel()
+
 		r := Ref{
 			Name:   "HEAD",
 			Hash:   "cccccccccccccccccccccccccccccccccccccccc",
@@ -49,8 +53,10 @@ func TestRef(t *testing.T) {
 
 func TestObjectInfo(t *testing.T) {
 	t.Parallel()
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
+
 		var o ObjectInfo
 		assert.Empty(t, o.Hash)
 		assert.Equal(t, int64(0), o.Size)
@@ -58,6 +64,7 @@ func TestObjectInfo(t *testing.T) {
 
 	t.Run("size sentinel for not requested", func(t *testing.T) {
 		t.Parallel()
+
 		o := ObjectInfo{
 			Hash: "dddddddddddddddddddddddddddddddddddddddd",
 			Size: -1,
@@ -70,8 +77,10 @@ func TestObjectInfo(t *testing.T) {
 
 func TestSymref(t *testing.T) {
 	t.Parallel()
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
+
 		var s Symref
 		assert.Empty(t, s.Name)
 		assert.Empty(t, s.Target)
@@ -79,6 +88,7 @@ func TestSymref(t *testing.T) {
 
 	t.Run("HEAD pointing at main", func(t *testing.T) {
 		t.Parallel()
+
 		s := Symref{Name: "HEAD", Target: "refs/heads/main"}
 		assert.Equal(t, "HEAD", s.Name)
 		assert.Equal(t, "refs/heads/main", s.Target)
@@ -87,6 +97,7 @@ func TestSymref(t *testing.T) {
 
 func TestObjectFormat(t *testing.T) {
 	t.Parallel()
+
 	assert.Equal(t, ObjectFormatSHA1, ObjectFormat("sha1"))
 	assert.Equal(t, ObjectFormatSHA256, ObjectFormat("sha256"))
 	assert.Equal(t, "sha1", string(ObjectFormatSHA1))
@@ -95,8 +106,10 @@ func TestObjectFormat(t *testing.T) {
 
 func TestCapabilities(t *testing.T) {
 	t.Parallel()
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
+
 		var c Capabilities
 		assert.Equal(t, ProtocolVersion(0), c.Version)
 		assert.Empty(t, c.Agent)
@@ -110,12 +123,14 @@ func TestCapabilities(t *testing.T) {
 
 	t.Run("nil Raw read returns nil slice", func(t *testing.T) {
 		t.Parallel()
+
 		var c Capabilities
 		assert.Nil(t, c.Raw["agent"])
 	})
 
 	t.Run("Raw preserves repeated capability values", func(t *testing.T) {
 		t.Parallel()
+
 		c := Capabilities{
 			Raw: map[string][]string{
 				"symref": {"HEAD:refs/heads/main", "refs/remotes/origin/HEAD:refs/heads/main"},
@@ -128,6 +143,7 @@ func TestCapabilities(t *testing.T) {
 
 	t.Run("populated v2 capability set", func(t *testing.T) {
 		t.Parallel()
+
 		c := Capabilities{
 			Version:        ProtocolV2,
 			Agent:          "git/2.45.0",
@@ -148,6 +164,7 @@ func TestCapabilities(t *testing.T) {
 
 	t.Run("populated v0 symrefs", func(t *testing.T) {
 		t.Parallel()
+
 		c := Capabilities{
 			Version: ProtocolV0,
 			Symrefs: []Symref{
@@ -168,8 +185,10 @@ func TestCapabilities(t *testing.T) {
 // transport package defines.
 func TestProtocolVersionAlias(t *testing.T) {
 	t.Parallel()
+
 	t.Run("constants are equal across packages", func(t *testing.T) {
 		t.Parallel()
+
 		assert.Equal(t, transport.ProtocolV0, ProtocolV0)
 		assert.Equal(t, transport.ProtocolV1, ProtocolV1)
 		assert.Equal(t, transport.ProtocolV2, ProtocolV2)
@@ -177,6 +196,7 @@ func TestProtocolVersionAlias(t *testing.T) {
 
 	t.Run("alias values are assignable without conversion", func(t *testing.T) {
 		t.Parallel()
+
 		// The assignments compile only if ProtocolVersion is a type
 		// alias (not a distinct named type): no explicit conversion
 		// is performed in either direction. The explicit type
@@ -189,6 +209,7 @@ func TestProtocolVersionAlias(t *testing.T) {
 
 	t.Run("String formatting is inherited from transport", func(t *testing.T) {
 		t.Parallel()
+
 		assert.Equal(t, "v2", ProtocolV2.String())
 	})
 }

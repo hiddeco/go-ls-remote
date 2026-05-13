@@ -82,6 +82,7 @@ type Entry struct {
 // `t.TempDir()` root); pass it directly to `objstore.Open`.
 func (e Entry) Materialize(t testing.TB) string {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, e.Name)
 	require.NoError(t, ensurePackDir(gitdir))
 	return gitdir
@@ -133,6 +134,7 @@ func Entries() []Entry {
 // each call site.
 func FixturesRoot(t testing.TB) string {
 	t.Helper()
+
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed; package layout changed?")
 	// `file` is `<module>/internal/inttest/matrix.go`; walk up to the

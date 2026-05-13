@@ -46,6 +46,7 @@ func buildLSRefsRequest(argLines []string) []byte {
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_NoArgs(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -60,6 +61,7 @@ func TestLSRefs_Empty_NoArgs(t *testing.T) {
 // [ls-refs.c:136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L136
 func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"unborn\n"}))
@@ -76,6 +78,7 @@ func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -92,6 +95,7 @@ func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
 // [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 func TestLSRefs_Empty_UnbornSymrefs(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	req := buildLSRefsRequest([]string{"unborn\n", "symrefs\n"})
@@ -108,6 +112,7 @@ func TestLSRefs_Empty_UnbornSymrefs(t *testing.T) {
 // refname per ref. HEAD's OID equals the tip of refs/heads/main.
 func TestLSRefs_PackedRefsFullyPeeled_NoArgs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -131,6 +136,7 @@ func TestLSRefs_PackedRefsFullyPeeled_NoArgs(t *testing.T) {
 // [ls-refs.c:111-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L111-L115
 func TestLSRefs_PackedRefsFullyPeeled_Peel(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"peel\n"}))
@@ -154,6 +160,7 @@ func TestLSRefs_PackedRefsFullyPeeled_Peel(t *testing.T) {
 // comment on `writeLSRefsResponse`).
 func TestLSRefs_PackedRefsFullyPeeled_Symrefs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -176,6 +183,7 @@ func TestLSRefs_PackedRefsFullyPeeled_Symrefs(t *testing.T) {
 // [ls-refs.c:95-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95-L115
 func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{"peel\n", "symrefs\n"})
@@ -201,6 +209,7 @@ func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
 // [ls-refs.c:54-67]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L54-L67
 func TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{"ref-prefix refs/tags/\n"})
@@ -220,6 +229,7 @@ func TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix(t *testing.T) {
 // `refs/tags/v1`.
 func TestLSRefs_PackedRefsFullyPeeled_TwoPrefixes(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{
@@ -243,6 +253,7 @@ func TestLSRefs_PackedRefsFullyPeeled_TwoPrefixes(t *testing.T) {
 // it as a normal ref. There are no other refs in this fixture.
 func TestLSRefs_DetachedHead_NoArgs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "detached-head")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -261,6 +272,7 @@ func TestLSRefs_DetachedHead_NoArgs(t *testing.T) {
 // [ls-refs.c:95]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95
 func TestLSRefs_DetachedHead_Symrefs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "detached-head")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -279,6 +291,7 @@ func TestLSRefs_DetachedHead_Symrefs(t *testing.T) {
 // `refs/heads/main`.
 func TestLSRefs_Mixed_LooseOverridesPacked(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "mixed")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -300,6 +313,7 @@ func TestLSRefs_Mixed_LooseOverridesPacked(t *testing.T) {
 // symbolic HEAD pointing at refs/heads/main.
 func TestLSRefs_SHA256_Empty(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture256(t, "sha256")
 
 	req := buildLSRefsRequest([]string{"unborn\n", "symrefs\n"})
@@ -317,6 +331,7 @@ func TestLSRefs_SHA256_Empty(t *testing.T) {
 // backend and the sha1 OID hex length.
 func TestLSRefs_Reftable_Symrefs(t *testing.T) {
 	t.Parallel()
+
 	store := openStoreFromFixture(t, "with-reftable-content")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -336,6 +351,7 @@ func TestLSRefs_Reftable_Symrefs(t *testing.T) {
 // [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestLSRefs_UnknownArg(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"blah\n"}))

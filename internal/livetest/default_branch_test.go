@@ -25,6 +25,7 @@ import (
 // expectation would convert a benign rename into a test failure.
 func TestDefaultBranch(t *testing.T) {
 	t.Parallel()
+
 	forEachProviderMode(t, func(t *testing.T, p Provider, m authMode, ctx context.Context) {
 		branch, err := lsremote.DefaultBranch(ctx, m.url, m.options...)
 		require.NoErrorf(t, err,

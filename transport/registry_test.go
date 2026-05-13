@@ -17,6 +17,7 @@ func makeFake(id string, schemes ...string) fakeTransport {
 
 func TestRegistry_LookupHitAndMiss(t *testing.T) {
 	t.Parallel()
+
 	r := NewRegistry(makeFake("only", "fake"))
 
 	got, ok := r.Lookup("fake")
@@ -29,12 +30,14 @@ func TestRegistry_LookupHitAndMiss(t *testing.T) {
 
 func TestRegistry_LookupCaseInsensitive(t *testing.T) {
 	t.Parallel()
+
 	r := NewRegistry(makeFake("only", "Fake"))
 
 	tests := []string{"fake", "FAKE", "Fake", "FaKe"}
 	for _, s := range tests {
 		t.Run(s, func(t *testing.T) {
 			t.Parallel()
+
 			_, ok := r.Lookup(s)
 			assert.True(t, ok, "lookup of %q should succeed", s)
 		})
@@ -43,6 +46,7 @@ func TestRegistry_LookupCaseInsensitive(t *testing.T) {
 
 func TestRegistry_RegisterReplaces(t *testing.T) {
 	t.Parallel()
+
 	r := NewRegistry(makeFake("first", "fake"))
 	r.Register(makeFake("second", "fake"))
 
@@ -54,6 +58,7 @@ func TestRegistry_RegisterReplaces(t *testing.T) {
 
 func TestRegistry_Schemes(t *testing.T) {
 	t.Parallel()
+
 	r := NewRegistry(makeFake("a", "fake"), makeFake("b", "primary", "alt"))
 
 	got := r.Schemes()
@@ -63,6 +68,7 @@ func TestRegistry_Schemes(t *testing.T) {
 
 func TestRegistry_emptyRegistryRoundTrip(t *testing.T) {
 	t.Parallel()
+
 	r := NewRegistry()
 	assert.Empty(t, r.Schemes())
 
@@ -72,12 +78,15 @@ func TestRegistry_emptyRegistryRoundTrip(t *testing.T) {
 
 func TestRegistry_RegisterPanicsOnNil(t *testing.T) {
 	t.Parallel()
+
 	t.Run("via NewRegistry", func(t *testing.T) {
 		t.Parallel()
+
 		assert.Panics(t, func() { NewRegistry(nil) })
 	})
 	t.Run("via Register", func(t *testing.T) {
 		t.Parallel()
+
 		r := NewRegistry()
 		assert.Panics(t, func() { r.Register(nil) })
 	})

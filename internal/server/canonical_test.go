@@ -22,6 +22,7 @@ import (
 // of the test's working directory.
 func canonicalDir(t testing.TB, fixture string) string {
 	t.Helper()
+
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed; package layout changed?")
 	// `file` is `<module>/internal/server/canonical_test.go`; walk
@@ -36,6 +37,7 @@ func canonicalDir(t testing.TB, fixture string) string {
 // this file.
 func readCanonical(t testing.TB, fixture, name string) []byte {
 	t.Helper()
+
 	path := filepath.Join(canonicalDir(t, fixture), name)
 	data, err := os.ReadFile(path)
 	require.NoError(t, err, "read canonical artifact %s/%s", fixture, name)
@@ -48,6 +50,7 @@ func readCanonical(t testing.TB, fixture, name string) []byte {
 // `Serve` is the exact tree canonical Git captured against.
 func openCanonicalStore(t *testing.T, fixture string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, fixture)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
@@ -66,6 +69,7 @@ func openCanonicalStore(t *testing.T, fixture string) *objstore.Store[objfmt.SHA
 // and the `agent`, `ls-refs`, `object-format` cap lines.
 func TestCanonical_AdvertisementV2_empty(t *testing.T) {
 	t.Parallel()
+
 	want := readCanonical(t, "empty", "advertisement-v2.bin")
 	store := openCanonicalStore(t, "empty")
 
@@ -90,9 +94,11 @@ func TestCanonical_AdvertisementV2_empty(t *testing.T) {
 // reftable-backed).
 func TestCanonical_AdvertisementV2_matrix(t *testing.T) {
 	t.Parallel()
+
 	for _, fixture := range []string{"loose-only", "packed-only", "with-reftable-content"} {
 		t.Run(fixture, func(t *testing.T) {
 			t.Parallel()
+
 			want := readCanonical(t, fixture, "advertisement-v2.bin")
 			store := openCanonicalStore(t, fixture)
 
@@ -124,9 +130,11 @@ func TestCanonical_AdvertisementV2_matrix(t *testing.T) {
 // is normalised by the same machinery as the advertisement test.
 func TestCanonical_LSRefs_matrix(t *testing.T) {
 	t.Parallel()
+
 	for _, fixture := range []string{"empty", "loose-only", "packed-only", "with-reftable-content"} {
 		t.Run(fixture, func(t *testing.T) {
 			t.Parallel()
+
 			req := readCanonical(t, fixture, "ls-refs.req")
 			want := readCanonical(t, fixture, "ls-refs.bin")
 

@@ -15,6 +15,7 @@ import (
 // satisfaction; the assertion verifies the runtime value.
 func TestEvents_When(t *testing.T) {
 	t.Parallel()
+
 	now := time.Unix(1234567890, 0)
 	tests := []struct {
 		name string
@@ -40,6 +41,7 @@ func TestEvents_When(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.Equal(t, now, tt.e.When())
 		})
 	}
@@ -51,6 +53,7 @@ func TestEvents_When(t *testing.T) {
 // frames from Start frames.
 func TestCommandEvent_Err(t *testing.T) {
 	t.Parallel()
+
 	boom := errors.New("boom")
 	e := CommandEvent{
 		Phase:    CommandEnd,
@@ -64,6 +67,7 @@ func TestCommandEvent_Err(t *testing.T) {
 
 func TestCommandPhase(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		p    CommandPhase
@@ -75,6 +79,7 @@ func TestCommandPhase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.Equal(t, tt.want, uint8(tt.p))
 		})
 	}

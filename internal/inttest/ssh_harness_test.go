@@ -26,6 +26,7 @@ import (
 // check pins them.
 func newClientSigner(t *testing.T) ssh.Signer {
 	t.Helper()
+
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	s, err := ssh.NewSignerFromKey(priv)
@@ -38,6 +39,7 @@ func newClientSigner(t *testing.T) ssh.Signer {
 // helper isolates the boilerplate that every harness test shares.
 func dialHarness(t *testing.T, srv *inttest.SSHServer, clientSigner ssh.Signer) transport.Conn {
 	t.Helper()
+
 	tr := ssht.New(
 		ssht.WithAuth(ssht.Signer(clientSigner)),
 		ssht.WithKnownHosts(srv.HostKeyCallback()),
@@ -205,6 +207,7 @@ func TestNewSSHServer_acceptsAnyPubkey(t *testing.T) {
 // matching what canonical Git would accept.
 func TestNewSSHServer_URLShape(t *testing.T) {
 	t.Parallel()
+
 	store := openLooseOnlySHA1Store(t)
 	srv := inttest.NewSSHServer(t, store)
 

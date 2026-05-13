@@ -24,6 +24,7 @@ import (
 // depends on.
 func openLooseOnlySHA1Store(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	var entry inttest.Entry
 	for _, e := range inttest.Entries() {
 		if e.Name == "loose-only" {
@@ -48,6 +49,7 @@ func openLooseOnlySHA1Store(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 // against the supplied store.
 func TestNewHTTPServer_servesAdvertisement(t *testing.T) {
 	t.Parallel()
+
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
@@ -92,6 +94,7 @@ func TestNewHTTPServer_servesAdvertisement(t *testing.T) {
 // returns at least one `refs/heads/` line for the `loose-only` fixture.
 func TestNewHTTPServer_handlesCommandPost(t *testing.T) {
 	t.Parallel()
+
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
@@ -155,6 +158,7 @@ func TestNewHTTPServer_handlesCommandPost(t *testing.T) {
 // suffix; everything else is `http.NotFound`.
 func TestNewHTTPServer_unsupportedPath(t *testing.T) {
 	t.Parallel()
+
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
@@ -175,6 +179,7 @@ func TestNewHTTPServer_unsupportedPath(t *testing.T) {
 // to test redirect-policy behaviours.
 func TestNewHTTPRedirectServer_emitsConfiguredStatus(t *testing.T) {
 	t.Parallel()
+
 	const dest = "https://example.com/repo.git/info/refs?service=git-upload-pack"
 	base := inttest.NewHTTPRedirectServer(t, http.StatusFound, dest)
 

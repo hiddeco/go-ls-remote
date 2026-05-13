@@ -16,6 +16,7 @@ import (
 // The listener is closed via [testing.T.Cleanup] when the test ends.
 func startEchoListener(t *testing.T, handle func(net.Conn)) (host, port string) {
 	t.Helper()
+
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -37,6 +38,7 @@ func startEchoListener(t *testing.T, handle func(net.Conn)) (host, port string) 
 // the underlying TCP connection has been closed.
 func TestConn_Close_Idempotent(t *testing.T) {
 	t.Parallel()
+
 	host, port := startEchoListener(t, func(c net.Conn) {
 		// Accept and discard; the client side is what we are testing.
 		defer func() { _ = c.Close() }()
@@ -69,6 +71,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 // streams a packet written by the server before the client reads.
 func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 	t.Parallel()
+
 	const wantPayload = "version 2\n"
 
 	host, port := startEchoListener(t, func(c net.Conn) {

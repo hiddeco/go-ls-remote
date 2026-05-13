@@ -109,6 +109,7 @@ func openBridgedConnTraced(t *testing.T, tracer trace.Tracer) (*Conn, string) {
 // refactors, but the wiring contract is invariant.
 func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 	t.Parallel()
+
 	tracer := &capturingTracer{}
 	c, wantURL := openBridgedConnTraced(t, tracer)
 
@@ -152,6 +153,7 @@ func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 // short-circuit.
 func TestTracer_NilTracer_NoEvents(t *testing.T) {
 	t.Parallel()
+
 	bridge := bridgeSHA1Store(t, "loose-only")
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv: true,

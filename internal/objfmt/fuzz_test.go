@@ -24,6 +24,7 @@ func readFixture(tb testing.TB, name string) []byte {
 // consume them without growing a `[]byte`-typed entry point.
 func writeFuzzInput(t *testing.T, name string, in []byte) string {
 	t.Helper()
+
 	path := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.WriteFile(path, in, 0o600))
 	return path

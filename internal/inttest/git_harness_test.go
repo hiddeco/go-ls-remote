@@ -24,6 +24,7 @@ import (
 // boilerplate every git-daemon harness test repeats.
 func dialGitHarness(t *testing.T, rawURL string) transport.Conn {
 	t.Helper()
+
 	tr := gitt.New(gitt.WithDialer(&net.Dialer{}))
 	u, err := transport.ParseURL(rawURL)
 	require.NoError(t, err)

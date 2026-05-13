@@ -14,6 +14,7 @@ import (
 // test can mutate it without touching the source artifact.
 func copyFixture(t *testing.T, name string) string {
 	t.Helper()
+
 	src, err := os.Open(packFixture(t, name))
 	require.NoError(t, err)
 	defer func() { _ = src.Close() }()
@@ -30,8 +31,10 @@ func copyFixture(t *testing.T, name string) string {
 
 func TestPack_VerifyChecksum(t *testing.T) {
 	t.Parallel()
+
 	t.Run("an intact three-object SHA-1 pack verifies", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "three-objects.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -41,6 +44,7 @@ func TestPack_VerifyChecksum(t *testing.T) {
 
 	t.Run("an intact OFS_DELTA pack verifies", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA1Hash](packFixture(t, "ofs-delta.pack"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -50,6 +54,7 @@ func TestPack_VerifyChecksum(t *testing.T) {
 
 	t.Run("an intact SHA-256 pack verifies", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA256Hash](packFixture(t, "sha256-empty.pack"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -59,6 +64,7 @@ func TestPack_VerifyChecksum(t *testing.T) {
 
 	t.Run("an intact non-empty SHA-256 pack verifies", func(t *testing.T) {
 		t.Parallel()
+
 		p, err := OpenPack[SHA256Hash](packFixture(t, "sha256-three.pack"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = p.Close() })
@@ -68,6 +74,7 @@ func TestPack_VerifyChecksum(t *testing.T) {
 
 	t.Run("a flipped byte fails verification", func(t *testing.T) {
 		t.Parallel()
+
 		dst := copyFixture(t, "three-objects.pack")
 
 		// Flip a byte in the middle of the pack body. The trailer

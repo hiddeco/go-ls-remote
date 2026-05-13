@@ -58,6 +58,7 @@ import (
 // byte-pinned single-session expectations elsewhere in the package.
 func TestServe_ConcurrentSessionsRaceClean(t *testing.T) {
 	t.Parallel()
+
 	store := openConcurrentSessionsFixture(t)
 
 	commitOID := packCommitOID
@@ -276,6 +277,7 @@ func openConcurrentSessionsFixture(t *testing.T) *objstore.Store[objfmt.SHA1Hash
 // for their respective fixture builders.
 func copyFileForTest(t *testing.T, src, dst string) {
 	t.Helper()
+
 	in, err := os.Open(src)
 	require.NoError(t, err)
 	defer func() { _ = in.Close() }()

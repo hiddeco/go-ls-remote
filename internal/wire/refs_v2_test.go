@@ -478,6 +478,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("multiple refs in stream order", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(
 			t,
 			oidHEAD+" HEAD symref-target:refs/heads/main\n",
@@ -533,6 +534,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("ERR after a successful ref still surfaces error", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(
 			t,
 			oidMain+" refs/heads/main\n",
@@ -564,6 +566,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("early break: yield false stops iteration", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(
 			t,
 			oidHEAD+" HEAD symref-target:refs/heads/main\n",

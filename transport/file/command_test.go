@@ -37,6 +37,7 @@ func cmdBody(cmd string, args, caps []string) transport.CommandBody {
 // [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t testing.TB, c *Conn[objfmt.SHA1Hash]) {
 	t.Helper()
+
 	rdr := c.Advertisement()
 	for {
 		p, err := rdr.ReadPacket()
@@ -63,6 +64,7 @@ func drainAdvertisement(t testing.TB, c *Conn[objfmt.SHA1Hash]) {
 // [gitprotocol-v2.adoc §"Command Response"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
+
 	var pkts []pktline.Packet
 	for {
 		p, err := rdr.ReadPacket()
@@ -85,6 +87,7 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // over the missing-pack-dir gap.
 func materializeServeableFixture(t testing.TB, name string) string {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	return gitdir
@@ -96,6 +99,7 @@ func materializeServeableFixture(t testing.TB, name string) string {
 // assertion.
 func openTestConn(t *testing.T, fixture string) *Conn[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := materializeServeableFixture(t, fixture)
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
@@ -113,6 +117,7 @@ func openTestConn(t *testing.T, fixture string) *Conn[objfmt.SHA1Hash] {
 
 func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 	t.Parallel()
+
 	c := openTestConn(t, "loose-only")
 
 	rdr, err := c.Command(t.Context(), "ls-refs",
@@ -145,6 +150,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 
 func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	t.Parallel()
+
 	c := openTestConn(t, "loose-only")
 
 	// `aaaa...` is loose-only's ref tip. The handler is not asked to
@@ -179,6 +185,7 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 
 func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 	t.Parallel()
+
 	c := openTestConn(t, "loose-only")
 
 	// First command: ls-refs.
@@ -205,6 +212,7 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 
 func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	t.Parallel()
+
 	overlong := strings.Repeat("a", pktline.MaxPayload)
 	tests := []struct {
 		name string
@@ -219,6 +227,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			// Fresh [Conn] per subtest. Once the [pktline.Writer.WritePacket]
 			// cap check trips mid-frame, any partially-emitted bytes have
 			// already crossed the pipe (only the failing packet itself is
@@ -241,6 +250,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 
 func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
@@ -268,6 +278,7 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 
 func TestConn_Lifecycle_OpenDrainCommandsClose(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)

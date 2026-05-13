@@ -20,6 +20,7 @@ import (
 // `refs/tags/` prefix and at least one tag must be observed.
 func TestTags(t *testing.T) {
 	t.Parallel()
+
 	forEachProviderMode(t, func(t *testing.T, p Provider, m authMode, ctx context.Context) {
 		seq, err := lsremote.Tags(ctx, m.url, m.options...)
 		require.NoErrorf(t, err, "%s/%s: Tags dial", p.Name, m.name)

@@ -78,6 +78,7 @@ func materializeFixture(t *testing.T, name string) string {
 // [setup.c::is_git_directory]: https://github.com/git/git/blob/v2.54.0/setup.c#L416
 func writeMinimalGitDir(t *testing.T, dir string) {
 	t.Helper()
+
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"),
 		[]byte("ref: refs/heads/main\n"), 0o644))
@@ -107,6 +108,7 @@ func splitAll(p string) []string {
 
 func TestResolveGitDir_PathIsGitDir(t *testing.T) {
 	t.Parallel()
+
 	// Rule 1: the supplied path itself satisfies `is_git_directory`,
 	// so it is the gitdir. A bare repo (or any `.git/` directory
 	// passed directly) hits this branch.
@@ -121,6 +123,7 @@ func TestResolveGitDir_PathIsGitDir(t *testing.T) {
 
 func TestResolveGitDir_DotGitSubdirectory(t *testing.T) {
 	t.Parallel()
+
 	// Rule 2: the supplied path contains a `.git` subdirectory. The
 	// resolver descends into it and returns the subdirectory.
 	work := t.TempDir()
@@ -135,6 +138,7 @@ func TestResolveGitDir_DotGitSubdirectory(t *testing.T) {
 
 func TestResolveGitDir_DotGitFileAbsolute(t *testing.T) {
 	t.Parallel()
+
 	// Rule 3a: `.git` is a regular file whose `gitdir:` directive
 	// references an absolute path. The absolute path is returned
 	// verbatim (after `filepath.Clean`).
@@ -152,6 +156,7 @@ func TestResolveGitDir_DotGitFileAbsolute(t *testing.T) {
 
 func TestResolveGitDir_DotGitFileRelative(t *testing.T) {
 	t.Parallel()
+
 	// Rule 3b: a relative `gitdir:` path resolves against the
 	// directory containing the `.git` file. The fixture
 	// `worktree-as-file/linked/.git` points at
@@ -173,6 +178,7 @@ func TestResolveGitDir_DotGitFileRelative(t *testing.T) {
 
 func TestResolveGitDir_SubmoduleAsFile(t *testing.T) {
 	t.Parallel()
+
 	// Submodule shape: the submodule working tree's `.git` is a file
 	// pointing at `../.git/modules/sub` in the parent repo. No
 	// `commondir` is present, so `commonDir` equals `gitDir`.
@@ -189,6 +195,7 @@ func TestResolveGitDir_SubmoduleAsFile(t *testing.T) {
 
 func TestResolveGitDir_NotARepo(t *testing.T) {
 	t.Parallel()
+
 	// Rule 4: no `HEAD`, no `.git`. The error must wrap
 	// [ErrNotARepo] so callers can match with [errors.Is].
 	dir := t.TempDir()
@@ -200,6 +207,7 @@ func TestResolveGitDir_NotARepo(t *testing.T) {
 
 func TestResolveGitDir_DotGitFileInvalidPrefix(t *testing.T) {
 	t.Parallel()
+
 	// Rule 3 only accepts the `gitdir: ` prefix. A file with any
 	// other content is rejected as not-a-repo so callers can fall
 	// through to the next discovery step.
@@ -213,6 +221,7 @@ func TestResolveGitDir_DotGitFileInvalidPrefix(t *testing.T) {
 
 func TestResolveGitDir_DotGitFileEmptyTarget(t *testing.T) {
 	t.Parallel()
+
 	// `gitdir:` with no path body is malformed; reject as not-a-repo
 	// rather than returning an empty path that would later resolve to
 	// the worktree itself.
@@ -226,6 +235,7 @@ func TestResolveGitDir_DotGitFileEmptyTarget(t *testing.T) {
 
 func TestResolveGitDir_CommondirPresentFixture(t *testing.T) {
 	t.Parallel()
+
 	// Open the linked-worktree gitdir directly (not the working
 	// tree). Rule 1 fires for `HEAD`, then `commondir` redirects the
 	// common-dir to the parent repo's `.git/`.
@@ -242,6 +252,7 @@ func TestResolveGitDir_CommondirPresentFixture(t *testing.T) {
 
 func TestResolveGitDir_CommondirRelativeSynthetic(t *testing.T) {
 	t.Parallel()
+
 	// Synthetic equivalent of the fixture case: open a gitdir whose
 	// `commondir` points at a sibling directory via `../repo`.
 	// `objects/` and `refs/` live under the common dir (matching
@@ -263,6 +274,7 @@ func TestResolveGitDir_CommondirRelativeSynthetic(t *testing.T) {
 
 func TestResolveGitDir_CommondirAbsent(t *testing.T) {
 	t.Parallel()
+
 	// A bare gitdir without a `commondir` file: `commonDir` must
 	// equal `gitDir`. Constructed in `t.TempDir()` so the test does
 	// not depend on the larger fixture trees.
@@ -276,6 +288,7 @@ func TestResolveGitDir_CommondirAbsent(t *testing.T) {
 
 func TestResolveGitDir_HeadAlonePathIsRejected(t *testing.T) {
 	t.Parallel()
+
 	// Canonical Git's [setup.c::is_git_directory] requires HEAD,
 	// `objects/`, and `refs/` together. A directory carrying only a
 	// stray `HEAD` file must not be accepted as a gitdir.
@@ -291,6 +304,7 @@ func TestResolveGitDir_HeadAlonePathIsRejected(t *testing.T) {
 
 func TestResolveGitDir_HeadPlusObjectsButNoRefsIsRejected(t *testing.T) {
 	t.Parallel()
+
 	// Two-out-of-three is not enough: `refs/` is independently
 	// required by [setup.c::is_git_directory].
 	//
@@ -306,6 +320,7 @@ func TestResolveGitDir_HeadPlusObjectsButNoRefsIsRejected(t *testing.T) {
 
 func TestResolveGitDir_HeadPlusRefsButNoObjectsIsRejected(t *testing.T) {
 	t.Parallel()
+
 	// Symmetric to the previous case: missing `objects/` is fatal.
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644))
@@ -318,6 +333,7 @@ func TestResolveGitDir_HeadPlusRefsButNoObjectsIsRejected(t *testing.T) {
 
 func TestResolveGitDir_HeadIsDirectoryIsRejected(t *testing.T) {
 	t.Parallel()
+
 	// Canonical Git's `validate_headref` rejects a HEAD that is not a
 	// regular file (or symlink to one). A directory named `HEAD` must
 	// not satisfy the gitdir signature.
@@ -333,6 +349,7 @@ func TestResolveGitDir_HeadIsDirectoryIsRejected(t *testing.T) {
 
 func TestResolveGitDir_GitfileTargetMustBeRealRepo(t *testing.T) {
 	t.Parallel()
+
 	// A `.git` file resolves to a path; the resolved path must itself
 	// satisfy `is_git_directory`. A directory with only a stray HEAD
 	// at the resolved target is rejected just as a direct call would
@@ -350,6 +367,7 @@ func TestResolveGitDir_GitfileTargetMustBeRealRepo(t *testing.T) {
 
 func TestResolveGitDir_CommondirAbsolute(t *testing.T) {
 	t.Parallel()
+
 	// An absolute `commondir` payload must be used verbatim rather
 	// than re-rooted under the gitdir. Mirrors the canonical Git
 	// behaviour in [setup.c::get_common_dir_noenv].

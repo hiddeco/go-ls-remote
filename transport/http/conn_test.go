@@ -30,6 +30,7 @@ func (c *closeCounter) Close() error {
 // hand-built [Conn] fixtures where the URL is a constant string.
 func mustParseURL(t *testing.T, raw string) *url.URL {
 	t.Helper()
+
 	u, err := url.Parse(raw)
 	require.NoError(t, err)
 	return u
@@ -37,6 +38,7 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 
 func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 	t.Parallel()
+
 	body := &closeCounter{Reader: bytes.NewReader(nil)}
 	rdr := pktline.NewReader(body)
 
@@ -48,6 +50,7 @@ func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 
 func TestConn_Close_Idempotent(t *testing.T) {
 	t.Parallel()
+
 	body := &closeCounter{Reader: strings.NewReader("leftover bytes")}
 	rdr := pktline.NewReader(body)
 
@@ -63,6 +66,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 
 func TestConn_Command_DumbReturnsUnsupportedProtocol(t *testing.T) {
 	t.Parallel()
+
 	c := &Conn{dumb: true}
 	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)

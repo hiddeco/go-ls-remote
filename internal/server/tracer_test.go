@@ -90,6 +90,7 @@ func runV2SessionWithTracer(t *testing.T, store *objstore.Store[objfmt.SHA1Hash]
 // URL) and the canonical command name.
 func TestServe_TracerSingleLSRefs(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 
@@ -138,6 +139,7 @@ func TestServe_TracerSingleLSRefs(t *testing.T) {
 // object-info Start, object-info End.
 func TestServe_TracerSequenceLSRefsObjectInfo(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 
@@ -179,6 +181,7 @@ func TestServe_TracerSequenceLSRefsObjectInfo(t *testing.T) {
 // stream.
 func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 	t.Parallel()
+
 	dir := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "repos", "pack-only")
 	require.NoError(t, copyFixtureTree(src, dir))
@@ -226,6 +229,7 @@ func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 // test exercises the call sites that wrap each handler dispatch.
 func TestServe_TracerNilNoOp(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -248,6 +252,7 @@ func TestServe_TracerNilNoOp(t *testing.T) {
 // emitted events focused on real command dispatches.
 func TestServe_TracerUnknownCommandSilent(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 

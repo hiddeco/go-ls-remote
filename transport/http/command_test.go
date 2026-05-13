@@ -45,6 +45,7 @@ func cmdBody(cmd string, args, caps []string) transport.CommandBody {
 // when the test ends.
 func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
@@ -66,6 +67,7 @@ func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash
 // request and writes the response.
 func serveHandler(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath string) http.Handler {
 	t.Helper()
+
 	infoRefsPath := repoPath + "/info/refs"
 	uploadPackPath := repoPath + "/git-upload-pack"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +114,7 @@ func serveHandler(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath
 // next read; [pktline.Reader] otherwise reuses one backing buffer.
 func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
+
 	var pkts []pktline.Packet
 	for {
 		p, err := rdr.ReadPacket()
@@ -135,6 +138,7 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t *testing.T, c *Conn) {
 	t.Helper()
+
 	rdr := c.Advertisement()
 	for {
 		p, err := rdr.ReadPacket()
@@ -149,6 +153,7 @@ func drainAdvertisement(t *testing.T, c *Conn) {
 // the advertisement so the test can immediately call [Conn.Command].
 func openSmartTestConn(t *testing.T, srv *httptest.Server, repoPath string, opts ...Option) *Conn {
 	t.Helper()
+
 	tr := New(opts...)
 	u := parseTestURL(t, srv, repoPath)
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -162,6 +167,7 @@ func openSmartTestConn(t *testing.T, srv *httptest.Server, repoPath string, opts
 
 func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
@@ -203,6 +209,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 
 func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
@@ -243,6 +250,7 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 
 func TestConn_Command_Headers(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 
 	var captured http.Header
@@ -288,6 +296,7 @@ func TestConn_Command_Headers(t *testing.T) {
 
 func TestConn_Command_Body_PktLineShape(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 
 	var captured []byte
@@ -358,6 +367,7 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 
 func TestConn_Command_404(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +396,7 @@ func TestConn_Command_404(t *testing.T) {
 
 func TestConn_Command_500(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -419,6 +430,7 @@ func TestConn_Command_500(t *testing.T) {
 
 func TestConn_Command_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -451,6 +463,7 @@ func TestConn_Command_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 
 func TestConn_Command_401_WithCreds_ReturnsErrAuthFailed(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 
@@ -492,6 +505,7 @@ func TestConn_Command_401_WithCreds_ReturnsErrAuthFailed(t *testing.T) {
 
 func TestRedirect_OnPost_Initial_Rejects(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -524,6 +538,7 @@ func TestRedirect_OnPost_Initial_Rejects(t *testing.T) {
 
 func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -564,6 +579,7 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 
 func TestRedirect_OnPost_Always_Follows(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	var hopRequests atomic.Int32
 	mux := http.NewServeMux()
@@ -616,6 +632,7 @@ func TestRedirect_OnPost_Always_Follows(t *testing.T) {
 // rewritten suffix, no query.
 func TestCommandPostURL_PathRewrite(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		base string
@@ -640,6 +657,7 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			u, err := url.Parse(tc.base)
 			require.NoError(t, err)
 			got, err := commandPostURL(u)
@@ -660,6 +678,7 @@ func TestCommandPostURL_PathRewrite(t *testing.T) {
 // [Conn.Command] propagates unchanged.
 func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	t.Parallel()
+
 	overlong := strings.Repeat("a", pktline.MaxPayload)
 	tests := []struct {
 		name string
@@ -674,6 +693,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			c := &Conn{
 				body:              &closeCounter{Reader: bytes.NewReader(nil)},
 				reader:            pktline.NewReader(bytes.NewReader(nil)),
@@ -704,6 +724,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 // smart advertisement. The check makes that failure mode loud.
 func TestCommandPostURL_RejectsMissingSuffix(t *testing.T) {
 	t.Parallel()
+
 	base := &url.URL{
 		Scheme: "https",
 		Host:   "example.com",
@@ -724,6 +745,7 @@ func TestCommandPostURL_RejectsMissingSuffix(t *testing.T) {
 // silently emitting the unrewritten encoded form.
 func TestCommandPostURL_RawPathRewrite(t *testing.T) {
 	t.Parallel()
+
 	base := &url.URL{
 		Scheme:  "https",
 		Host:    "example.com",
@@ -747,6 +769,7 @@ func TestCommandPostURL_RawPathRewrite(t *testing.T) {
 // code, with an "unexpected status" Err.
 func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -785,6 +808,7 @@ func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
 // redacted POST URL for log-line triage.
 func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
@@ -831,6 +855,7 @@ func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
 // command-path drain.
 func TestConn_Command_RedirectRejected_ClosesBody(t *testing.T) {
 	t.Parallel()
+
 	// Build a probe body that drives the smart advertisement to a
 	// flush so [drainAdvertisement] terminates: `# service=` preamble,
 	// flush, then a v2 capability line, then the closing flush.
@@ -947,6 +972,7 @@ func (s *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 // [Conn] across every command issued for the [Conn]'s lifetime.
 func TestConn_Close_ReleasesAllInflightBodies(t *testing.T) {
 	t.Parallel()
+
 	probe := &closeCounter{Reader: bytes.NewReader(nil)}
 	cmd1 := &closeCounter{Reader: strings.NewReader("abandoned body 1")}
 	cmd2 := &closeCounter{Reader: strings.NewReader("abandoned body 2")}
@@ -984,6 +1010,7 @@ func TestConn_Close_ReleasesAllInflightBodies(t *testing.T) {
 // which is exactly what the multi-flight contract forbids.
 func TestConn_Command_AccumulatesBodiesUntilClose(t *testing.T) {
 	t.Parallel()
+
 	bodies := [3]*closeCounter{
 		{Reader: bytes.NewReader([]byte("first response"))},
 		{Reader: bytes.NewReader([]byte("second response"))},
@@ -1031,6 +1058,7 @@ func TestConn_Command_AccumulatesBodiesUntilClose(t *testing.T) {
 // public `ErrNotFound` sentinel via `errors.Is`.
 func TestCommand_NotFound_PropagatesServerExcerpt(t *testing.T) {
 	t.Parallel()
+
 	const wantExcerpt = "repository 'org/repo' not found"
 
 	store := openFixtureStore(t, "loose-only")
@@ -1073,6 +1101,7 @@ func TestCommand_NotFound_PropagatesServerExcerpt(t *testing.T) {
 // ErrAuthRequired and the body excerpt must survive.
 func TestCommand_AuthRequired_PropagatesServerExcerpt(t *testing.T) {
 	t.Parallel()
+
 	const wantExcerpt = "authentication required to access org/repo"
 
 	store := openFixtureStore(t, "loose-only")
@@ -1115,6 +1144,7 @@ func TestCommand_AuthRequired_PropagatesServerExcerpt(t *testing.T) {
 // (typically an SSO or repo-disabled message) must survive.
 func TestCommand_AuthFailed_PropagatesServerExcerpt(t *testing.T) {
 	t.Parallel()
+
 	const wantExcerpt = "SSO enrollment required for org/repo"
 
 	store := openFixtureStore(t, "loose-only")

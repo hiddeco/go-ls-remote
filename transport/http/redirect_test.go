@@ -61,6 +61,7 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 
 func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 	t.Parallel()
+
 	var hops atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {

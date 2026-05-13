@@ -8,6 +8,7 @@ import (
 
 func TestKind(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		k    Kind
@@ -21,6 +22,7 @@ func TestKind(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.Equal(t, tt.want, uint8(tt.k))
 		})
 	}
@@ -30,13 +32,16 @@ func TestKind(t *testing.T) {
 // LARGE_PACKET_MAX (65520) minus the 4-byte length prefix.
 func TestMaxPayload(t *testing.T) {
 	t.Parallel()
+
 	assert.Equal(t, 65516, MaxPayload)
 }
 
 func TestPacket(t *testing.T) {
 	t.Parallel()
+
 	t.Run("zero value is empty Data packet", func(t *testing.T) {
 		t.Parallel()
+
 		var p Packet
 		assert.Equal(t, Data, p.Kind)
 		assert.Nil(t, p.Data)

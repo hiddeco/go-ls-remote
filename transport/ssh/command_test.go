@@ -39,6 +39,7 @@ func cmdBody(cmd string, args, caps []string) transport.CommandBody {
 // [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainAdvertisement(t testing.TB, c *Conn) {
 	t.Helper()
+
 	rdr := c.Advertisement()
 	for {
 		p, err := rdr.ReadPacket()
@@ -56,6 +57,7 @@ func drainAdvertisement(t testing.TB, c *Conn) {
 // across reads.
 func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
+
 	var pkts []pktline.Packet
 	for {
 		p, err := rdr.ReadPacket()
@@ -129,6 +131,7 @@ func openBridgedConn(t *testing.T, fixture string) *Conn {
 
 func TestCommand_lsRefs(t *testing.T) {
 	t.Parallel()
+
 	c := openBridgedConn(t, "loose-only")
 
 	rdr, err := c.Command(t.Context(), "ls-refs",
@@ -158,6 +161,7 @@ func TestCommand_lsRefs(t *testing.T) {
 
 func TestCommand_objectInfo(t *testing.T) {
 	t.Parallel()
+
 	c := openBridgedConn(t, "loose-only")
 
 	// The `aaaa...` OID is loose-only's ref tip. The handler is not
@@ -188,6 +192,7 @@ func TestCommand_objectInfo(t *testing.T) {
 
 func TestCommand_contextCancelled(t *testing.T) {
 	t.Parallel()
+
 	c := openBridgedConn(t, "loose-only")
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -208,6 +213,7 @@ func TestCommand_contextCancelled(t *testing.T) {
 
 func TestCommand_closedPipe(t *testing.T) {
 	t.Parallel()
+
 	c := openBridgedConn(t, "loose-only")
 
 	require.NoError(t, c.Close())

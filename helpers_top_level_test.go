@@ -33,6 +33,7 @@ type closeRecordingTransport struct {
 // itself so the caller can read `closeCount()`.
 func newCloseRecordingRegistry(t *testing.T) (*transport.Registry, *closeRecordingTransport) {
 	t.Helper()
+
 	rec := &closeRecordingTransport{inner: httpt.New()}
 	return transport.NewRegistry(rec), rec
 }
@@ -79,6 +80,7 @@ func (c *closeRecordingConn) Close() error {
 // no error.
 func TestRefs_topLevel(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -113,6 +115,7 @@ func TestRefs_topLevel(t *testing.T) {
 // observe the `Close` count without reaching into Session internals.
 func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -138,6 +141,7 @@ func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
 // `defer Close` must fire when `yield` returns false.
 func TestRefs_topLevel_closesSessionOnEarlyStop(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -164,6 +168,7 @@ func TestRefs_topLevel_closesSessionOnEarlyStop(t *testing.T) {
 // Session.
 func TestRefs_topLevel_dialError(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -183,6 +188,7 @@ func TestRefs_topLevel_dialError(t *testing.T) {
 // HEAD and main both appear.
 func TestListRefs_topLevel(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -204,6 +210,7 @@ func TestListRefs_topLevel(t *testing.T) {
 // true` returns one row whose Hash matches and whose Size is positive.
 func TestObjectInfos_topLevel(t *testing.T) {
 	t.Parallel()
+
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -220,6 +227,7 @@ func TestObjectInfos_topLevel(t *testing.T) {
 // produces `(true, nil)`.
 func TestExists_success(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -234,6 +242,7 @@ func TestExists_success(t *testing.T) {
 // underlying error.
 func TestExists_notFound(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -252,6 +261,7 @@ func TestExists_notFound(t *testing.T) {
 // return `transport.ErrEmptyURL`, which is not an `ErrNotFound`.
 func TestExists_otherError(t *testing.T) {
 	t.Parallel()
+
 	ok, err := Exists(t.Context(), "")
 	require.Error(t, err)
 	assert.False(t, ok)
@@ -264,6 +274,7 @@ func TestExists_otherError(t *testing.T) {
 // returns `refs/heads/main`.
 func TestDefaultBranch_v2(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -278,6 +289,7 @@ func TestDefaultBranch_v2(t *testing.T) {
 // resolves the target without issuing any command.
 func TestDefaultBranch_v0(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -301,6 +313,7 @@ func TestDefaultBranch_v0(t *testing.T) {
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestDefaultBranch_v2_unborn(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "unborn-head")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -322,6 +335,7 @@ func TestDefaultBranch_v2_unborn(t *testing.T) {
 // detected after the `ls-refs` command exchange.
 func TestDefaultBranch_v2_noSymref(t *testing.T) {
 	t.Parallel()
+
 	conn := &commandStubConn{
 		adv:    pktline.NewReader(bytes.NewReader(buildV2Advertisement(t))),
 		cmdRdr: pktline.NewReader(bytes.NewReader(buildV2LSRefsNoSymrefResponse(t))),
@@ -352,6 +366,7 @@ func TestDefaultBranch_v2_noSymref(t *testing.T) {
 // time, not via a command.
 func TestDefaultBranch_v0_noSymref(t *testing.T) {
 	t.Parallel()
+
 	conn := &stubConn{
 		adv: pktline.NewReader(bytes.NewReader(buildV0NoSymrefAdvertisement(t))),
 	}
@@ -382,6 +397,7 @@ func TestDefaultBranch_v0_noSymref(t *testing.T) {
 // but HEAD has no symbolic target.
 func TestDefaultBranch_repoNotFound(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -404,6 +420,7 @@ func TestDefaultBranch_repoNotFound(t *testing.T) {
 // recorded in `packed-refs`, so the response carries `Peeled` populated.
 func TestTags_topLevel(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "packed-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -435,6 +452,7 @@ func TestTags_topLevel(t *testing.T) {
 // response to `refs/heads/` so neither HEAD nor any tag survives.
 func TestHeads_topLevel(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()

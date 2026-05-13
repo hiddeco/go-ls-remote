@@ -76,6 +76,7 @@ func (c *capturingTracer) packetEvents() []trace.PacketEvent {
 
 func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -105,6 +106,7 @@ func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 
 func TestTracer_HTTPEvent_OnDumb200(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(
@@ -130,6 +132,7 @@ func TestTracer_HTTPEvent_OnDumb200(t *testing.T) {
 
 func TestTracer_HTTPEvent_On500(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -152,6 +155,7 @@ func TestTracer_HTTPEvent_On500(t *testing.T) {
 
 func TestTracer_HTTPEvent_OnDialError(t *testing.T) {
 	t.Parallel()
+
 	// Point at an unroutable URL so the request never produces a
 	// response. Per the `HTTPEvent` doc, Status == 0 and Err != nil.
 	u, err := transport.ParseURL("http://127.0.0.1:1/repo.git")
@@ -173,6 +177,7 @@ func TestTracer_HTTPEvent_OnDialError(t *testing.T) {
 
 func TestTracer_HTTPEvent_RedactsCredentials(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -207,6 +212,7 @@ func TestTracer_HTTPEvent_RedactsCredentials(t *testing.T) {
 
 func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
@@ -245,6 +251,7 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 
 func TestTracer_PacketEvent_OnAdvertisement(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -288,6 +295,7 @@ func TestTracer_PacketEvent_OnAdvertisement(t *testing.T) {
 
 func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
@@ -339,6 +347,7 @@ func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 
 func TestTracer_PacketEvent_OnDumbAdvertisement(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(
@@ -388,6 +397,7 @@ func TestTracer_PacketEvent_OnDumbAdvertisement(t *testing.T) {
 
 func TestTracer_NoEmissions_WhenNil(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -422,6 +432,7 @@ func TestTracer_NoEmissions_WhenNil(t *testing.T) {
 // 401 and then succeeds with credentials emits two HTTPEvents.
 func TestTracer_HTTPEvent_OnAuthRetry(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -460,6 +471,7 @@ func TestTracer_HTTPEvent_OnAuthRetry(t *testing.T) {
 // regression.
 func TestTracer_PacketEvent_BytesAreCopySafe(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
@@ -509,6 +521,7 @@ func TestTracer_PacketEvent_BytesAreCopySafe(t *testing.T) {
 // must emit one HTTPEvent whose Status reflects the final response.
 func TestTracer_HTTPEvent_OnRedirect(t *testing.T) {
 	t.Parallel()
+
 	body := smartAdvBody(t)
 	var hops int32
 	mux := http.NewServeMux()
@@ -558,6 +571,7 @@ func TestTracer_HTTPEvent_OnRedirect(t *testing.T) {
 // POST URL.
 func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 	t.Parallel()
+
 	// Build a probe body that drives the smart advertisement to a
 	// flush so [drainAdvertisement] terminates: `# service=` preamble,
 	// flush, then a v2 capability line, then the closing flush.
@@ -664,6 +678,7 @@ func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 // not break.
 func TestTracer_PacketEvent_NoEmissionsWhenNoTracer(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()

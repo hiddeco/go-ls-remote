@@ -14,6 +14,7 @@ import (
 
 func TestWriter_WritePacket(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name    string
 		payload []byte
@@ -38,6 +39,7 @@ func TestWriter_WritePacket(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			var buf bytes.Buffer
 			w := NewWriter(&buf)
 			require.NoError(t, w.WritePacket(tt.payload))
@@ -48,6 +50,7 @@ func TestWriter_WritePacket(t *testing.T) {
 
 func TestWriter_controlPackets(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name  string
 		write func(*Writer) error
@@ -60,6 +63,7 @@ func TestWriter_controlPackets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			var buf bytes.Buffer
 			w := NewWriter(&buf)
 			require.NoError(t, tt.write(w))
@@ -73,6 +77,7 @@ func TestWriter_controlPackets(t *testing.T) {
 // prefix is `fff0` (= MaxPayload + 4).
 func TestWriter_WritePacket_maxPayload(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
 
@@ -86,6 +91,7 @@ func TestWriter_WritePacket_maxPayload(t *testing.T) {
 // [MaxPayload] are rejected before any byte is written.
 func TestWriter_WritePacket_overflow(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
 
@@ -122,6 +128,7 @@ func (c *captureTracer) OnEvent(trace.Event) {}
 
 func TestWriter_WriteLine(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		s    string
@@ -146,6 +153,7 @@ func TestWriter_WriteLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			var buf bytes.Buffer
 			w := NewWriter(&buf)
 			require.NoError(t, w.WriteLine(tt.s))
@@ -159,6 +167,7 @@ func TestWriter_WriteLine(t *testing.T) {
 // written.
 func TestWriter_WriteLine_overflow(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
 
@@ -174,6 +183,7 @@ func TestWriter_WriteLine_overflow(t *testing.T) {
 // trailing newline reaches exactly MaxPayload bytes of payload.
 func TestWriter_WriteLine_maxPayload(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
 
@@ -188,6 +198,7 @@ func TestWriter_WriteLine_maxPayload(t *testing.T) {
 // writer propagates unchanged.
 func TestWriter_WriteLine_writeError(t *testing.T) {
 	t.Parallel()
+
 	w := NewWriter(errWriter{})
 	err := w.WriteLine("hello")
 	require.ErrorIs(t, err, errWriterFail)
@@ -198,6 +209,7 @@ func TestWriter_WriteLine_writeError(t *testing.T) {
 // payload bytes (including the trailing `'\n'`) of each WriteLine call.
 func TestWriter_WriteLine_tracerEmission(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	tr := &captureTracer{}
 	w := NewWriter(&buf, WithWriterTracer(tr, trace.DirectionOutbound))
@@ -214,8 +226,10 @@ func TestWriter_WriteLine_tracerEmission(t *testing.T) {
 
 func TestWriter_WriteLineParts(t *testing.T) {
 	t.Parallel()
+
 	t.Run("empty parts list", func(t *testing.T) {
 		t.Parallel()
+
 		var buf bytes.Buffer
 		w := NewWriter(&buf)
 		require.NoError(t, w.WriteLineParts())
@@ -224,6 +238,7 @@ func TestWriter_WriteLineParts(t *testing.T) {
 
 	t.Run("matches WritePacket for concatenated payload", func(t *testing.T) {
 		t.Parallel()
+
 		const oid = "9c52d0f2bbc8e3a141b1c0c83f7d5e6a2b3c4d5e"
 
 		var lineBuf bytes.Buffer
@@ -239,6 +254,7 @@ func TestWriter_WriteLineParts(t *testing.T) {
 
 	t.Run("three-part payload", func(t *testing.T) {
 		t.Parallel()
+
 		var buf bytes.Buffer
 		w := NewWriter(&buf)
 		require.NoError(t, w.WriteLineParts("ref-prefix ", "refs/", "tags/"))
@@ -251,6 +267,7 @@ func TestWriter_WriteLineParts(t *testing.T) {
 // exceed [MaxPayload] before any byte is written.
 func TestWriter_WriteLineParts_overflow(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := NewWriter(&buf)
 
@@ -266,6 +283,7 @@ func TestWriter_WriteLineParts_overflow(t *testing.T) {
 // underlying writer propagates unchanged.
 func TestWriter_WriteLineParts_writeError(t *testing.T) {
 	t.Parallel()
+
 	w := NewWriter(errWriter{})
 	err := w.WriteLineParts("oid ", "deadbeef")
 	require.ErrorIs(t, err, errWriterFail)
@@ -276,6 +294,7 @@ func TestWriter_WriteLineParts_writeError(t *testing.T) {
 // concatenated payload bytes (including the trailing `'\n'`).
 func TestWriter_WriteLineParts_tracerEmission(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	tr := &captureTracer{}
 	w := NewWriter(&buf, WithWriterTracer(tr, trace.DirectionOutbound))
@@ -291,6 +310,7 @@ func TestWriter_WriteLineParts_tracerEmission(t *testing.T) {
 // reads it back through [NewReader], exercising both codecs together.
 func TestWriter_roundTrip(t *testing.T) {
 	t.Parallel()
+
 	inputs := []string{
 		"command=ls-refs\n",
 		"agent=test/1.0\n",

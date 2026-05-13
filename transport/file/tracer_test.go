@@ -120,6 +120,7 @@ func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, stri
 // from the in-process server's reader/writer.
 func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
 	t.Parallel()
+
 	pkts, wantURL := runTracedRoundTrip(t)
 	require.NotEmpty(t, pkts,
 		"the client-side tracer must observe pkt-line events for the round-trip")
@@ -151,6 +152,7 @@ func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
 // fully drained round-trip.
 func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
 	t.Parallel()
+
 	defaultPkts, _ := runTracedRoundTrip(t)
 	endpointPkts, wantURL := runTracedRoundTrip(t, WithEndpointTrace())
 
@@ -194,6 +196,7 @@ func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
 // surface a `CommandStart`/`CommandEnd` pair.
 func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
@@ -247,6 +250,7 @@ func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 // allocation-free (no slice header allocated, no option applied).
 func TestTracer_NilTracer_NoEvents(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)

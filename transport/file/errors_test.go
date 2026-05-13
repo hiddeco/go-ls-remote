@@ -10,17 +10,20 @@ import (
 
 func TestSentinels_BridgeToTransport(t *testing.T) {
 	t.Parallel()
+
 	// ErrNotFound and ErrUnsupportedProtocol are declared as
 	// *transport.SchemeError and must satisfy errors.Is for their
 	// matching generic parent.
 	t.Run("ErrNotFound bridges to transport.ErrNotFound", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, ErrNotFound, transport.ErrNotFound,
 			"errors.Is(filet.ErrNotFound, transport.ErrNotFound) must be true")
 	})
 
 	t.Run("ErrUnsupportedProtocol bridges to transport.ErrUnsupportedProtocol", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, ErrUnsupportedProtocol, transport.ErrUnsupportedProtocol,
 			"errors.Is(filet.ErrUnsupportedProtocol, transport.ErrUnsupportedProtocol) must be true")
 	})
@@ -29,6 +32,7 @@ func TestSentinels_BridgeToTransport(t *testing.T) {
 	// must NOT match any generic transport sentinel.
 	t.Run("ErrServerRefused has no generic bridge", func(t *testing.T) {
 		t.Parallel()
+
 		allGeneric := []error{
 			transport.ErrNotFound,
 			transport.ErrAuthRequired,
@@ -43,6 +47,7 @@ func TestSentinels_BridgeToTransport(t *testing.T) {
 
 	t.Run("ErrUnsupportedFormat has no generic bridge", func(t *testing.T) {
 		t.Parallel()
+
 		allGeneric := []error{
 			transport.ErrNotFound,
 			transport.ErrAuthRequired,

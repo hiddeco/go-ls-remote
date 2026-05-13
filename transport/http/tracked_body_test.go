@@ -20,6 +20,7 @@ import (
 // accumulate map entries.
 func TestConn_inflight_deregistersOnEOF(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
@@ -54,6 +55,7 @@ func TestConn_inflight_deregistersOnEOF(t *testing.T) {
 // Conn.Close. The deregister hook must not regress that path.
 func TestConn_inflight_abandonedReaderRecoveredByClose(t *testing.T) {
 	t.Parallel()
+
 	var bodyClosed bool
 	rt := &countingRoundTripper{respond: func(_ *http.Request, _ int) *http.Response {
 		h := http.Header{}

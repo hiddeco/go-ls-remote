@@ -16,6 +16,7 @@ import (
 // materialisation, and the returned path must point at it.
 func TestMaterializeRepo_RenamesDotGit(t *testing.T) {
 	t.Parallel()
+
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 
 	assert.Equal(t, ".git", filepath.Base(gitdir))
@@ -36,6 +37,7 @@ func TestMaterializeRepo_RenamesDotGit(t *testing.T) {
 // under `a/.git`, `b/.git`, `c/.git`.
 func TestMaterializeRepoTree_MultiRepoLayout(t *testing.T) {
 	t.Parallel()
+
 	root := testfixture.MaterializeRepoTree(t, "with-alternates-chain")
 
 	for _, name := range []string{"a", "b", "c"} {

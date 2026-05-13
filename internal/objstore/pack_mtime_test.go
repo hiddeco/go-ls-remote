@@ -30,6 +30,7 @@ var packMtimeAnchor = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 // [packfile.c::sort_pack]: https://github.com/git/git/blob/v2.54.0/packfile.c#L1042
 func stampPackMtimes(t *testing.T, gitDir string, mtimes map[string]time.Time) {
 	t.Helper()
+
 	for name, when := range mtimes {
 		path := filepath.Join(gitDir, "objects", "pack", name)
 		require.NoError(t, os.Chtimes(path, when, when),
@@ -43,6 +44,7 @@ func stampPackMtimes(t *testing.T, gitDir string, mtimes map[string]time.Time) {
 // paired idx — every (idx, pack) pair shares a basename.
 func idxForPackInCatalog(t *testing.T, c *idxCatalog[objfmt.SHA1Hash], pack *objfmt.Pack[objfmt.SHA1Hash]) *objfmt.Idx[objfmt.SHA1Hash] {
 	t.Helper()
+
 	for _, e := range c.packs {
 		if e.pack == pack {
 			return e.idx
@@ -57,6 +59,7 @@ func idxForPackInCatalog(t *testing.T, c *idxCatalog[objfmt.SHA1Hash], pack *obj
 // as [idxForPackInCatalog].
 func idxForPackInMidx(t *testing.T, b *midxBackend[objfmt.SHA1Hash], pack *objfmt.Pack[objfmt.SHA1Hash]) *objfmt.Idx[objfmt.SHA1Hash] {
 	t.Helper()
+
 	for i, p := range b.coveredByMidxIndex {
 		if p == pack {
 			return b.coveredIdxs[i]
@@ -77,6 +80,7 @@ func idxForPackInMidx(t *testing.T, b *midxBackend[objfmt.SHA1Hash], pack *objfm
 // catalog directory in a fresh `t.TempDir()`.
 func packFixtureRoot(t *testing.T, name string) string {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	return filepath.Join(root, ".git")
 }
@@ -87,6 +91,7 @@ func packFixtureRoot(t *testing.T, name string) string {
 // "younger pack wins" without reaching for canonical Git to repack.
 func clonePackPair(t *testing.T, srcDir, srcBase, dstDir, dstBase string) {
 	t.Helper()
+
 	for _, ext := range []string{".pack", ".idx"} {
 		src := filepath.Join(srcDir, srcBase+ext)
 		dst := filepath.Join(dstDir, dstBase+ext)

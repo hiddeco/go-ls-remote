@@ -12,6 +12,7 @@ import (
 
 func TestProtocolError_Error_StatusOnly(t *testing.T) {
 	t.Parallel()
+
 	err := &ProtocolError{
 		URL:    "https://example.com/repo.git/info/refs?service=git-upload-pack",
 		Op:     "probe",
@@ -27,6 +28,7 @@ func TestProtocolError_Error_StatusOnly(t *testing.T) {
 
 func TestProtocolError_Error_WithServerMessage(t *testing.T) {
 	t.Parallel()
+
 	err := &ProtocolError{
 		URL:    "https://example.com/repo.git/info/refs?service=git-upload-pack",
 		Op:     "probe",
@@ -41,6 +43,7 @@ func TestProtocolError_Error_WithServerMessage(t *testing.T) {
 
 func TestProtocolError_Error_WithWrappedErr(t *testing.T) {
 	t.Parallel()
+
 	cause := errors.New("malformed preamble")
 	err := &ProtocolError{
 		URL:    "https://example.com/repo.git/info/refs?service=git-upload-pack",
@@ -55,6 +58,7 @@ func TestProtocolError_Error_WithWrappedErr(t *testing.T) {
 
 func TestProtocolError_Unwrap(t *testing.T) {
 	t.Parallel()
+
 	cause := errors.New("boom")
 	err := &ProtocolError{Err: cause}
 
@@ -65,6 +69,7 @@ func TestProtocolError_Unwrap(t *testing.T) {
 
 func TestProtocolError_Error_OmitsZeroStatus(t *testing.T) {
 	t.Parallel()
+
 	err := &ProtocolError{
 		URL: "https://example.com/repo.git/info/refs?service=git-upload-pack",
 		Op:  "probe",
@@ -79,6 +84,7 @@ func TestProtocolError_Error_OmitsZeroStatus(t *testing.T) {
 
 func TestSentinels_Distinct(t *testing.T) {
 	t.Parallel()
+
 	// All four sentinels share the `transport/http:` prefix but must be
 	// distinguishable via errors.Is so callers can branch on them.
 	all := []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound, ErrUnsupportedProtocol}
@@ -95,6 +101,7 @@ func TestSentinels_Distinct(t *testing.T) {
 
 func TestSentinels_PrefixedWithPackage(t *testing.T) {
 	t.Parallel()
+
 	for _, e := range []error{ErrAuthRequired, ErrAuthFailed, ErrNotFound, ErrUnsupportedProtocol} {
 		assert.True(t, strings.HasPrefix(e.Error(), "transport/http:"),
 			"sentinel %q must carry the package prefix for grep-friendly logs", e)
@@ -103,6 +110,7 @@ func TestSentinels_PrefixedWithPackage(t *testing.T) {
 
 func TestSentinels_BridgeToTransport(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name    string
 		scheme  error
@@ -132,6 +140,7 @@ func TestSentinels_BridgeToTransport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.ErrorIs(t, tt.scheme, tt.generic,
 				"errors.Is(%v, %v) must be true", tt.scheme, tt.generic)
 		})

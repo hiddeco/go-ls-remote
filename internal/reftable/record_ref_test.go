@@ -68,8 +68,10 @@ func sha256FromBytes(b []byte) objfmt.SHA256Hash {
 
 func Test_decodeRefRecord(t *testing.T) {
 	t.Parallel()
+
 	t.Run("value_single_oid", func(t *testing.T) {
 		t.Parallel()
+
 		// First record in a block: prevKey nil, prefix_length encodes 0.
 		oid := make([]byte, 20)
 		for i := range oid {
@@ -89,6 +91,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("value_two_oids_peeled", func(t *testing.T) {
 		t.Parallel()
+
 		val := make([]byte, 20)
 		peel := make([]byte, 20)
 		for i := range 20 {
@@ -110,6 +113,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("symref", func(t *testing.T) {
 		t.Parallel()
+
 		raw := encodeRefRecord(nil, "HEAD", 3, 1, nil, nil, "refs/heads/main", 20)
 
 		rec, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, nil, 10)
@@ -124,6 +128,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("deletion_tombstone", func(t *testing.T) {
 		t.Parallel()
+
 		raw := encodeRefRecord(nil, "refs/heads/gone", 0, 3, nil, nil, "", 20)
 
 		rec, n, err := decodeRefRecord[objfmt.SHA1Hash](raw, nil, nil, 0)
@@ -138,6 +143,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("prefix_compressed_chain", func(t *testing.T) {
 		t.Parallel()
+
 		// Three records sharing prefixes. Each record's prevKey is the
 		// fully reconstructed key from the previous step. The buffer is
 		// concatenated so each decode starts at the previous decode's
@@ -176,6 +182,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("ping_pong_chain", func(t *testing.T) {
 		t.Parallel()
+
 		// Walks the same chain as prefix_compressed_chain but threads
 		// two real scratch buffers via [keyBuf], exercising the
 		// scratch-reuse path that the walker uses. A regression in
@@ -216,6 +223,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("sha256_hash_size", func(t *testing.T) {
 		t.Parallel()
+
 		oid := make([]byte, 32)
 		for i := range oid {
 			oid[i] = byte(i + 1)
@@ -234,6 +242,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("reserved_value_type", func(t *testing.T) {
 		t.Parallel()
+
 		// Hand-craft a record whose value_type=4 (reserved). The decoder
 		// must reject it before attempting to read any value bytes.
 		raw := encodeKey(nil, []byte("HEAD"), 4)
@@ -246,6 +255,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("truncated_value", func(t *testing.T) {
 		t.Parallel()
+
 		// value_type=1 expects 20 bytes of OID; supply only 10.
 		raw := encodeKey(nil, []byte("refs/heads/main"), 1)
 		raw = append(raw, encodeVarint(0)...)
@@ -258,6 +268,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("symref_target_truncated", func(t *testing.T) {
 		t.Parallel()
+
 		// value_type=3, target_len claims 16 but only 4 bytes follow.
 		raw := encodeKey(nil, []byte("HEAD"), 3)
 		raw = append(raw, encodeVarint(0)...)  // update_index_delta
@@ -271,6 +282,7 @@ func Test_decodeRefRecord(t *testing.T) {
 
 	t.Run("update_index_overflow", func(t *testing.T) {
 		t.Parallel()
+
 		// min_update_index near MaxUint64 plus a non-zero delta would
 		// wrap; the decoder must reject rather than silently overflow.
 		raw := encodeRefRecord(nil, "HEAD", 0, 5, nil, nil, "", 20)

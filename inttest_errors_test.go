@@ -90,6 +90,7 @@ func errFindLSRemoteSentinel(err error) error {
 // failure happened before any wire byte was seen.
 func TestErr_DNSFailure(t *testing.T) {
 	t.Parallel()
+
 	// Bind-then-close yields a port the kernel guarantees is refused
 	// (RST on connect). Using port 0 directly would race with whatever
 	// the OS assigns at dial time.
@@ -122,6 +123,7 @@ func TestErr_DNSFailure(t *testing.T) {
 // challenge header, for the dispatch.
 func TestErr_HTTP401NoCreds(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -143,6 +145,7 @@ func TestErr_HTTP401NoCreds(t *testing.T) {
 // must surface as `ErrAuthFailed`.
 func TestErr_HTTP401RejectedCreds(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -169,6 +172,7 @@ func TestErr_HTTP401RejectedCreds(t *testing.T) {
 // retry. The retry uses a static resolver attached to the transport.
 func TestErr_HTTP401ResolverNewCreds(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
 
@@ -204,6 +208,7 @@ func TestErr_HTTP401ResolverNewCreds(t *testing.T) {
 // no challenge was offered.
 func TestErr_HTTP403(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -222,6 +227,7 @@ func TestErr_HTTP403(t *testing.T) {
 // TestErr_HTTP404 covers the missing-repository branch.
 func TestErr_HTTP404(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -243,6 +249,7 @@ func TestErr_HTTP404(t *testing.T) {
 // the 1-KiB excerpt cap unchanged.
 func TestErr_HTTP5xx(t *testing.T) {
 	t.Parallel()
+
 	const body = "upload-pack on fire"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -292,6 +299,7 @@ func TestErr_HTTP5xx(t *testing.T) {
 // dropped, so `ErrNotFound` etc. cannot fire here.
 func TestErr_ConnectionDropMidStream(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -353,6 +361,7 @@ func TestErr_ConnectionDropMidStream(t *testing.T) {
 // before any ref payload.
 func TestErr_ServerERRPacket(t *testing.T) {
 	t.Parallel()
+
 	const errMsg = "ls-refs: handler is offline"
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
@@ -405,6 +414,7 @@ func TestErr_ServerERRPacket(t *testing.T) {
 // to the public `ErrUnsupportedProtocol` via `dial.go`'s `errors.Join`.
 func TestErr_DemandedV2GotV0(t *testing.T) {
 	t.Parallel()
+
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
 
@@ -448,6 +458,7 @@ func TestErr_DemandedV2GotV0(t *testing.T) {
 // `object-info` shape to test against).
 func TestErr_ObjectInfoOnDumbHTTP(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(
@@ -478,6 +489,7 @@ func TestErr_ObjectInfoOnDumbHTTP(t *testing.T) {
 // returned slice carries only the valid OID and no error.
 func TestErr_ObjectInfoMissingOID(t *testing.T) {
 	t.Parallel()
+
 	entry := entryByName(t, "loose-objects")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -512,6 +524,7 @@ func TestErr_ObjectInfoMissingOID(t *testing.T) {
 // empty slice.
 func TestErr_EmptyRepo(t *testing.T) {
 	t.Parallel()
+
 	entry := entryByName(t, "empty")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -537,6 +550,7 @@ func TestErr_EmptyRepo(t *testing.T) {
 // and whose Symref names the unborn target branch.
 func TestErr_UnbornHEADRefs(t *testing.T) {
 	t.Parallel()
+
 	entry := entryByName(t, "unborn-head")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -571,6 +585,7 @@ func TestErr_UnbornHEADRefs(t *testing.T) {
 // `unborn` argument was on the request — see `helpers.DefaultBranch`).
 func TestErr_UnbornHEADDefaultBranch(t *testing.T) {
 	t.Parallel()
+
 	entry := entryByName(t, "unborn-head")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -595,6 +610,7 @@ func TestErr_UnbornHEADDefaultBranch(t *testing.T) {
 // chain — no library sentinel wrapping that would shadow the cause.
 func TestErr_ContextCanceled(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// The handler should never be reached; cancellation happens
 		// before the dial. Emit a 500 if we ever land here so the test
@@ -626,6 +642,7 @@ func TestErr_ContextCanceled(t *testing.T) {
 // error must surface `context.DeadlineExceeded` directly.
 func TestErr_ContextDeadlineExceeded(t *testing.T) {
 	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Same shape as TestErr_ContextCanceled: never expected to run.
 		w.WriteHeader(http.StatusInternalServerError)
@@ -659,6 +676,7 @@ func TestErr_ContextDeadlineExceeded(t *testing.T) {
 // `ProtocolError.Server`.
 func TestErr_MalformedPktLineAdvertisement(t *testing.T) {
 	t.Parallel()
+
 	const garbage = "this is definitely not a pkt-line stream\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", httpAdvContentType)
@@ -700,6 +718,7 @@ func TestErr_MalformedPktLineAdvertisement(t *testing.T) {
 // surfaces the corrupt-idx path.
 func TestErr_CorruptedPackObjectInfo(t *testing.T) {
 	t.Parallel()
+
 	gitdir := inttest.Entry{Name: "idx-corrupt", ObjectFormat: lsremote.ObjectFormatSHA1}.Materialize(t)
 
 	opts := []lsremote.Option{
@@ -728,6 +747,7 @@ func TestErr_CorruptedPackObjectInfo(t *testing.T) {
 // contract on `Dial`.
 func TestErr_URLParseFailure(t *testing.T) {
 	t.Parallel()
+
 	_, err := lsremote.Refs(t.Context(), "://malformed",
 		lsremote.RefsRequest{}, errOptsHTTP()...)
 	require.Error(t, err)
@@ -757,6 +777,7 @@ func TestErr_URLParseFailure(t *testing.T) {
 // that need a richer fixture override.
 func materializeLoose(t *testing.T) string {
 	t.Helper()
+
 	for _, e := range inttest.Entries() {
 		if e.Name == "loose-only" {
 			return e.Materialize(t)
@@ -771,6 +792,7 @@ func materializeLoose(t *testing.T) string {
 // keeps every row's setup readable.
 func entryByName(t *testing.T, name string) inttest.Entry {
 	t.Helper()
+
 	for _, e := range inttest.Entries() {
 		if e.Name == name {
 			return e
@@ -784,6 +806,7 @@ func entryByName(t *testing.T, name string) inttest.Entry {
 // registers a t.Cleanup to release it.
 func openSHA1Store(t *testing.T, gitdir string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
@@ -798,6 +821,7 @@ func writeSmartAdvertisement(t *testing.T, r *http.Request, w http.ResponseWrite
 	store *objstore.Store[objfmt.SHA1Hash],
 ) {
 	t.Helper()
+
 	w.Header().Set("Content-Type", httpAdvContentType)
 	pw := pktline.NewWriter(w)
 	require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
@@ -817,6 +841,7 @@ func writeSmartServer(t *testing.T, r *http.Request, w http.ResponseWriter,
 	store *objstore.Store[objfmt.SHA1Hash],
 ) {
 	t.Helper()
+
 	switch {
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs"):
 		writeSmartAdvertisement(t, r, w, store)

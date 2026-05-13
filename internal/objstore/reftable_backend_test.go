@@ -31,6 +31,7 @@ const reftableDetachedFixtureHead = "735d9012eb4e10ac1ab1d19e680281a6edc54ec2"
 // gitDir/commonDir plumbing every reftable-backend test repeats.
 func openReftableFromFixture(t *testing.T, name string) *reftableBackend[objfmt.SHA1Hash] {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
 	b, err := openReftableBackend[objfmt.SHA1Hash](gitDir, gitDir, "")
@@ -44,6 +45,7 @@ func openReftableFromFixture(t *testing.T, name string) *reftableBackend[objfmt.
 // directly: a reordering regression surfaces as a diff.
 func collectReftableRefs(t *testing.T, b *reftableBackend[objfmt.SHA1Hash]) []RefEntry[objfmt.SHA1Hash] {
 	t.Helper()
+
 	var out []RefEntry[objfmt.SHA1Hash]
 	for entry, err := range b.IterRefs() {
 		require.NoError(t, err)
@@ -54,6 +56,7 @@ func collectReftableRefs(t *testing.T, b *reftableBackend[objfmt.SHA1Hash]) []Re
 
 func TestReftableBackend_IterRefs_YieldsContentExcludingHEAD(t *testing.T) {
 	t.Parallel()
+
 	// The `with-reftable-content` fixture carries HEAD (a symref) plus
 	// refs/heads/main as the only value record. IterRefs surfaces only
 	// the latter — HEAD belongs to Head(), and symrefs other than HEAD
@@ -79,6 +82,7 @@ func TestReftableBackend_IterRefs_YieldsContentExcludingHEAD(t *testing.T) {
 
 func TestReftableBackend_Head_SymrefToExistingTarget(t *testing.T) {
 	t.Parallel()
+
 	// The fixture's HEAD is a symref pointing at refs/heads/main, which
 	// the same stack carries as a value record. Head() must surface both
 	// the target name and the resolved OID, with Unborn = false.
@@ -93,6 +97,7 @@ func TestReftableBackend_Head_SymrefToExistingTarget(t *testing.T) {
 
 func TestReftableBackend_Head_SymrefToMissingTargetIsUnborn(t *testing.T) {
 	t.Parallel()
+
 	// `git init --ref-format=reftable` writes a HEAD record bound to
 	// refs/heads/main even when no commit has landed yet. Head() must
 	// report Symref set, OID zero, Unborn true — the reftable analogue
@@ -108,6 +113,7 @@ func TestReftableBackend_Head_SymrefToMissingTargetIsUnborn(t *testing.T) {
 
 func TestReftableBackend_Head_Detached(t *testing.T) {
 	t.Parallel()
+
 	// `git update-ref --no-deref HEAD <oid>` rewrites HEAD to a value
 	// record (no Target). The backend reports it as a detached HEAD:
 	// Symref empty, OID populated, Unborn false.
@@ -122,6 +128,7 @@ func TestReftableBackend_Head_Detached(t *testing.T) {
 
 func TestReftableBackend_Head_MissingRecordIsCorrupt(t *testing.T) {
 	t.Parallel()
+
 	// Synthesize a stack without any HEAD record by writing an
 	// empty `tables.list`. Canonical Git always writes a HEAD record at
 	// `git init`, so a missing one is corruption — the backend must
@@ -139,6 +146,7 @@ func TestReftableBackend_Head_MissingRecordIsCorrupt(t *testing.T) {
 
 func TestReftableBackend_CustomLocation_RelativeToGitDir(t *testing.T) {
 	t.Parallel()
+
 	// `extensions.refStorage = reftable://<location>` resolves a
 	// relative payload against gitDir per canonical Git's
 	// [Documentation/config/extensions.adoc lines 59-78].
@@ -170,6 +178,7 @@ func TestReftableBackend_CustomLocation_RelativeToGitDir(t *testing.T) {
 
 func TestReftableBackend_CustomLocation_AbsoluteIsVerbatim(t *testing.T) {
 	t.Parallel()
+
 	// An absolute payload (`reftable:///abs/path`) is consumed verbatim;
 	// relative resolution against gitDir does not kick in.
 	root := materializeFixture(t, "with-reftable-content")
@@ -195,6 +204,7 @@ func TestReftableBackend_CustomLocation_AbsoluteIsVerbatim(t *testing.T) {
 
 func TestReftableBackend_CommonDirVsGitDir_DefaultLocationUsesCommonDir(t *testing.T) {
 	t.Parallel()
+
 	// With an empty location, the canonical layout puts the reftable
 	// stack under `<commonDir>/reftable/`. Synthesise a worktree-shaped
 	// case: gitDir is a sibling of commonDir, the reftable bytes live
@@ -226,6 +236,7 @@ func TestReftableBackend_CommonDirVsGitDir_DefaultLocationUsesCommonDir(t *testi
 
 func TestReftableBackend_OpenMissingDirReturnsError(t *testing.T) {
 	t.Parallel()
+
 	// A non-existent reftable directory must surface as an error
 	// (canonical Git refuses to operate on a missing stack); the
 	// constructor must wrap rather than silently succeed.
@@ -236,6 +247,7 @@ func TestReftableBackend_OpenMissingDirReturnsError(t *testing.T) {
 
 func TestReftableBackend_OpenViaStore_YieldsPopulatedRefs(t *testing.T) {
 	t.Parallel()
+
 	// End-to-end: `Open` on the populated fixture selects the reftable
 	// backend, and `Store[objfmt.SHA1Hash].IterRefs` surfaces the same refs as the direct
 	// backend test. Locks in the wiring through `openRefBackend`.
@@ -271,6 +283,7 @@ func TestReftableBackend_OpenViaStore_YieldsPopulatedRefs(t *testing.T) {
 
 func TestReftableBackend_IterRefs_PeelKnownAlwaysTrue(t *testing.T) {
 	t.Parallel()
+
 	// Reftable records always carry the peel slot (zero or set), so the
 	// merged-view lift must surface PeelKnown=true for every entry it
 	// yields. The fixture's only non-HEAD ref is a commit, hence Peeled
@@ -286,6 +299,7 @@ func TestReftableBackend_IterRefs_PeelKnownAlwaysTrue(t *testing.T) {
 
 func TestReftableBackend_Lookup_KnownRef(t *testing.T) {
 	t.Parallel()
+
 	// The fixture's `refs/heads/main` value record carries no peel slot
 	// (it is a commit). Lookup returns PeelKnown=true, Peeled=zero.
 	b := openReftableFromFixture(t, "with-reftable-content")
@@ -302,6 +316,7 @@ func TestReftableBackend_Lookup_KnownRef(t *testing.T) {
 
 func TestReftableBackend_Lookup_MissingRef(t *testing.T) {
 	t.Parallel()
+
 	b := openReftableFromFixture(t, "with-reftable-content")
 
 	entry, found, err := b.Lookup("refs/heads/does-not-exist")
@@ -312,6 +327,7 @@ func TestReftableBackend_Lookup_MissingRef(t *testing.T) {
 
 func TestReftableBackend_Lookup_HEADHidden(t *testing.T) {
 	t.Parallel()
+
 	// HEAD is exposed through Head(), not Lookup. A direct Lookup("HEAD")
 	// must miss so callers cannot accidentally hand HEAD's symref payload
 	// to peel logic that expects a value record.

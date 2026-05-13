@@ -29,6 +29,7 @@ const (
 // stays focused on the assertion it is making.
 func openStoreFromFixture(t *testing.T, name string) *Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	s, err := Open[objfmt.SHA1Hash](root)
 	require.NoError(t, err)
@@ -38,6 +39,7 @@ func openStoreFromFixture(t *testing.T, name string) *Store[objfmt.SHA1Hash] {
 
 func TestStorePeel_AnnotatedTagResolvesToCommit(t *testing.T) {
 	t.Parallel()
+
 	// Hit path: the canonical fixture's `v1` annotated tag must peel
 	// straight through to the commit it points at. The peeled OID is
 	// the commit fixture, not the tag fixture, so a regression in the
@@ -56,6 +58,7 @@ func TestStorePeel_AnnotatedTagResolvesToCommit(t *testing.T) {
 
 func TestStorePeel_NonTagInputReturnsNotPeelable(t *testing.T) {
 	t.Parallel()
+
 	// Blobs, trees, and commits are not peelable; the contract is
 	// (zero, false, nil) — never an error. The three-way table
 	// covers each non-tag [objfmt.ObjectType] so a mis-classification
@@ -74,6 +77,7 @@ func TestStorePeel_NonTagInputReturnsNotPeelable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			peeled, ok, err := s.Peel(hashFromHex(t, tc.oid, objfmt.SHA1))
 			require.NoError(t, err)
 			assert.False(t, ok)
@@ -84,6 +88,7 @@ func TestStorePeel_NonTagInputReturnsNotPeelable(t *testing.T) {
 
 func TestStorePeel_TagOfTagRecursesToTerminalCommit(t *testing.T) {
 	t.Parallel()
+
 	// Recursive peel: v2 -> v1 -> commit. The outer tag's terminal
 	// target is the commit, not the inner tag. This is the canonical
 	// "annotated tag of an annotated tag" shape `git tag -a v2 v1`
@@ -102,6 +107,7 @@ func TestStorePeel_TagOfTagRecursesToTerminalCommit(t *testing.T) {
 
 func TestStorePeel_TagOfTagInnerLinkAlsoResolves(t *testing.T) {
 	t.Parallel()
+
 	// The inner link of the v2 -> v1 -> commit chain is itself a
 	// peelable tag. Confirms the cache key is the input OID (not the
 	// chain head) so an independent call on the inner tag is decided
@@ -119,6 +125,7 @@ func TestStorePeel_TagOfTagInnerLinkAlsoResolves(t *testing.T) {
 
 func TestStorePeel_CacheHitSurvivesUnreadableObject(t *testing.T) {
 	t.Parallel()
+
 	// After the first Peel succeeds the answer must come from the
 	// in-memory cache; a second call must NOT touch the loose-object
 	// file. We prove that by chmod-ing the file unreadable between
@@ -158,6 +165,7 @@ func TestStorePeel_CacheHitSurvivesUnreadableObject(t *testing.T) {
 
 func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 	t.Parallel()
+
 	// Negative results (`ok=false`) cache under the same shape so
 	// repeated peel attempts on a non-tag OID stay O(1). The
 	// observable proof: chmod the underlying loose object unreadable
@@ -192,6 +200,7 @@ func TestStorePeel_CacheHitForNegativeResult(t *testing.T) {
 
 func TestStorePeel_DepthBoundCollapsesToNotPeelable(t *testing.T) {
 	t.Parallel()
+
 	// The `loose-tag-deep` fixture is a 17-link annotated-tag chain.
 	// `Peel(v17)` must walk only 16 links and then surface the "not
 	// peelable" shape rather than recurse forever (or wrap an
@@ -210,6 +219,7 @@ func TestStorePeel_DepthBoundCollapsesToNotPeelable(t *testing.T) {
 
 func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 	t.Parallel()
+
 	// Depth overrun must NOT poison the cache: a future bump of
 	// `maxPeelDepth` is supposed to make a previously-overrunning
 	// chain resolvable on the next call without a Store[objfmt.SHA1Hash] restart, and
@@ -256,6 +266,7 @@ func TestStorePeel_DepthBoundOverrunIsNotCached(t *testing.T) {
 
 func TestStorePeel_DepthBoundShortChainStillResolves(t *testing.T) {
 	t.Parallel()
+
 	// Sanity check: the 16-link chain (v16 -> v15 -> ... -> v1 ->
 	// commit) sits exactly at the depth limit and must still resolve.
 	// Pairing this with the v17 case fences the bound from both sides:
@@ -281,6 +292,7 @@ func TestStorePeel_DepthBoundShortChainStillResolves(t *testing.T) {
 
 func TestStorePeel_UnknownOIDIsNotAnError(t *testing.T) {
 	t.Parallel()
+
 	// Canonical Git's [object-name.c::repo_peel_to_type] returns
 	// NULL for an OID it cannot find; the API mirrors that with
 	// (zero, false, nil) rather than wrapping `os.ErrNotExist`.
@@ -306,6 +318,7 @@ func TestStorePeel_UnknownOIDIsNotAnError(t *testing.T) {
 
 func TestStorePeel_ConcurrentCallsConverge(t *testing.T) {
 	t.Parallel()
+
 	// Race detector probe: many goroutines call Peel on the same OID
 	// at the same time. Every one must observe the same answer, and
 	// the cache mutation must not race (the test runs under
@@ -347,6 +360,7 @@ func TestStorePeel_ConcurrentCallsConverge(t *testing.T) {
 
 func TestStore_PeelRef_FullyPeeledShortCircuits(t *testing.T) {
 	t.Parallel()
+
 	// `packed-refs-fully-peeled` ships no objects directory; `Peel` on
 	// any OID would miss with the "not peelable" shape. The annotated
 	// tag entry carries `^<peel-oid>` in `packed-refs`, so PeelRef must
@@ -369,6 +383,7 @@ func TestStore_PeelRef_FullyPeeledShortCircuits(t *testing.T) {
 
 func TestStore_PeelRef_FullyPeeledNoPeelShortCircuits(t *testing.T) {
 	t.Parallel()
+
 	// Branch entry in a fully-peeled fixture: the absence of `^<oid>` is
 	// definitive. PeelRef must return (zero, false, nil) without
 	// consulting the object store.
@@ -385,6 +400,7 @@ func TestStore_PeelRef_FullyPeeledNoPeelShortCircuits(t *testing.T) {
 
 func TestStore_PeelRef_NoTraitFallsThrough(t *testing.T) {
 	t.Parallel()
+
 	// `loose-tag-deep` ships annotated tags as loose ref files under
 	// `refs/tags/` plus the corresponding loose tag objects. With no
 	// `packed-refs` and no `fully-peeled` trait, PeelKnown is false and
@@ -415,6 +431,7 @@ func TestStore_PeelRef_NoTraitFallsThrough(t *testing.T) {
 
 func TestStore_PeelRef_ReftableUsesRecordPeel(t *testing.T) {
 	t.Parallel()
+
 	// Reftable records always populate the peel slot, so every Lookup
 	// must surface PeelKnown=true. PeelRef short-circuits on the record
 	// without falling through to the object-body read.
@@ -441,6 +458,7 @@ func TestStore_PeelRef_ReftableUsesRecordPeel(t *testing.T) {
 
 func TestStore_PeelRef_MissingRef(t *testing.T) {
 	t.Parallel()
+
 	// A ref name absent from the backend must surface as the same
 	// "no peel" shape as a non-peelable input — never an error.
 	s := openStoreFromFixture(t, "loose-objects")
@@ -458,6 +476,7 @@ func TestStore_PeelRef_MissingRef(t *testing.T) {
 // cost is negligible compared to keeping the assertion fixture-stable.
 func readRefOID(t *testing.T, s *Store[objfmt.SHA1Hash], name string) objfmt.SHA1Hash {
 	t.Helper()
+
 	for entry, err := range s.IterRefs() {
 		require.NoError(t, err)
 		if entry.Name == name {

@@ -33,6 +33,7 @@ import (
 // directory.
 func fixturesRoot(t testing.TB) string {
 	t.Helper()
+
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed; package layout changed?")
 	// `file` is `<module>/internal/testfixture/materialize.go`; walk
@@ -96,6 +97,7 @@ func MaterializeRepoTree(t testing.TB, name string) string {
 // should use [MaterializeRepoTree] instead.
 func MaterializeRepo(t testing.TB, name string) string {
 	t.Helper()
+
 	dst := MaterializeRepoTree(t, name)
 	gitdir := filepath.Join(dst, ".git")
 	info, err := os.Stat(gitdir)

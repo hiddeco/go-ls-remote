@@ -37,6 +37,7 @@ const commandResultHeader = "application/x-git-upload-pack-result"
 // fixtures ship without one — mirroring `transport/http/command_test.go`.
 func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
@@ -53,6 +54,7 @@ func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash
 // `<repoPath>/git-upload-pack` runs the v2 command loop.
 func serveHandlerV2(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath string) http.Handler {
 	t.Helper()
+
 	infoRefsPath := repoPath + "/info/refs"
 	uploadPackPath := repoPath + "/git-upload-pack"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +102,7 @@ func serveHandlerV2(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPa
 // the POST endpoint is unreachable from the Dial flow.
 func serveHandlerV0(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath string) http.Handler {
 	t.Helper()
+
 	infoRefsPath := repoPath + "/info/refs"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == infoRefsPath {
@@ -192,6 +195,7 @@ func (s *stubConn) Close() error {
 // the capability lines, and the flush all belong to the advertisement.
 func stripV2Advertisement(t *testing.T, raw []byte) []byte {
 	t.Helper()
+
 	src := bytes.NewReader(raw)
 	rdr := pktline.NewReader(src)
 	for {
@@ -223,6 +227,7 @@ func stripV2Advertisement(t *testing.T, raw []byte) []byte {
 //	flush
 func buildV2Advertisement(t *testing.T) []byte {
 	t.Helper()
+
 	var b bytes.Buffer
 	pw := pktline.NewWriter(&b)
 	for _, line := range []string{
@@ -249,6 +254,7 @@ func buildV2Advertisement(t *testing.T) []byte {
 //	flush
 func buildV2LSRefsNoSymrefResponse(t *testing.T) []byte {
 	t.Helper()
+
 	var b bytes.Buffer
 	pw := pktline.NewWriter(&b)
 	// A zero SHA-1 is acceptable for a stub; the DefaultBranch helper
@@ -269,6 +275,7 @@ func buildV2LSRefsNoSymrefResponse(t *testing.T) []byte {
 //	flush
 func buildV0NoSymrefAdvertisement(t *testing.T) []byte {
 	t.Helper()
+
 	var b bytes.Buffer
 	pw := pktline.NewWriter(&b)
 	zeroOID := "0000000000000000000000000000000000000000"

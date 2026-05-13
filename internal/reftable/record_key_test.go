@@ -44,8 +44,10 @@ func encodeKey(prevKey, key []byte, extra uint8) []byte {
 
 func Test_decodeKey(t *testing.T) {
 	t.Parallel()
+
 	t.Run("first_record_no_prefix", func(t *testing.T) {
 		t.Parallel()
+
 		// Restart-point records always carry prefix_length=0, so the
 		// decoded key equals the suffix.
 		raw := encodeKey(nil, []byte("refs/heads/main"), 1)
@@ -58,6 +60,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("second_record_shares_prefix", func(t *testing.T) {
 		t.Parallel()
+
 		prev := []byte("refs/heads/main")
 		raw := encodeKey(prev, []byte("refs/heads/master"), 2)
 		key, extra, n, err := decodeKey(raw, prev, nil)
@@ -69,6 +72,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("three_step_chain", func(t *testing.T) {
 		t.Parallel()
+
 		// Walks a small chain to confirm the running prevKey works.
 		keys := []string{
 			"refs/heads/branch-1",
@@ -102,6 +106,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("extra_field_three_bits", func(t *testing.T) {
 		t.Parallel()
+
 		// All eight extra values round-trip through encode/decode.
 		for ex := range uint8(8) {
 			raw := encodeKey(nil, []byte("HEAD"), ex)
@@ -114,6 +119,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("truncated_suffix_rejected", func(t *testing.T) {
 		t.Parallel()
+
 		// Encoded key claims a 4-byte suffix but only supplies 2.
 		raw := encodeKey(nil, []byte("HEAD"), 1)
 		short := raw[:len(raw)-2]
@@ -124,6 +130,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("prefix_exceeds_prev_rejected", func(t *testing.T) {
 		t.Parallel()
+
 		// Hand-craft a record that claims to share 20 bytes with a
 		// 5-byte previous key. Reading must reject the input.
 		raw := make([]byte, 0, 8)
@@ -136,6 +143,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("reuses_scratch_when_cap_sufficient", func(t *testing.T) {
 		t.Parallel()
+
 		// When the caller hands in a scratch slice whose cap is at
 		// least the decoded key's length, decodeKey reuses the
 		// underlying array. Pointer-identity (via [unsafe.SliceData])
@@ -152,6 +160,7 @@ func Test_decodeKey(t *testing.T) {
 
 	t.Run("allocates_when_scratch_cap_insufficient", func(t *testing.T) {
 		t.Parallel()
+
 		// With nil scratch (or scratch too small), decodeKey allocates
 		// fresh, leaving any caller-supplied bytes untouched.
 		raw := encodeKey(nil, []byte("refs/heads/main"), 1)

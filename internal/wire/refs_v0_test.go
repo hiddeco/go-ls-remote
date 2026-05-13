@@ -23,8 +23,10 @@ const (
 
 func TestParseAdvertisement_v0v1(t *testing.T) {
 	t.Parallel()
+
 	t.Run("v0 single ref no caps", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\x00\n")},
 			packet{kind: pktline.Flush},
@@ -39,6 +41,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 first ref with caps then plain ref", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidHEAD + " HEAD\x00multi_ack agent=git/2.45.0\n")},
 			packet{data: []byte(oidMain + " refs/heads/main\n")},
@@ -57,6 +60,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 peeled tag attaches to preceding ref", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidHEAD + " refs/heads/main\x00\n")},
 			packet{data: []byte(oidTag + " refs/tags/v1\n")},
@@ -73,6 +77,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 empty repo placeholder discarded", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidZero + " capabilities^{}\x00agent=git/2.45.0 multi_ack\n")},
 			packet{kind: pktline.Flush},
@@ -88,6 +93,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 multi-symref applied to refs", func(t *testing.T) {
 		t.Parallel()
+
 		caps := "symref=HEAD:refs/heads/main symref=ORIG_HEAD:refs/heads/main"
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidHEAD + " HEAD\x00" + caps + "\n")},
@@ -105,6 +111,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 symref splits on first colon", func(t *testing.T) {
 		t.Parallel()
+
 		// Refname containing `:` is rare but legal under the BNF. The
 		// split must apply only to the first `:`.
 		caps := "symref=HEAD:refs/heads/weird:name"
@@ -120,6 +127,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 shallow line silently skipped", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\x00\n")},
 			packet{data: []byte("shallow " + oidShlw + "\n")},
@@ -133,6 +141,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 dangling symref leaves no error", func(t *testing.T) {
 		t.Parallel()
+
 		// `symref=NOSUCH:...` — no matching ref. Canonical Git silently
 		// drops the dangling entry.
 		caps := "symref=NOSUCH:refs/heads/main"
@@ -148,6 +157,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 first line missing NUL is malformed", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\n")},
 			packet{kind: pktline.Flush},
@@ -159,6 +169,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 first line missing space is malformed", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("nospace\x00caps\n")},
 			packet{kind: pktline.Flush},
@@ -169,6 +180,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 peel without preceding ref errors", func(t *testing.T) {
 		t.Parallel()
+
 		// First line is a peel — no preceding ref, malformed.
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidTag + " refs/tags/v1^{}\x00\n")},
@@ -181,6 +193,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 peel paired with mismatched preceding ref errors", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\x00\n")},
 			packet{data: []byte(oidTagDef + " refs/tags/v1^{}\n")},
@@ -192,6 +205,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 other-tip line missing space is malformed", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\x00\n")},
 			packet{data: []byte("nospaceline\n")},
@@ -203,6 +217,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 unexpected delim is a wire violation", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidMain + " refs/heads/main\x00\n")},
 			packet{kind: pktline.Delim},
@@ -213,6 +228,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 truncated stream surfaces unexpected EOF", func(t *testing.T) {
 		t.Parallel()
+
 		// First ref line, no flush — pktline.Reader returns io.EOF on
 		// the next read; parser must convert to ErrUnexpectedEOF.
 		r := buildAdvertisement(t,
@@ -224,6 +240,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v1 shape matches v0 with version 1 prefix", func(t *testing.T) {
 		t.Parallel()
+
 		r := buildAdvertisement(t,
 			packet{data: []byte("version 1\n")},
 			packet{data: []byte(oidHEAD + " HEAD\x00symref=HEAD:refs/heads/main agent=git\n")},
@@ -244,6 +261,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 empty repo with no caps", func(t *testing.T) {
 		t.Parallel()
+
 		// Edge case: caps block is empty after the NUL.
 		r := buildAdvertisement(t,
 			packet{data: []byte(oidZero + " capabilities^{}\x00\n")},
@@ -257,6 +275,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 
 	t.Run("v0 cap list trims trailing LF only", func(t *testing.T) {
 		t.Parallel()
+
 		// Confirm the parser does not strip CR (CR is not in the
 		// canonical whitespace set) — a payload ending in "\r\n" keeps
 		// the CR as part of the last cap token.

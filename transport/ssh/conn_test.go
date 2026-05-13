@@ -16,6 +16,7 @@ import (
 // before exercising those calls.
 func TestConn_Close_Idempotent(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: []byte("0000")})
 
 	tr := New(

@@ -45,6 +45,7 @@ var concurrentNames = []string{
 
 func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 	t.Parallel()
+
 	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
@@ -104,6 +105,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 
 func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 	t.Parallel()
+
 	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 
@@ -141,6 +143,7 @@ func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 
 func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 	t.Parallel()
+
 	s, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "with-index-sha1"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })

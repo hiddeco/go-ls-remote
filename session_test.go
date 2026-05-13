@@ -85,6 +85,7 @@ func openObjectInfoFixture(t *testing.T) (store *objstore.Store[objfmt.SHA1Hash]
 // map on the returned struct cannot corrupt later observations.
 func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -132,6 +133,7 @@ func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
 // fixture's single branch with no errors.
 func TestSession_Refs_v2(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -170,6 +172,7 @@ func TestSession_Refs_v2(t *testing.T) {
 // refs/heads/main but not HEAD (which is not under that namespace).
 func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -215,6 +218,7 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 // no command is issued, and no error is returned.
 func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -259,6 +263,7 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 // observe the capability-level mapping.
 func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -293,6 +298,7 @@ func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
 // must carry Symref == "refs/heads/main" when the flag is set.
 func TestSession_Refs_v0_SymrefsFlagFillsRefSymref(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -325,6 +331,7 @@ func TestSession_Refs_v0_SymrefsFlagFillsRefSymref(t *testing.T) {
 // buildV0NoSymrefAdvertisement, which emits HEAD with no symref cap.
 func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
 	t.Parallel()
+
 	advBytes := buildV0NoSymrefAdvertisement(t)
 	conn := &stubConn{
 		adv: pktline.NewReader(bytes.NewReader(advBytes)),
@@ -353,6 +360,7 @@ func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
 // iterator and returns the same refs.
 func TestSession_ListRefs(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -378,6 +386,7 @@ func TestSession_ListRefs(t *testing.T) {
 // matches the request and whose Size is strictly positive.
 func TestSession_ObjectInfo_v2(t *testing.T) {
 	t.Parallel()
+
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -400,6 +409,7 @@ func TestSession_ObjectInfo_v2(t *testing.T) {
 // `*ProtocolError` whose chain matches `ErrUnsupportedProtocol`.
 func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 	t.Parallel()
+
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
@@ -432,6 +442,7 @@ func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 // public-typed error.
 func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 	t.Parallel()
+
 	const commitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 
 	s := &Session{
@@ -472,6 +483,7 @@ func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 // [protocol-caps.c::send_info lines 47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
 func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 	t.Parallel()
+
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -499,6 +511,7 @@ func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 // without rebuilding the in-process server here.
 func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 	t.Parallel()
+
 	commitOID := "26dae744f51e61913f50bd402cbe63953c7d637b"
 
 	// Synthesise a canonical no-attrs response so the Session call
@@ -640,6 +653,7 @@ func (c *closeRecordingStubConn) Close() error {
 // [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
 	t.Parallel()
+
 	const (
 		oidHEAD = "4444444444444444444444444444444444444444"
 		oidMain = "1111111111111111111111111111111111111111"
@@ -702,6 +716,7 @@ func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
 // successive calls must both return nil.
 func TestSession_Close_idempotent(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
@@ -722,6 +737,7 @@ func TestSession_Close_idempotent(t *testing.T) {
 // instead of dispatching into a misaligned stream.
 func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 	t.Parallel()
+
 	// Build a `commandStubConn` whose ls-refs response carries an
 	// in-stream `ERR <msg>` pkt-line. `wire.DecodeLSRefs` surfaces
 	// this as `wire.ErrServerRefused` mid-stream, which is exactly
@@ -794,6 +810,7 @@ func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 // via `errors.Is` on the same chain — joining never severs it.
 func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
 	t.Parallel()
+
 	s := &Session{
 		url:  "http://example.test/repo.git",
 		caps: Capabilities{Version: ProtocolV2},
@@ -801,6 +818,7 @@ func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
 
 	t.Run("direct wire.ErrServerRefused is bridged", func(t *testing.T) {
 		t.Parallel()
+
 		err := s.protocolError("ls-refs", wire.ErrServerRefused)
 		require.Error(t, err)
 
@@ -816,6 +834,7 @@ func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
 
 	t.Run("wrapped wire.ErrServerRefused is bridged", func(t *testing.T) {
 		t.Parallel()
+
 		wrapped := fmt.Errorf("ls-refs: %w", wire.ErrServerRefused)
 		err := s.protocolError("ls-refs", wrapped)
 		require.Error(t, err)
@@ -828,6 +847,7 @@ func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
 
 	t.Run("unrelated wire error is not bridged", func(t *testing.T) {
 		t.Parallel()
+
 		other := errors.New("decode: short read")
 		err := s.protocolError("object-info", other)
 		require.Error(t, err)

@@ -23,6 +23,7 @@ import (
 // substituting the link controls.
 func TestNetrc_Resolve_WorldWritableSymlinkWarns(t *testing.T) {
 	t.Parallel()
+
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.netrc")
 	require.NoError(t, os.WriteFile(target, []byte("machine example.com login a password b\n"), 0o600))

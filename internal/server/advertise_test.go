@@ -57,6 +57,7 @@ func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Op
 // [pkt-line.c::packet_write]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L244
 func TestServe_V2AdvertisementBytes(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -81,6 +82,7 @@ func TestServe_V2AdvertisementBytes(t *testing.T) {
 // [serve.c::agent_advertise lines 25-31]: https://github.com/git/git/blob/v2.54.0/serve.c#L25-L31
 func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -100,6 +102,7 @@ func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 // [serve.c::object_format_advertise lines 53-58]: https://github.com/git/git/blob/v2.54.0/serve.c#L53-L58
 func TestServe_V2AdvertisementSHA256(t *testing.T) {
 	t.Parallel()
+
 	gitdir := testfixture.MaterializeRepo(t, "sha256")
 	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
 	require.NoError(t, err)

@@ -40,6 +40,7 @@ func flushAdvertisement() []byte { return []byte("0000") }
 // [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func TestOpen_v2_envAccepted(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -86,6 +87,7 @@ func TestOpen_v2_envAccepted(t *testing.T) {
 // version trailer as the fallback negotiation route.
 func TestOpen_v2_envRejected(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     false,
 		advertisement: flushAdvertisement(),
@@ -133,6 +135,7 @@ func TestOpen_v2_envRejected(t *testing.T) {
 // `wire.WriteStreamRequest`'s v0 branch).
 func TestOpen_v0Pinned(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -175,6 +178,7 @@ func TestOpen_v0Pinned(t *testing.T) {
 // session-channel setup (`"session"`).
 func TestOpen_authFailure(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -202,6 +206,7 @@ func TestOpen_authFailure(t *testing.T) {
 // a sentinel.
 func TestOpen_dialFailure(t *testing.T) {
 	t.Parallel()
+
 	// Reserve a port, close it, then dial: the address is well-formed
 	// but the listener is gone, so the kernel refuses the connection.
 	var lc net.ListenConfig
@@ -236,6 +241,7 @@ func TestOpen_dialFailure(t *testing.T) {
 // Open is invoked surfaces the cancellation error directly.
 func TestOpen_contextCancelled(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: flushAdvertisement()})
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -260,6 +266,7 @@ func TestOpen_contextCancelled(t *testing.T) {
 // [errors.Is].
 func TestOpen_missingHostKey(t *testing.T) {
 	t.Parallel()
+
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: flushAdvertisement()})
 
 	tr := New(WithAuth(Signer(srv.clientSigner)))
@@ -287,6 +294,7 @@ func TestOpen_missingHostKey(t *testing.T) {
 // `context.Canceled`.
 func TestOpen_handshakeContextCancelled(t *testing.T) {
 	t.Parallel()
+
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -357,6 +365,7 @@ func TestOpen_handshakeContextCancelled(t *testing.T) {
 // request, which is the only observable artefact for this contract.
 func TestOpen_pathQuoting(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name     string
 		path     string
@@ -392,6 +401,7 @@ func TestOpen_pathQuoting(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			srv := newTestServer(t, testServerOpts{
 				acceptEnv:     true,
 				advertisement: flushAdvertisement(),

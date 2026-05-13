@@ -15,16 +15,20 @@ import (
 // [errors.Is], mirroring the bridge contract of the other transports.
 func TestSentinels_BridgeToTransport(t *testing.T) {
 	t.Parallel()
+
 	t.Run("ErrAuthRequired bridges to transport.ErrAuthRequired", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, ErrAuthRequired, transport.ErrAuthRequired)
 	})
 	t.Run("ErrAuthFailed bridges to transport.ErrAuthFailed", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, ErrAuthFailed, transport.ErrAuthFailed)
 	})
 	t.Run("ErrNotFound bridges to transport.ErrNotFound", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, ErrNotFound, transport.ErrNotFound)
 	})
 }
@@ -33,6 +37,7 @@ func TestSentinels_BridgeToTransport(t *testing.T) {
 // `transport/ssh: <op> <URL>: <cause>` with zero-valued fields elided.
 func TestProtocolError_Error(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name string
 		err  *ProtocolError
@@ -57,6 +62,7 @@ func TestProtocolError_Error(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}
@@ -66,6 +72,7 @@ func TestProtocolError_Error(t *testing.T) {
 // [errors.Unwrap] / [errors.Is].
 func TestProtocolError_Unwrap(t *testing.T) {
 	t.Parallel()
+
 	err := &ProtocolError{Op: "dial", Err: ErrAuthFailed}
 	require.ErrorIs(t, err, ErrAuthFailed)
 	assert.ErrorIs(t, err, transport.ErrAuthFailed)

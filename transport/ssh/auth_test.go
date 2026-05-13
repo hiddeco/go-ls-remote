@@ -23,6 +23,7 @@ import (
 // [ssh.Signer] (for [TestSigner] and the agent keyring in [TestAgent]).
 func newEd25519Signer(t *testing.T) (ed25519.PrivateKey, ssh.Signer) {
 	t.Helper()
+
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	signer, err := ssh.NewSignerFromKey(priv)
@@ -163,6 +164,7 @@ func TestAgent_ContextCancelled(t *testing.T) {
 
 func TestKeyFile(t *testing.T) {
 	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem and key handling exercised here matches the package's Unix-only scope")
 	}
@@ -186,6 +188,7 @@ func TestKeyFile(t *testing.T) {
 
 func TestKeyFile_Missing(t *testing.T) {
 	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem semantics here are Unix-only by design for this package")
 	}
@@ -201,6 +204,7 @@ func TestKeyFile_Missing(t *testing.T) {
 
 func TestKeyFile_Malformed(t *testing.T) {
 	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem semantics here are Unix-only by design for this package")
 	}
@@ -223,6 +227,7 @@ func TestKeyFile_Malformed(t *testing.T) {
 
 func TestSigner(t *testing.T) {
 	t.Parallel()
+
 	_, signer := newEd25519Signer(t)
 
 	methods, cleanup, err := Signer(signer).Resolve(t.Context(), "example.com")

@@ -22,6 +22,7 @@ import (
 // fixture-name plumbing and the cleanup wiring at every call site.
 func openEmptyStore(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	s, err := objstore.Open[objfmt.SHA1Hash](gitdir)
 	require.NoError(t, err)
@@ -34,6 +35,7 @@ func openEmptyStore(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 // surface an error rather than emit silence.
 func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	clientToServer, _ := io.Pipe()
@@ -81,6 +83,7 @@ func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 // [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	// Build a v2 request: `command=ls-refs`, delim, flush (end of
@@ -121,6 +124,7 @@ func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
 // advertisement that [Serve] would have emitted.
 func TestServeCommandLoop_HandlesLSRefs(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer

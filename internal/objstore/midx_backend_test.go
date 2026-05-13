@@ -39,6 +39,7 @@ const (
 // is making.
 func openMidxBackendFromFixture(t *testing.T, name string) *midxBackend[objfmt.SHA1Hash] {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
 	b, err := openMidxBackend[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
@@ -49,6 +50,7 @@ func openMidxBackendFromFixture(t *testing.T, name string) *midxBackend[objfmt.S
 
 func TestMidxBackend_OpensWithSiblingPacks(t *testing.T) {
 	t.Parallel()
+
 	// `midx-with-siblings/` carries the midx + the two midx-covered
 	// packs + one sibling pack added after midx generation. The
 	// constructor must wire all of them up: the midx-listed packs into
@@ -71,6 +73,7 @@ func TestMidxBackend_OpensWithSiblingPacks(t *testing.T) {
 
 func TestMidxBackend_LookupHitViaMidx(t *testing.T) {
 	t.Parallel()
+
 	// An OID present in a midx-covered pack must be answered through
 	// `Midx.Find`, and the returned `*Pack` must be the one keyed by
 	// the corresponding `PackNames` entry — not the sibling and not a
@@ -93,6 +96,7 @@ func TestMidxBackend_LookupHitViaMidx(t *testing.T) {
 
 func TestMidxBackend_LookupHitViaSiblingFallback(t *testing.T) {
 	t.Parallel()
+
 	// `three-objects` was added after midx generation, so its OIDs are
 	// absent from the midx and must be picked up by the sibling
 	// fallback scan. The returned pack is the sibling, not a midx
@@ -110,6 +114,7 @@ func TestMidxBackend_LookupHitViaSiblingFallback(t *testing.T) {
 
 func TestMidxBackend_LookupMissReturnsNilError(t *testing.T) {
 	t.Parallel()
+
 	// A clean miss surfaces as (nil, 0, false, nil) so the upper layer
 	// can fall through to loose objects, alternates, or
 	// [ErrCorruptObject] without reinterpreting the error slot.
@@ -125,6 +130,7 @@ func TestMidxBackend_LookupMissReturnsNilError(t *testing.T) {
 
 func TestMidxBackend_AllPacksDeterministicOrder(t *testing.T) {
 	t.Parallel()
+
 	// `AllPacks` must yield every pack — midx-covered AND sibling — in
 	// a single mtime-desc order with basename as the stable
 	// tiebreaker, matching canonical Git's [packfile.c::sort_pack].
@@ -160,6 +166,7 @@ func TestMidxBackend_AllPacksDeterministicOrder(t *testing.T) {
 
 func TestMidxBackend_AllPacksOrderedByMtimeDesc(t *testing.T) {
 	t.Parallel()
+
 	// `AllPacks` is a single mtime-desc list across midx-covered and
 	// sibling packs — the midx-listed-first quirk does not survive in
 	// the enumeration order. With `three-objects.pack` (sibling)
@@ -190,6 +197,7 @@ func TestMidxBackend_AllPacksOrderedByMtimeDesc(t *testing.T) {
 
 func TestMidxBackend_SiblingFallbackHitsYoungerSiblingFirst(t *testing.T) {
 	t.Parallel()
+
 	// Two sibling packs not covered by the midx, both holding the
 	// lookup target, must resolve through the younger one. The
 	// midx-with-siblings fixture's existing sibling is the
@@ -226,6 +234,7 @@ func TestMidxBackend_SiblingFallbackHitsYoungerSiblingFirst(t *testing.T) {
 
 func TestMidxBackend_BasenameTiebreaker(t *testing.T) {
 	t.Parallel()
+
 	// When two packs carry identical mtimes, the basename comparator
 	// breaks the tie. Stamp every pack to the same instant and the
 	// sibling slot at the end of `AllPacks` must order lexically — a
@@ -262,6 +271,7 @@ func TestMidxBackend_BasenameTiebreaker(t *testing.T) {
 
 func TestMidxBackend_NoSiblingPacks(t *testing.T) {
 	t.Parallel()
+
 	// `midx-no-siblings/` carries midx + the two covered packs only.
 	// The fallback list is empty; every Lookup must resolve through
 	// the midx itself.
@@ -287,6 +297,7 @@ func TestMidxBackend_NoSiblingPacks(t *testing.T) {
 
 func TestMidxBackend_CorruptMidxReturnsErrorWithoutLeak(t *testing.T) {
 	t.Parallel()
+
 	// 16 garbage bytes are enough to fail `OpenMidx`'s magic check.
 	// The constructor must surface the wrapped error referencing the
 	// midx path; the no-leak claim is enforced by the constructor
@@ -305,6 +316,7 @@ func TestMidxBackend_CorruptMidxReturnsErrorWithoutLeak(t *testing.T) {
 
 func TestMidxBackend_MissingPackReferencedByMidxIsCorrupt(t *testing.T) {
 	t.Parallel()
+
 	// `midx-missing-pack/` has a midx whose `PNAM` lists pack-1 AND
 	// pack-2, but only pack-1 is on disk. The constructor must reject
 	// the catalog with [ErrCorruptObject] and name the missing pack so
@@ -323,6 +335,7 @@ func TestMidxBackend_MissingPackReferencedByMidxIsCorrupt(t *testing.T) {
 
 func TestMidxBackend_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
+
 	// `Close` cascades to the midx + every wrapped idx + every wrapped
 	// pack. Subsequent calls must return the same joined error (here,
 	// nil) without re-running the cascade — the Store[objfmt.SHA1Hash]-level idempotency
@@ -342,6 +355,7 @@ func TestMidxBackend_CloseIsIdempotent(t *testing.T) {
 
 func TestMidxBackend_OpenStoreSelectsMidxWithExpectedPacks(t *testing.T) {
 	t.Parallel()
+
 	// End-to-end: `Open` on a midx-bearing fixture must select the
 	// midx backend and surface the expected pack inventory through
 	// `AllPacks`.
@@ -371,6 +385,7 @@ func TestMidxBackend_OpenStoreSelectsMidxWithExpectedPacks(t *testing.T) {
 
 func TestMidxBackend_IgnoresNonIdxEntries(t *testing.T) {
 	t.Parallel()
+
 	// Defence in depth: stray files alongside the midx + `.idx` files
 	// must not derail the constructor. `objects/pack/` legitimately
 	// holds `.keep`, `.bitmap`, and `.rev` siblings on real-world

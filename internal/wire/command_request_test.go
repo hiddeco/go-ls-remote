@@ -28,6 +28,7 @@ import (
 // [serve.c::process_request]: https://github.com/git/git/blob/v2.54.0/serve.c#L280
 func TestEncodeV2CommandRequest_BodyShape(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, EncodeV2CommandRequest(w, "ls-refs",
@@ -64,6 +65,7 @@ func TestEncodeV2CommandRequest_BodyShape(t *testing.T) {
 // [serve.c::process_request]: https://github.com/git/git/blob/v2.54.0/serve.c#L280
 func TestEncodeV2CommandRequest_NoCapsNoArgs(t *testing.T) {
 	t.Parallel()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, EncodeV2CommandRequest(w, "ls-refs", nil, nil))
@@ -93,6 +95,7 @@ func TestEncodeV2CommandRequest_NoCapsNoArgs(t *testing.T) {
 // caller can map the error onto its own protocol-level diagnostic.
 func TestEncodeV2CommandRequest_PropagatesWriterError(t *testing.T) {
 	t.Parallel()
+
 	bad := &errorWriter{err: io.ErrClosedPipe}
 	bw := pktline.NewWriter(bad)
 	err := EncodeV2CommandRequest(bw, "ls-refs", nil, nil)
@@ -107,6 +110,7 @@ func TestEncodeV2CommandRequest_PropagatesWriterError(t *testing.T) {
 // or any subsequent packet write.
 func TestEncodeV2CommandRequest_PropagatesWriterError_OnCap(t *testing.T) {
 	t.Parallel()
+
 	// Fail on the second write (capability line). The first WritePacket
 	// (the command line) succeeds; the cap write hits the error.
 	bad := &nthErrorWriter{n: 2, err: io.ErrShortWrite}
@@ -121,6 +125,7 @@ func TestEncodeV2CommandRequest_PropagatesWriterError_OnCap(t *testing.T) {
 // propagation during the argument loop, after the delim.
 func TestEncodeV2CommandRequest_PropagatesWriterError_OnArg(t *testing.T) {
 	t.Parallel()
+
 	// Three successful writes (command, cap, delim) then fail on the
 	// argument line.
 	bad := &nthErrorWriter{n: 4, err: io.ErrShortWrite}

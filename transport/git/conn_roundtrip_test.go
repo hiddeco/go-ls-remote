@@ -30,6 +30,7 @@ import (
 // [daemon.c::execute line 749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
 func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, port string) {
 	t.Helper()
+
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -73,6 +74,7 @@ func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, p
 // via [testing.T.Cleanup] when the test ends.
 func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := testfixture.MaterializeRepo(t, name)
 	require.NoError(t, os.MkdirAll(filepath.Join(gitdir, "objects", "pack"), 0o755))
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
@@ -86,6 +88,7 @@ func openFixtureStore(t *testing.T, name string) *objstore.Store[objfmt.SHA1Hash
 // first byte. Cleanup closes it.
 func openRoundtripConn(t *testing.T, host, port string) *Conn {
 	t.Helper()
+
 	tr := New(WithDialer(&net.Dialer{}))
 	u := &transport.URL{
 		Scheme: "git",
@@ -110,6 +113,7 @@ func openRoundtripConn(t *testing.T, host, port string) *Conn {
 // [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 func drainV2Advertisement(t testing.TB, rdr *pktline.Reader) {
 	t.Helper()
+
 	for {
 		p, err := rdr.ReadPacket()
 		require.NoError(t, err)
@@ -129,6 +133,7 @@ func drainV2Advertisement(t testing.TB, rdr *pktline.Reader) {
 // [gitprotocol-v2.adoc §"Command Response"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 func readRoundtripPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 	t.Helper()
+
 	var pkts []pktline.Packet
 	for {
 		p, err := rdr.ReadPacket()
@@ -159,6 +164,7 @@ func cmdBody(name string, args, caps []string) transport.CommandBody {
 // in-process server the first advertisement packet is `version 2\n`.
 func TestConn_Roundtrip_Advertisement_V2(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -179,6 +185,7 @@ func TestConn_Roundtrip_Advertisement_V2(t *testing.T) {
 // response is non-empty.
 func TestConn_Roundtrip_LSRefs(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -215,6 +222,7 @@ func TestConn_Roundtrip_LSRefs(t *testing.T) {
 // `size` request, so the response is at least one data packet plus flush.
 func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -254,6 +262,7 @@ func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
 // cause is a net-closed shape.
 func TestConn_Command_AfterCloseFails(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -279,6 +288,7 @@ func TestConn_Command_AfterCloseFails(t *testing.T) {
 // before any I/O is attempted.
 func TestConn_Command_ContextCanceled(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)

@@ -9,8 +9,10 @@ import (
 
 func Test_defaultRegistry(t *testing.T) {
 	t.Parallel()
+
 	t.Run("non-nil registry", func(t *testing.T) {
 		t.Parallel()
+
 		got := defaultRegistry()
 		require.NotNil(t, got,
 			"defaultRegistry must return a usable Registry, not nil")
@@ -18,6 +20,7 @@ func Test_defaultRegistry(t *testing.T) {
 
 	t.Run("registers both HTTP schemes", func(t *testing.T) {
 		t.Parallel()
+
 		got := defaultRegistry()
 		schemes := got.Schemes()
 		assert.ElementsMatch(t, []string{"https", "http"}, schemes,
@@ -26,6 +29,7 @@ func Test_defaultRegistry(t *testing.T) {
 
 	t.Run("lookup https resolves", func(t *testing.T) {
 		t.Parallel()
+
 		got := defaultRegistry()
 		tr, ok := got.Lookup("https")
 		require.True(t, ok, "https must resolve in the default registry")
@@ -34,6 +38,7 @@ func Test_defaultRegistry(t *testing.T) {
 
 	t.Run("lookup http resolves", func(t *testing.T) {
 		t.Parallel()
+
 		got := defaultRegistry()
 		tr, ok := got.Lookup("http")
 		require.True(t, ok, "http must resolve in the default registry")
@@ -42,6 +47,7 @@ func Test_defaultRegistry(t *testing.T) {
 
 	t.Run("lookup ssh misses", func(t *testing.T) {
 		t.Parallel()
+
 		got := defaultRegistry()
 		_, ok := got.Lookup("ssh")
 		assert.False(t, ok,
@@ -50,6 +56,7 @@ func Test_defaultRegistry(t *testing.T) {
 
 	t.Run("each call returns an independent registry", func(t *testing.T) {
 		t.Parallel()
+
 		// Callers must not share registry state via the default — a
 		// subsequent Register call on one Dial's registry must not be
 		// observable from another Dial's.

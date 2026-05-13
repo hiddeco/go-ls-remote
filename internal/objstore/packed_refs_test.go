@@ -21,6 +21,7 @@ import (
 // [refs/packed-backend.c::next_record]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L886
 func TestParsePackedRefs(t *testing.T) {
 	t.Parallel()
+
 	// SHA-1 fixture OIDs. Forty hex chars each so the parser's
 	// length check passes.
 	const (
@@ -31,6 +32,7 @@ func TestParsePackedRefs(t *testing.T) {
 	)
 	mkOID := func(t *testing.T, hex string) objfmt.SHA1Hash {
 		t.Helper()
+
 		h, err := objfmt.ParseSHA1Hex(hex)
 		require.NoError(t, err)
 		return h
@@ -543,6 +545,7 @@ func TestParsePackedRefs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, err := parsePackedRefs[objfmt.SHA1Hash](strings.NewReader(tc.input))
 			if tc.wantErr {
 				require.Error(t, err)

@@ -128,7 +128,7 @@ func NewSSHServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) *SSHSer
 	require.NoError(t, err)
 
 	var lc net.ListenConfig
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	host, port, err := net.SplitHostPort(ln.Addr().String())
@@ -346,7 +346,7 @@ func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) 
 		return
 	}
 
-	if err := s.serve(context.Background(), pr, pktline.NewWriter(ch)); err != nil {
+	if err := s.serve(t.Context(), pr, pktline.NewWriter(ch)); err != nil {
 		if !isClientHangupError(err) {
 			t.Errorf("inttest.SSHServer: server.Serve returned %v", err)
 		}

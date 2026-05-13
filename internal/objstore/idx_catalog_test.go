@@ -36,6 +36,7 @@ const (
 // focused on the assertion it is making.
 func openIdxCatalogFromFixture(t *testing.T, name string) *idxCatalog[objfmt.SHA1Hash] {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
 	c, err := openIdxCatalog[objfmt.SHA1Hash](gitDir, objfmt.SHA1)
@@ -46,6 +47,7 @@ func openIdxCatalogFromFixture(t *testing.T, name string) *idxCatalog[objfmt.SHA
 
 func TestIdxCatalog_EmptyRepoOpensWithZeroPacks(t *testing.T) {
 	t.Parallel()
+
 	// `empty/` carries an `objects/pack/` directory holding only a
 	// `.gitkeep` placeholder. The constructor must succeed, surface no
 	// packs, and report a clean miss for any hash.
@@ -69,6 +71,7 @@ func TestIdxCatalog_EmptyRepoOpensWithZeroPacks(t *testing.T) {
 
 func TestIdxCatalog_MissingPackDirectoryOpensCleanly(t *testing.T) {
 	t.Parallel()
+
 	// A brand-new repo may not have an `objects/pack/` directory yet.
 	// `openIdxCatalog` must collapse the ENOENT into "no packs" rather
 	// than refusing to construct.
@@ -83,6 +86,7 @@ func TestIdxCatalog_MissingPackDirectoryOpensCleanly(t *testing.T) {
 
 func TestIdxCatalog_LookupHitInSinglePack(t *testing.T) {
 	t.Parallel()
+
 	// Single pack/idx pair: a known OID resolves to its (Pack, offset)
 	// tuple. The pack returned must be the open one this catalog owns,
 	// not a freshly-opened sibling.
@@ -99,6 +103,7 @@ func TestIdxCatalog_LookupHitInSinglePack(t *testing.T) {
 
 func TestIdxCatalog_LookupMissReturnsNilError(t *testing.T) {
 	t.Parallel()
+
 	// Miss path on a populated catalog: clean false / nil error so the
 	// upper layers can fall through to loose objects, alternates, or
 	// [ErrCorruptObject] as appropriate.
@@ -114,6 +119,7 @@ func TestIdxCatalog_LookupMissReturnsNilError(t *testing.T) {
 
 func TestIdxCatalog_LookupHitInSecondPack(t *testing.T) {
 	t.Parallel()
+
 	// `idx-multi` carries `ofs-delta` and `three-objects`. With both
 	// packs stamped to the same mtime the catalog falls back to
 	// basename order, putting `ofs-delta` first and `three-objects`
@@ -141,6 +147,7 @@ func TestIdxCatalog_LookupHitInSecondPack(t *testing.T) {
 
 func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 	t.Parallel()
+
 	// `AllPacks` must walk the catalog's internal slice verbatim and
 	// must do so deterministically across independent opener
 	// invocations: the cross-pack REF_DELTA scan and any external
@@ -183,6 +190,7 @@ func TestIdxCatalog_AllPacksDeterministicOrder(t *testing.T) {
 
 func TestIdxCatalog_AllPacksOrderedByMtimeDesc(t *testing.T) {
 	t.Parallel()
+
 	// Mirror canonical Git's [packfile.c::sort_pack]: younger packs
 	// first, with basename as a stable tiebreaker. Stamping
 	// `three-objects.pack` younger than `ofs-delta.pack` flips the
@@ -215,6 +223,7 @@ func TestIdxCatalog_AllPacksOrderedByMtimeDesc(t *testing.T) {
 
 func TestIdxCatalog_LookupHitsYoungerPackFirst(t *testing.T) {
 	t.Parallel()
+
 	// Two packs that hold the same OID — built by copying
 	// `three-objects.{pack,idx}` to a second basename — must resolve
 	// through the younger one. The linear `Lookup` scan walks the
@@ -251,6 +260,7 @@ func TestIdxCatalog_LookupHitsYoungerPackFirst(t *testing.T) {
 
 func TestIdxCatalog_CorruptIdxReturnsErrorWithoutLeak(t *testing.T) {
 	t.Parallel()
+
 	// `idx-corrupt/` ships a 16-byte-zero `bogus.idx` that fails the v1
 	// fan-out length check. The opener must surface the wrapped error
 	// (path included) and leak no file handles. The Cleanup that the
@@ -269,6 +279,7 @@ func TestIdxCatalog_CorruptIdxReturnsErrorWithoutLeak(t *testing.T) {
 
 func TestIdxCatalog_MissingPackSiblingReturnsError(t *testing.T) {
 	t.Parallel()
+
 	// `idx-missing-pack/` has `three-objects.idx` with no `.pack`
 	// sibling. The opener must surface an error mentioning both paths
 	// and close the already-opened idx behind the scenes (impossible to
@@ -288,6 +299,7 @@ func TestIdxCatalog_MissingPackSiblingReturnsError(t *testing.T) {
 
 func TestIdxCatalog_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
+
 	// `Close` cascades to every wrapped idx and pack. Subsequent calls
 	// must return the same joined error (here, nil) without re-running
 	// the cascade — the Store[objfmt.SHA1Hash]-level idempotency guarantee assumes this.
@@ -306,6 +318,7 @@ func TestIdxCatalog_CloseIsIdempotent(t *testing.T) {
 
 func TestIdxCatalog_OpenStoreSelectsCatalogWithExpectedPacks(t *testing.T) {
 	t.Parallel()
+
 	// End-to-end: `Open` on a fixture with packs but no `multi-pack-index`
 	// must select the catalogue backend and surface the expected number
 	// of opened packs.
@@ -330,6 +343,7 @@ func TestIdxCatalog_OpenStoreSelectsCatalogWithExpectedPacks(t *testing.T) {
 
 func TestIdxCatalog_IgnoresNonIdxEntries(t *testing.T) {
 	t.Parallel()
+
 	// Defence in depth: stray files alongside `.idx` files must not
 	// derail the opener. `objects/pack/` legitimately holds `.keep`,
 	// `.bitmap`, and `.rev` siblings on real-world repos; the catalog

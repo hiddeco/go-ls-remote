@@ -134,6 +134,7 @@ func insecureHostKeyCallback() ssh.HostKeyCallback {
 // instead of waiting on long protocol timeouts.
 func (p Provider) skipIfOffline(t testing.TB) {
 	t.Helper()
+
 	u, err := url.Parse(p.PublicHTTPS)
 	if err != nil {
 		t.Skipf("livetest: %s: parse PublicHTTPS: %v", p.Name, err)
@@ -168,6 +169,7 @@ func (p Provider) skipIfOffline(t testing.TB) {
 // shared here so a new live test only writes the assertion body.
 func forEachProviderMode(t *testing.T, body func(t *testing.T, p Provider, m authMode, ctx context.Context)) {
 	t.Helper()
+
 	for _, p := range Providers {
 		t.Run(p.Name, func(t *testing.T) {
 			p.skipIfOffline(t)

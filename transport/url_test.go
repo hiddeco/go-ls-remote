@@ -9,6 +9,7 @@ import (
 
 func TestParseURL(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		in   string
@@ -85,6 +86,7 @@ func TestParseURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			got, err := ParseURL(tt.in)
 			require.NoError(t, err)
 			want := tt.want
@@ -102,6 +104,7 @@ func TestParseURL(t *testing.T) {
 // the sentinel chain, so errors.Is still matches.
 func TestParseURL_RedactsCredentialsInErrors(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name    string
 		in      string
@@ -138,6 +141,7 @@ func TestParseURL_RedactsCredentialsInErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			_, err := ParseURL(tt.in)
 			require.Error(t, err)
 			require.ErrorIs(t, err, tt.wantErr)
@@ -154,6 +158,7 @@ func TestParseURL_RedactsCredentialsInErrors(t *testing.T) {
 
 func TestParseURL_errors(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		in   string
@@ -167,6 +172,7 @@ func TestParseURL_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			_, err := ParseURL(tt.in)
 			require.ErrorIs(t, err, tt.want)
 		})

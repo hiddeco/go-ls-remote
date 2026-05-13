@@ -28,6 +28,7 @@ import (
 // [connect.c::git_connect_git lines 1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
 func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 	t.Parallel()
+
 	payloadCh := make(chan []byte, 1)
 
 	host, port := startEchoListener(t, func(c net.Conn) {
@@ -75,6 +76,7 @@ func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 // helper [Transport.Open] uses.
 func TestTransport_Open_DefaultPort(t *testing.T) {
 	t.Parallel()
+
 	u := &transport.URL{
 		Scheme: "git",
 		Host:   "example.com",
@@ -89,6 +91,7 @@ func TestTransport_Open_DefaultPort(t *testing.T) {
 // Port passes that port through to the dial address unchanged.
 func TestTransport_Open_PortFromURL(t *testing.T) {
 	t.Parallel()
+
 	u := &transport.URL{
 		Scheme: "git",
 		Host:   "example.com",
@@ -106,6 +109,7 @@ func TestTransport_Open_PortFromURL(t *testing.T) {
 // The [transport.URL] contract is that `Host` is always unbracketed.
 func TestHostAddress(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name string
 		host string
@@ -124,6 +128,7 @@ func TestHostAddress(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			u := &transport.URL{Host: tc.host, Port: tc.port}
 			assert.Equal(t, tc.want, hostAddress(u))
 		})
@@ -137,6 +142,7 @@ func TestHostAddress(t *testing.T) {
 // `dialCalled` false.
 func TestTransport_Open_PinV1Rejected(t *testing.T) {
 	t.Parallel()
+
 	var dialCalled atomic.Bool
 
 	var lc net.ListenConfig
@@ -184,6 +190,7 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 // "no route to host" variability.
 func TestTransport_Open_DialError(t *testing.T) {
 	t.Parallel()
+
 	dialErr := errors.New("connection refused")
 
 	err := mapDialError(dialErr, "git://example.com/repo")
@@ -203,6 +210,7 @@ func TestTransport_Open_DialError(t *testing.T) {
 // `*ProtocolError`.
 func TestTransport_Open_ContextCanceled(t *testing.T) {
 	t.Parallel()
+
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -256,6 +264,7 @@ func (f *failingConn) Close() error {
 // covered without a flaky network-timing dependency.
 func TestTransport_Open_WriteFailureClosesConn(t *testing.T) {
 	t.Parallel()
+
 	closed := make(chan struct{})
 
 	// net.Pipe gives two synchronised ends; we only need the client side.

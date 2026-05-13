@@ -101,6 +101,7 @@ func openTracedConn(t *testing.T, host, port string, tracer trace.Tracer) (*Conn
 // refactors, but the wiring contract is invariant.
 func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 
@@ -147,6 +148,7 @@ func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 // short-circuit.
 func TestTracer_NilTracer_NoEvents(t *testing.T) {
 	t.Parallel()
+
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 

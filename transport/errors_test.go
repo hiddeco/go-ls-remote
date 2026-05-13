@@ -10,12 +10,14 @@ import (
 
 func TestSchemeError_Error(t *testing.T) {
 	t.Parallel()
+
 	e := &SchemeError{Msg: "x"}
 	assert.Equal(t, "x", e.Error())
 }
 
 func TestSchemeError_Is(t *testing.T) {
 	t.Parallel()
+
 	parent := errors.New("generic parent")
 	unrelated := errors.New("unrelated")
 
@@ -49,6 +51,7 @@ func TestSchemeError_Is(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
 			var se *SchemeError
 			require.ErrorAs(t, tt.err, &se,
 				"test setup error: tt.err must be a *SchemeError; got %T", tt.err)
@@ -61,6 +64,7 @@ func TestSchemeError_Is(t *testing.T) {
 	// (scheme → parent), not between sibling sentinels.
 	t.Run("distinct SchemeErrors with same Parent do not match", func(t *testing.T) {
 		t.Parallel()
+
 		e1 := &SchemeError{Parent: parent, Msg: "scheme1: foo"}
 		e2 := &SchemeError{Parent: parent, Msg: "scheme2: bar"}
 		assert.NotErrorIs(t, e1, e2,
@@ -70,6 +74,7 @@ func TestSchemeError_Is(t *testing.T) {
 	// Verify the full errors.Is walk works (not just the direct Is method).
 	t.Run("errors.Is walk matches parent", func(t *testing.T) {
 		t.Parallel()
+
 		assert.ErrorIs(t, e, parent,
 			"errors.Is must reach the parent via the public walk")
 	})

@@ -15,13 +15,16 @@ import (
 // stackDir resolves a fixture stack directory under testdata/reftable.
 func stackDir(t *testing.T, rel string) string {
 	t.Helper()
+
 	return filepath.Join(fixtureRoot(t), rel)
 }
 
 func TestOpenStack(t *testing.T) {
 	t.Parallel()
+
 	t.Run("single_table_behaves_like_reader", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "single-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -60,6 +63,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("stack_shadow_sha1_yields_top_of_stack", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "stack-shadow-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -93,6 +97,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("empty_tables_list_yields_empty_stack", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tables.list"), nil, 0o644))
 
@@ -118,6 +123,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("missing_tables_list_returns_error", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		_, err := OpenStack[objfmt.SHA1Hash](dir)
 		require.Error(t, err)
@@ -125,6 +131,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("trailing_newline_tolerated", func(t *testing.T) {
 		t.Parallel()
+
 		// Build a temp directory that mirrors single-sha1 and contains
 		// the canonical trailing-newline tables.list. The committed
 		// fixture already exercises this, but a freshly written file
@@ -147,6 +154,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("no_trailing_newline_tolerated", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		src, err := os.ReadFile(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
@@ -164,6 +172,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("empty_middle_line_rejected", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		src, err := os.ReadFile(fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
@@ -177,6 +186,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("sha256_stack", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA256Hash](stackDir(t, "single-sha256"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -191,6 +201,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("mixed_hash_algos_rejected", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 
 		// Copy one SHA-1 reftable and one SHA-256 reftable into the
@@ -212,6 +223,7 @@ func TestOpenStack(t *testing.T) {
 
 	t.Run("missing_table_returns_error", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tables.list"),
 			[]byte("does-not-exist.ref\n"), 0o644))
@@ -223,8 +235,10 @@ func TestOpenStack(t *testing.T) {
 
 func TestStack_FindRef(t *testing.T) {
 	t.Parallel()
+
 	t.Run("hit_and_miss", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "single-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -244,8 +258,10 @@ func TestStack_FindRef(t *testing.T) {
 
 func TestStack_Len(t *testing.T) {
 	t.Parallel()
+
 	t.Run("matches_iter_count", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "with-index-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -261,6 +277,7 @@ func TestStack_Len(t *testing.T) {
 
 	t.Run("empty_stack_is_zero", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tables.list"), nil, 0o644))
 		stack, err := OpenStack[objfmt.SHA1Hash](dir)
@@ -272,8 +289,10 @@ func TestStack_Len(t *testing.T) {
 
 func TestStack_IterRefs(t *testing.T) {
 	t.Parallel()
+
 	t.Run("sorted_order", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "with-index-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -289,6 +308,7 @@ func TestStack_IterRefs(t *testing.T) {
 
 	t.Run("shadow_stack_yields_latest_value", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "stack-shadow-sha1"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = stack.Close() })
@@ -316,8 +336,10 @@ func TestStack_IterRefs(t *testing.T) {
 
 func TestStack_Close(t *testing.T) {
 	t.Parallel()
+
 	t.Run("idempotent", func(t *testing.T) {
 		t.Parallel()
+
 		stack, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "single-sha1"))
 		require.NoError(t, err)
 		require.NoError(t, stack.Close())
@@ -327,6 +349,7 @@ func TestStack_Close(t *testing.T) {
 
 	t.Run("idempotent_on_empty_stack", func(t *testing.T) {
 		t.Parallel()
+
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "tables.list"), nil, 0o644))
 		stack, err := OpenStack[objfmt.SHA1Hash](dir)

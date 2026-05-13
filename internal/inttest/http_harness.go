@@ -70,6 +70,7 @@ const httpRepoMount = "/repo.git"
 // [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func NewHTTPServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string {
 	t.Helper()
+
 	srv := httptest.NewServer(http.HandlerFunc(httpHandler(t, store)))
 	t.Cleanup(srv.Close)
 	return srv.URL
@@ -80,6 +81,7 @@ func NewHTTPServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string
 // well-known status.
 func httpHandler[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) http.HandlerFunc {
 	t.Helper()
+
 	infoRefs := httpRepoMount + "/info/refs"
 	uploadPack := httpRepoMount + "/git-upload-pack"
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +130,8 @@ func httpHandler[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) http.Han
 // once and call this function with the matching concrete store.
 func NewHTTPSServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) (string, *http.Client) {
 	t.Helper()
-	srv := httptest.NewTLSServer(http.HandlerFunc(httpHandler(t, store)))
+
+	srv := httptest.NewTLSServer(httpHandler(t, store))
 	t.Cleanup(srv.Close)
 	return srv.URL, srv.Client()
 }
@@ -147,6 +150,7 @@ func NewHTTPSServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) (stri
 // [testing.TB.Cleanup].
 func NewHTTPRedirectServer(t testing.TB, status int, location string) string {
 	t.Helper()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Location", location)
 		w.WriteHeader(status)

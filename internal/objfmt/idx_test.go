@@ -15,6 +15,7 @@ import (
 
 func idxFixture(t *testing.T, name string) string {
 	t.Helper()
+
 	return filepath.Join("..", "..", "testdata", "objfmt", name)
 }
 
@@ -38,6 +39,7 @@ func idxFixture(t *testing.T, name string) string {
 // [Documentation/gitformat-pack.adoc lines 196-218]: https://github.com/git/git/blob/v2.54.0/Documentation/gitformat-pack.adoc?plain=1#L196-L218
 func writeV1Idx(t *testing.T, dir string, entries []v1Entry) string {
 	t.Helper()
+
 	// Sort by SHA so the binary search invariant holds.
 	slices.SortFunc(entries, func(a, b v1Entry) int {
 		return bytes.Compare(a.oid[:], b.oid[:])
@@ -83,8 +85,10 @@ type v1Entry struct {
 
 func TestIdx_OpenIdx(t *testing.T) {
 	t.Parallel()
+
 	t.Run("v2 SHA-1 idx reports algo, version, count", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -97,6 +101,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("v2 SHA-256 idx reports algo, version, count", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-three.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -108,6 +113,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("v2 SHA-256 empty idx reports zero objects", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA256Hash](idxFixture(t, "sha256-empty.idx"), SHA256)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = idx.Close() })
@@ -119,6 +125,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("hand-rolled v1 idx reports version 1", func(t *testing.T) {
 		t.Parallel()
+
 		oid, err := ParseSHA1Hex("0123456789abcdef0123456789abcdef01234567")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
@@ -134,6 +141,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects an unsupported v2 version", func(t *testing.T) {
 		t.Parallel()
+
 		// 8-byte v2-shaped header with version 99, padded with enough
 		// bytes that length checks downstream don't trip first.
 		buf := make([]byte, 0, 8+256*4+20+20)
@@ -149,6 +157,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects truncated input", func(t *testing.T) {
 		t.Parallel()
+
 		path := filepath.Join(t.TempDir(), "tiny.idx")
 		require.NoError(t, os.WriteFile(path, []byte{0xff, 't'}, 0o600))
 
@@ -158,18 +167,21 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects a nil algo", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a missing file", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := OpenIdx[SHA1Hash](filepath.Join(t.TempDir(), "nope.idx"), SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("Close is idempotent", func(t *testing.T) {
 		t.Parallel()
+
 		idx, err := OpenIdx[SHA1Hash](idxFixture(t, "three-objects.idx"), SHA1)
 		require.NoError(t, err)
 		assert.NoError(t, idx.Close())
@@ -178,6 +190,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects v1 idx with non-monotonic fanout", func(t *testing.T) {
 		t.Parallel()
+
 		// Synthesise a v1 idx then patch fanout[5] to a value larger
 		// than fanout[6]. Mirrors [packfile.c:215-220], which rejects
 		// non-monotonic indices with "non-monotonic index ...".
@@ -201,6 +214,7 @@ func TestIdx_OpenIdx(t *testing.T) {
 
 	t.Run("rejects v2 idx with non-monotonic fanout", func(t *testing.T) {
 		t.Parallel()
+
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV2Idx(t, t.TempDir(), []v2Entry{

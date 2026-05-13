@@ -27,6 +27,7 @@ linters:
     - misspell
     - modernize
     - nolintlint
+    - usetesting
     - whitespace
   settings:
     govet:
@@ -49,6 +50,16 @@ linters:
       require-explanation: true
       require-specific: true
       allow-unused: false
+    usetesting:
+      # Strictest-possible: every detection on, including the three
+      # that are off by default.
+      os-create-temp: true
+      os-mkdir-temp: true
+      os-setenv: true
+      os-temp-dir: true
+      os-chdir: true
+      context-background: true
+      context-todo: true
   exclusions:
     presets:
       - common-false-positives

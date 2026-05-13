@@ -22,6 +22,7 @@ import (
 // here would silently break every consumer.
 func TestEntries_namesResolveOnDisk(t *testing.T) {
 	t.Parallel()
+
 	entries := inttest.Entries()
 	require.NotEmpty(t, entries, "matrix must declare at least one fixture")
 
@@ -46,9 +47,11 @@ func TestEntries_namesResolveOnDisk(t *testing.T) {
 // against a stale baseline.
 func TestEntries_expectedRefsMatchStore(t *testing.T) {
 	t.Parallel()
+
 	for _, e := range inttest.Entries() {
 		t.Run(e.Name, func(t *testing.T) {
 			t.Parallel()
+
 			got := openAndCollectRefs(t, e)
 
 			want := make(map[string]inttest.ExpectedRef, len(e.ExpectedRefs))
@@ -80,9 +83,11 @@ func TestEntries_expectedRefsMatchStore(t *testing.T) {
 //     target verbatim (e.g. `refs/heads/main`).
 func TestEntries_expectedDefaultBranchMatchesHEAD(t *testing.T) {
 	t.Parallel()
+
 	for _, e := range inttest.Entries() {
 		t.Run(e.Name, func(t *testing.T) {
 			t.Parallel()
+
 			switch e.ObjectFormat {
 			case lsremote.ObjectFormatSHA1:
 				store := openSHA1Store(t, e)
@@ -119,12 +124,14 @@ func TestEntries_expectedDefaultBranchMatchesHEAD(t *testing.T) {
 // from disk would let a transport regression go unnoticed.
 func TestEntries_expectedObjectInfoMatchesStore(t *testing.T) {
 	t.Parallel()
+
 	for _, e := range inttest.Entries() {
 		if len(e.ExpectedObjectInfo) == 0 {
 			continue
 		}
 		t.Run(e.Name, func(t *testing.T) {
 			t.Parallel()
+
 			switch e.ObjectFormat {
 			case lsremote.ObjectFormatSHA1:
 				store := openSHA1Store(t, e)
@@ -158,6 +165,7 @@ func TestEntries_expectedObjectInfoMatchesStore(t *testing.T) {
 // cross-transport equivalence harness will eventually centralise.
 func openAndCollectRefs(t *testing.T, e inttest.Entry) map[string]collectedRef {
 	t.Helper()
+
 	out := map[string]collectedRef{}
 	switch e.ObjectFormat {
 	case lsremote.ObjectFormatSHA1:
@@ -192,6 +200,7 @@ func openAndCollectRefs(t *testing.T, e inttest.Entry) map[string]collectedRef {
 
 func openSHA1Store(t *testing.T, e inttest.Entry) *objstore.Store[objfmt.SHA1Hash] {
 	t.Helper()
+
 	gitdir := e.Materialize(t)
 	store, err := objstore.Open[objfmt.SHA1Hash](gitdir)
 	require.NoError(t, err)
@@ -201,6 +210,7 @@ func openSHA1Store(t *testing.T, e inttest.Entry) *objstore.Store[objfmt.SHA1Has
 
 func openSHA256Store(t *testing.T, e inttest.Entry) *objstore.Store[objfmt.SHA256Hash] {
 	t.Helper()
+
 	gitdir := e.Materialize(t)
 	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
 	require.NoError(t, err)

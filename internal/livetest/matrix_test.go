@@ -17,6 +17,7 @@ import (
 // the tests to provider ordering.
 func github(t testing.TB) Provider {
 	t.Helper()
+
 	for _, p := range Providers {
 		if p.Name == "github" {
 			return p
@@ -43,6 +44,7 @@ func modeNames(modes []authMode) []string {
 // leak into a sub-test's matrix shape.
 func clearProviderEnv(t testing.TB) {
 	t.Helper()
+
 	for _, p := range Providers {
 		for _, key := range []string{
 			p.AuthTokenEnv,
@@ -58,6 +60,7 @@ func clearProviderEnv(t testing.TB) {
 
 func TestProviders_curated(t *testing.T) {
 	t.Parallel()
+
 	// Lock the curated set so the surrounding sub-tests can rely on
 	// the field shape per provider without re-deriving it.
 	require.Len(t, Providers, 5)

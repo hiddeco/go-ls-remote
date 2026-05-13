@@ -54,6 +54,7 @@ func runV2Session[H objfmt.Hash](t *testing.T, store *objstore.Store[H], request
 // [writeV2Advertisement].
 func lenV2Advertisement[H objfmt.Hash](t *testing.T, store *objstore.Store[H], agent string) int {
 	t.Helper()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, writeV2Advertisement(w, store, Options{
@@ -92,6 +93,7 @@ var delimBytes = []byte("0001")
 // [serve.c::process_request lines 314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 func TestServe_V2EmptyRequestTerminates(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, flushBytes)
@@ -109,6 +111,7 @@ func TestServe_V2EmptyRequestTerminates(t *testing.T) {
 // [serve.c::process_request lines 292-297]: https://github.com/git/git/blob/v2.54.0/serve.c#L292-L297
 func TestServe_V2StreamCloseTerminates(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	// An empty request body — the server reads one packet, gets EOF,
@@ -125,6 +128,7 @@ func TestServe_V2StreamCloseTerminates(t *testing.T) {
 // cleanly.
 func TestServe_V2SingleLSRefsThenEmpty(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -146,6 +150,7 @@ func TestServe_V2SingleLSRefsThenEmpty(t *testing.T) {
 // run; the response is two flushes concatenated, one per stub.
 func TestServe_V2SequenceLSRefsObjectInfo(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -170,6 +175,7 @@ func TestServe_V2SequenceLSRefsObjectInfo(t *testing.T) {
 // an error wrapping [wire.ErrServerRefused].
 func TestServe_V2UnknownCommand(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -206,6 +212,7 @@ func TestServe_V2UnknownCommand(t *testing.T) {
 // first iteration after the advertisement.
 func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -250,6 +257,7 @@ func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 // [serve.c::process_request lines 314-329]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L329
 func TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs(t *testing.T) {
 	t.Parallel()
+
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer

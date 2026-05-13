@@ -18,6 +18,7 @@ import (
 // any other algo so SHA-256 fixtures route through `hashFromHex256`.
 func hashFromHex(t *testing.T, s string, algo objfmt.Algo) objfmt.SHA1Hash {
 	t.Helper()
+
 	require.Equal(t, objfmt.SHA1, algo,
 		"hashFromHex only supports SHA-1; use hashFromHex256 for SHA-256")
 	h, err := objfmt.ParseSHA1Hex(s)
@@ -28,6 +29,7 @@ func hashFromHex(t *testing.T, s string, algo objfmt.Algo) objfmt.SHA1Hash {
 // hashFromHex256 parses s as a SHA-256 hex string or fails the test.
 func hashFromHex256(t *testing.T, s string) objfmt.SHA256Hash {
 	t.Helper()
+
 	h, err := objfmt.ParseSHA256Hex(s)
 	require.NoError(t, err)
 	return h
@@ -39,6 +41,7 @@ func hashFromHex256(t *testing.T, s string) objfmt.SHA256Hash {
 // surfaced as a diff rather than masked.
 func collectRefs(t *testing.T, r *looseRefs[objfmt.SHA1Hash]) []RefEntry[objfmt.SHA1Hash] {
 	t.Helper()
+
 	var out []RefEntry[objfmt.SHA1Hash]
 	for entry, err := range r.IterRefs() {
 		require.NoError(t, err)
@@ -52,6 +55,7 @@ func collectRefs(t *testing.T, r *looseRefs[objfmt.SHA1Hash]) []RefEntry[objfmt.
 // plumbing every loose-refs test needs.
 func openLooseFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseRefs[objfmt.SHA1Hash] {
 	t.Helper()
+
 	root := materializeFixture(t, name)
 	gitDir := filepath.Join(root, ".git")
 	r, err := openLooseRefs[objfmt.SHA1Hash](gitDir, gitDir, algo)
@@ -62,6 +66,7 @@ func openLooseFromFixture(t *testing.T, name string, algo objfmt.Algo) *looseRef
 
 func TestLooseRefs_LooseOnly_IterRefsSorted(t *testing.T) {
 	t.Parallel()
+
 	// All three loose refs surface in lexical order with the synthetic
 	// OIDs the fixture committed. Subdirectory entries
 	// (`refs/heads/feature/x`) walk correctly.
@@ -78,6 +83,7 @@ func TestLooseRefs_LooseOnly_IterRefsSorted(t *testing.T) {
 
 func TestLooseRefs_PackedOnly_IterRefs(t *testing.T) {
 	t.Parallel()
+
 	// Only `packed-refs` carries entries. The parser must surface them
 	// all, the trait header sets `peeled` and `fully-peeled` (so every
 	// entry's PeelKnown is true), and the tag's `^peel` line populates
@@ -103,6 +109,7 @@ func TestLooseRefs_PackedOnly_IterRefs(t *testing.T) {
 
 func TestLooseRefs_Mixed_LooseShadowsPacked(t *testing.T) {
 	t.Parallel()
+
 	// `refs/heads/main` exists in both: loose carries OID-C, packed
 	// carries OID-A. The loose entry must win, and the packed-only
 	// `refs/heads/old` must still surface.
@@ -135,6 +142,7 @@ func TestLooseRefs_Mixed_LooseShadowsPacked(t *testing.T) {
 
 func TestLooseRefs_Head_SymrefToExistingRef(t *testing.T) {
 	t.Parallel()
+
 	// HEAD = `ref: refs/heads/main`, and `refs/heads/main` exists as a
 	// loose ref carrying OID `aaaa...`. Symref + OID populated, Unborn
 	// false.
@@ -149,6 +157,7 @@ func TestLooseRefs_Head_SymrefToExistingRef(t *testing.T) {
 
 func TestLooseRefs_Head_SymrefToMissingRefIsUnborn(t *testing.T) {
 	t.Parallel()
+
 	// HEAD points at refs/heads/main, but no such ref exists either
 	// loose or packed: the canonical "unborn branch" state.
 	r := openLooseFromFixture(t, "unborn-head", objfmt.SHA1)
@@ -162,6 +171,7 @@ func TestLooseRefs_Head_SymrefToMissingRefIsUnborn(t *testing.T) {
 
 func TestLooseRefs_Head_DetachedSHA1(t *testing.T) {
 	t.Parallel()
+
 	// HEAD content is a raw 40-char SHA-1 hex. Symref empty, OID set,
 	// Unborn false.
 	r := openLooseFromFixture(t, "detached-head", objfmt.SHA1)
@@ -175,6 +185,7 @@ func TestLooseRefs_Head_DetachedSHA1(t *testing.T) {
 
 func TestLooseRefs_Head_DetachedSHA256(t *testing.T) {
 	t.Parallel()
+
 	// SHA-256 detached HEAD: a 64-char hex must parse cleanly when the
 	// algo bound to the backend matches. Built in a tempdir so the
 	// fixture set stays focused on the SHA-1 cases.
@@ -199,6 +210,7 @@ func TestLooseRefs_Head_DetachedSHA256(t *testing.T) {
 // committed fixture.
 func writeRefFile(t *testing.T, dir, name, content string) {
 	t.Helper()
+
 	full := filepath.Join(dir, filepath.FromSlash(name))
 	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 	require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
@@ -206,6 +218,7 @@ func writeRefFile(t *testing.T, dir, name, content string) {
 
 func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
 	t.Parallel()
+
 	// HEAD -> refs/heads/x -> refs/heads/y, where `y` carries an OID.
 	// The resolver follows both hops; `Head.Symref` is the terminal
 	// name (the symref that pointed at the OID), matching canonical
@@ -232,6 +245,7 @@ func TestLooseRefs_Head_TwoLevelSymrefChainResolves(t *testing.T) {
 
 func TestLooseRefs_Head_ChainExceedingMaxDepthFails(t *testing.T) {
 	t.Parallel()
+
 	// Six hops: HEAD -> a -> b -> c -> d -> e -> f. Canonical's cap is
 	// `SYMREF_MAXDEPTH = 5` ([refs/refs-internal.h:246]); v0 mirrors it
 	// and the seventh lookup must surface ErrCorruptObject.
@@ -255,6 +269,7 @@ func TestLooseRefs_Head_ChainExceedingMaxDepthFails(t *testing.T) {
 
 func TestLooseRefs_Head_SymrefCycleDetected(t *testing.T) {
 	t.Parallel()
+
 	// A two-step cycle: HEAD -> refs/heads/a -> refs/heads/b ->
 	// refs/heads/a. The walker must spot the revisit and surface
 	// ErrCorruptObject rather than spinning until depth-cap.
@@ -271,6 +286,7 @@ func TestLooseRefs_Head_SymrefCycleDetected(t *testing.T) {
 
 func TestLooseRefs_Head_ChainTerminatingInUnbornRefIsUnborn(t *testing.T) {
 	t.Parallel()
+
 	// HEAD -> refs/heads/x -> refs/heads/y, but `y` does not exist.
 	// `Head.Symref` is the LAST symref name in the chain (the
 	// unresolvable target), `OID` is zero, and `Unborn` is true.
@@ -291,6 +307,7 @@ func TestLooseRefs_Head_ChainTerminatingInUnbornRefIsUnborn(t *testing.T) {
 
 func TestLooseRefs_Traits_PeeledAndFullyPeeled(t *testing.T) {
 	t.Parallel()
+
 	// The fixture header is `# pack-refs with: peeled fully-peeled`;
 	// both flags must be true and `sorted` must remain false.
 	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
@@ -302,6 +319,7 @@ func TestLooseRefs_Traits_PeeledAndFullyPeeled(t *testing.T) {
 
 func TestLooseRefs_Traits_SortedOnly(t *testing.T) {
 	t.Parallel()
+
 	// Header `# pack-refs with: sorted`: only `sorted` flips.
 	r := openLooseFromFixture(t, "packed-refs-sorted", objfmt.SHA1)
 
@@ -312,6 +330,7 @@ func TestLooseRefs_Traits_SortedOnly(t *testing.T) {
 
 func TestLooseRefs_Traits_NoHeader(t *testing.T) {
 	t.Parallel()
+
 	// `packed-refs` body without a `# pack-refs with:` header: every
 	// trait flag remains false.
 	r := openLooseFromFixture(t, "packed-refs-no-traits", objfmt.SHA1)
@@ -323,6 +342,7 @@ func TestLooseRefs_Traits_NoHeader(t *testing.T) {
 
 func TestLooseRefs_Traits_UnknownTokensTolerated(t *testing.T) {
 	t.Parallel()
+
 	// A header carrying a future trait token must not blow up the file;
 	// known tokens still surface, unknown tokens are silently ignored.
 	traits := parsePackedRefTraits("# pack-refs with: peeled fully-peeled some-future-trait")
@@ -333,6 +353,7 @@ func TestLooseRefs_Traits_UnknownTokensTolerated(t *testing.T) {
 
 func TestLooseRefs_PeelKnown_Tag(t *testing.T) {
 	t.Parallel()
+
 	// The annotated tag in `packed-only` carries a `^peel` line, so
 	// PeelKnown is true and Peeled equals the parsed hex.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
@@ -346,6 +367,7 @@ func TestLooseRefs_PeelKnown_Tag(t *testing.T) {
 
 func TestLooseRefs_PeelKnown_NonTag_FullyPeeledMakesItKnown(t *testing.T) {
 	t.Parallel()
+
 	// The branch entry in `packed-only` has no `^peel` line, but the
 	// fixture's header advertises `peeled fully-peeled`, so the absence
 	// is authoritative: PeelKnown=true with Peeled=zero.
@@ -361,6 +383,7 @@ func TestLooseRefs_PeelKnown_NonTag_FullyPeeledMakesItKnown(t *testing.T) {
 
 func TestLooseRefs_MalformedPackedRefsLine(t *testing.T) {
 	t.Parallel()
+
 	// A `packed-refs` body whose first ref line is missing the
 	// separator must surface ErrCorruptObject with line + text in the
 	// message so diagnostics can pinpoint the offender.
@@ -379,6 +402,7 @@ func TestLooseRefs_MalformedPackedRefsLine(t *testing.T) {
 
 func TestLooseRefs_MalformedHEADContent(t *testing.T) {
 	t.Parallel()
+
 	// HEAD content that is neither `ref: ...` nor a valid hex OID is
 	// corruption; the error must wrap ErrCorruptObject.
 	dir := t.TempDir()
@@ -395,6 +419,7 @@ func TestLooseRefs_MalformedHEADContent(t *testing.T) {
 // a regression in either path is surfaced as a diff.
 func TestLooseRefs_SortedSliceMatchesIterRefs(t *testing.T) {
 	t.Parallel()
+
 	r := openLooseFromFixture(t, "mixed", objfmt.SHA1)
 	got := collectRefs(t, r)
 
@@ -408,6 +433,7 @@ func TestLooseRefs_SortedSliceMatchesIterRefs(t *testing.T) {
 
 func TestLooseRefs_IterRefs_PeelFieldsPopulated_FullyPeeled(t *testing.T) {
 	t.Parallel()
+
 	// `packed-refs-fully-peeled` advertises the `fully-peeled` trait, so
 	// every yielded entry's PeelKnown must be true regardless of whether
 	// the ref itself is peelable. The annotated tag carries its peel hex
@@ -436,6 +462,7 @@ func TestLooseRefs_IterRefs_PeelFieldsPopulated_FullyPeeled(t *testing.T) {
 
 func TestLooseRefs_IterRefs_PeelFieldsPopulated_NoTrait(t *testing.T) {
 	t.Parallel()
+
 	// `packed-only` advertises `peeled fully-peeled` too, so PeelKnown
 	// must be true. Pair this with the no-trait check below to confirm
 	// PeelKnown does follow the trait, not a hard-coded value.
@@ -461,6 +488,7 @@ func TestLooseRefs_IterRefs_PeelFieldsPopulated_NoTrait(t *testing.T) {
 
 func TestLooseRefs_Lookup_FullyPeeledTrait_NoPeelMeansDefinitive(t *testing.T) {
 	t.Parallel()
+
 	// Branch entry in a `fully-peeled` fixture. The trait makes the
 	// absence of `^<oid>` authoritative: PeelKnown=true, Peeled=zero.
 	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
@@ -478,6 +506,7 @@ func TestLooseRefs_Lookup_FullyPeeledTrait_NoPeelMeansDefinitive(t *testing.T) {
 
 func TestLooseRefs_Lookup_PeelLineRecorded(t *testing.T) {
 	t.Parallel()
+
 	// The annotated tag has both the trait and an explicit `^peel`
 	// line. PeelKnown=true and Peeled carries the recorded hex.
 	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
@@ -493,6 +522,7 @@ func TestLooseRefs_Lookup_PeelLineRecorded(t *testing.T) {
 
 func TestLooseRefs_Lookup_NoTrait_PeelLineStillKnown(t *testing.T) {
 	t.Parallel()
+
 	// Without `fully-peeled` but with an explicit `^peel`, the peel is
 	// still definitive: the entry's own peelKnown bit suffices.
 	r := openLooseFromFixture(t, "packed-only", objfmt.SHA1)
@@ -508,6 +538,7 @@ func TestLooseRefs_Lookup_NoTrait_PeelLineStillKnown(t *testing.T) {
 
 func TestLooseRefs_Lookup_NoTrait_NoPeelLineUnknown(t *testing.T) {
 	t.Parallel()
+
 	// `packed-refs-no-traits` ships a branch entry with no trait, so the
 	// absence of `^peel` is not authoritative: PeelKnown must be false.
 	r := openLooseFromFixture(t, "packed-refs-no-traits", objfmt.SHA1)
@@ -521,6 +552,7 @@ func TestLooseRefs_Lookup_NoTrait_NoPeelLineUnknown(t *testing.T) {
 
 func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
 	t.Parallel()
+
 	r := openLooseFromFixture(t, "packed-refs-fully-peeled", objfmt.SHA1)
 
 	entry, found, err := r.Lookup("refs/heads/does-not-exist")
@@ -541,6 +573,7 @@ func TestLooseRefs_Lookup_MissingRef(t *testing.T) {
 // [refs/packed-backend.c:945]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L945
 func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
 	t.Parallel()
+
 	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
 
 	annotated, found, err := r.Lookup("refs/tags/v1")
@@ -570,6 +603,7 @@ func TestLooseRefs_PeeledTrait_TagsKnowPeel(t *testing.T) {
 // [refs/packed-backend.c:945]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L945
 func TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown(t *testing.T) {
 	t.Parallel()
+
 	r := openLooseFromFixture(t, "packed-refs-peeled-only", objfmt.SHA1)
 
 	entry, found, err := r.Lookup("refs/heads/main")

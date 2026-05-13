@@ -15,6 +15,7 @@ import (
 // Tests run from the package directory, so we walk up two levels.
 func fixtureRoot(t *testing.T) string {
 	t.Helper()
+
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	// internal/reftable -> repo root.
@@ -23,6 +24,7 @@ func fixtureRoot(t *testing.T) string {
 
 func readFixture(t *testing.T, rel string) []byte {
 	t.Helper()
+
 	b, err := os.ReadFile(filepath.Join(fixtureRoot(t), rel))
 	require.NoError(t, err, "read fixture %s", rel)
 	return b
@@ -30,8 +32,10 @@ func readFixture(t *testing.T, rel string) []byte {
 
 func Test_parseHeader(t *testing.T) {
 	t.Parallel()
+
 	t.Run("v1_sha1_happy", func(t *testing.T) {
 		t.Parallel()
+
 		buf := readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -44,6 +48,7 @@ func Test_parseHeader(t *testing.T) {
 
 	t.Run("v2_sha256_happy", func(t *testing.T) {
 		t.Parallel()
+
 		buf := readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -56,6 +61,7 @@ func Test_parseHeader(t *testing.T) {
 
 	t.Run("short_input", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := parseHeader([]byte("REFT"))
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrShortFile, "want ErrShortFile, got %v", err)
@@ -63,6 +69,7 @@ func Test_parseHeader(t *testing.T) {
 
 	t.Run("bad_magic", func(t *testing.T) {
 		t.Parallel()
+
 		// Start from a valid v1 header and corrupt the magic.
 		buf := append([]byte{}, readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")[:headerSizeV1]...)
 		copy(buf[:4], "XXXX")
@@ -73,6 +80,7 @@ func Test_parseHeader(t *testing.T) {
 
 	t.Run("bad_version", func(t *testing.T) {
 		t.Parallel()
+
 		buf := append([]byte{}, readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")[:headerSizeV1]...)
 		buf[4] = 99
 		_, err := parseHeader(buf)
@@ -82,6 +90,7 @@ func Test_parseHeader(t *testing.T) {
 
 	t.Run("v2_bad_hash_id", func(t *testing.T) {
 		t.Parallel()
+
 		buf := append([]byte{}, readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")[:headerSizeV2]...)
 		// Overwrite the trailing 4-byte hash_id with junk.
 		copy(buf[24:28], []byte{'J', 'U', 'N', 'K'})
@@ -93,8 +102,10 @@ func Test_parseHeader(t *testing.T) {
 
 func Test_verifyTrailer(t *testing.T) {
 	t.Parallel()
+
 	t.Run("single_sha1_passes", func(t *testing.T) {
 		t.Parallel()
+
 		buf := readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -103,6 +114,7 @@ func Test_verifyTrailer(t *testing.T) {
 
 	t.Run("single_sha256_passes", func(t *testing.T) {
 		t.Parallel()
+
 		buf := readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -111,6 +123,7 @@ func Test_verifyTrailer(t *testing.T) {
 
 	t.Run("corrupt_trailer_fails", func(t *testing.T) {
 		t.Parallel()
+
 		buf := readFixture(t, "corrupt-trailer-sha1.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -121,6 +134,7 @@ func Test_verifyTrailer(t *testing.T) {
 
 	t.Run("truncated_fails", func(t *testing.T) {
 		t.Parallel()
+
 		// truncated-sha1.ref is shorter than headerSizeV1 + footerSizeV1
 		// (24 + 68 = 92), so verifyTrailer's length guard fires.
 		// parseHeader still succeeds because the fixture preserves the

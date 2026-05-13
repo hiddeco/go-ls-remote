@@ -50,6 +50,7 @@ const (
 
 func TestObjectInfo_LooseBlobReturnsTypeAndSize(t *testing.T) {
 	t.Parallel()
+
 	// Loose-first: the resolver consults `s.loose.Find` ahead of the
 	// pack backend, so a loose blob should resolve without ever
 	// touching `s.packs`. Type and size match the canonical fixture
@@ -64,6 +65,7 @@ func TestObjectInfo_LooseBlobReturnsTypeAndSize(t *testing.T) {
 
 func TestObjectInfo_PackedCommitReturnsTypeAndSize(t *testing.T) {
 	t.Parallel()
+
 	// Pack-only repo: the resolver misses on loose, hits on packs, and
 	// returns the non-delta header's type / inflated size verbatim. The
 	// commit OID lives at offset 12 in `three-objects.pack` and
@@ -78,6 +80,7 @@ func TestObjectInfo_PackedCommitReturnsTypeAndSize(t *testing.T) {
 
 func TestObjectInfo_OfsDeltaResolvesToBaseTypeWithDeltaTargetSize(t *testing.T) {
 	t.Parallel()
+
 	// 1-deep OFS_DELTA: the OID points at a delta entry whose base is
 	// the other blob in the same pack. The resolver walks one OFS_DELTA
 	// hop, lands on the base, and returns the base's type ([objfmt.TypeBlob])
@@ -96,6 +99,7 @@ func TestObjectInfo_OfsDeltaResolvesToBaseTypeWithDeltaTargetSize(t *testing.T) 
 
 func TestObjectInfo_OfsDeltaBaseStillResolves(t *testing.T) {
 	t.Parallel()
+
 	// Sanity: the same `ofs-delta-pack` fixture's base blob must
 	// resolve as a normal non-delta blob. Catches a regression where
 	// the walker would treat every entry in a delta-bearing pack as a
@@ -110,6 +114,7 @@ func TestObjectInfo_OfsDeltaBaseStillResolves(t *testing.T) {
 
 func TestObjectInfo_CrossPackRefDelta(t *testing.T) {
 	t.Parallel()
+
 	// Synthesise a two-pack repo whose REF_DELTA carrier names a base
 	// that lives in a sibling pack. The resolver must consult the
 	// cross-pack lookup (via `s.packs.Lookup`) to find the base before
@@ -131,6 +136,7 @@ func TestObjectInfo_CrossPackRefDelta(t *testing.T) {
 
 func TestObjectInfo_RefDeltaPositiveCacheSurvivesPackRemoval(t *testing.T) {
 	t.Parallel()
+
 	// Cross-pack REF_DELTA is cached: the second call must not re-scan
 	// the pack set. Force the issue by deleting the carrier pack between
 	// calls — the first call seeds the cache, the second resolves
@@ -159,6 +165,7 @@ func TestObjectInfo_RefDeltaPositiveCacheSurvivesPackRemoval(t *testing.T) {
 
 func TestObjectInfo_RefDeltaNegativeCacheReusesError(t *testing.T) {
 	t.Parallel()
+
 	// REF_DELTA whose base does not live in any open pack: both calls
 	// must surface the same `ErrCorruptObject` shape, with the second
 	// served from the negative cache slot rather than re-scanning the
@@ -192,6 +199,7 @@ func TestObjectInfo_RefDeltaNegativeCacheReusesError(t *testing.T) {
 
 func TestObjectInfo_MissingOIDReturnsErrNotExist(t *testing.T) {
 	t.Parallel()
+
 	// Loose miss + pack miss + no alternates → `os.ErrNotExist`. The
 	// `errors.Is` match is the public contract callers depend on to
 	// distinguish a cold miss from a corruption report.
@@ -206,6 +214,7 @@ func TestObjectInfo_MissingOIDReturnsErrNotExist(t *testing.T) {
 
 func TestObjectInfo_CorruptDeltaPayloadWrapsErrCorruptObject(t *testing.T) {
 	t.Parallel()
+
 	// Flip a byte at the start of the delta payload's compressed body
 	// so the zlib stream the delta-header reader inflates fails to
 	// decompress. The walker must surface the failure as
@@ -235,6 +244,7 @@ func TestObjectInfo_CorruptDeltaPayloadWrapsErrCorruptObject(t *testing.T) {
 
 func TestObjectInfo_CRC32MismatchWrapsErrCorruptObject(t *testing.T) {
 	t.Parallel()
+
 	// Default open (CRC verification on): flipping a byte inside the
 	// commit's compressed body must trip the CRC check before the
 	// header is inflated. `three-objects.pack` lays the commit at
@@ -260,6 +270,7 @@ func TestObjectInfo_CRC32MismatchWrapsErrCorruptObject(t *testing.T) {
 
 func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
 	t.Parallel()
+
 	// Construct a three-pack catalog by cloning the canonical
 	// `three-objects.{pack,idx}` to three distinct basenames. Every pack
 	// in the resulting store must round-trip through
@@ -301,6 +312,7 @@ func TestPackBackend_IdxFor_MultiPackReturnsPairedIdx(t *testing.T) {
 
 func TestObjectInfo_MultiPackCRC32MismatchTripsRightPack(t *testing.T) {
 	t.Parallel()
+
 	// Three-pack catalog where one pack's commit body has been flipped:
 	// `Store[objfmt.SHA1Hash].ObjectInfo` for the OID present in every pack must walk to
 	// the youngest pack first (the corrupted one) and trip its CRC. A
@@ -346,6 +358,7 @@ func TestObjectInfo_MultiPackCRC32MismatchTripsRightPack(t *testing.T) {
 
 func TestObjectInfo_WithoutCRCCheckBypassesVerification(t *testing.T) {
 	t.Parallel()
+
 	// Same flipped-byte fixture as the CRC test: with CRC verification
 	// disabled the resolver must succeed (the on-disk header is still
 	// readable; the corrupted byte sits past the type/size varint and
@@ -368,6 +381,7 @@ func TestObjectInfo_WithoutCRCCheckBypassesVerification(t *testing.T) {
 
 func TestObjectInfo_DeepOfsDeltaChainResolvesBelowBound(t *testing.T) {
 	t.Parallel()
+
 	// Synthetic 8-deep OFS_DELTA chain: every entry but the terminal
 	// blob is a delta. Asking `ObjectInfo` for the head must walk all
 	// eight hops, land on the blob, and report the delta target size
@@ -392,6 +406,7 @@ func TestObjectInfo_DeepOfsDeltaChainResolvesBelowBound(t *testing.T) {
 
 func TestObjectInfo_ChainDepthExceededWrapsErrCorruptObject(t *testing.T) {
 	t.Parallel()
+
 	// Synthesise a pack carrying a deliberately-long OFS_DELTA chain:
 	// one terminal blob followed by [maxChainDepth + 1] OFS_DELTA
 	// entries, each pointing back at its immediate predecessor. Asking
@@ -414,6 +429,7 @@ func TestObjectInfo_ChainDepthExceededWrapsErrCorruptObject(t *testing.T) {
 
 func TestObjectInfo_AlternatesFallThrough(t *testing.T) {
 	t.Parallel()
+
 	// `pack-with-alternates` has an empty local objects directory and
 	// an alternates pointer at a sibling repo carrying the
 	// `three-objects` pack. The resolver must miss locally on every
@@ -436,6 +452,7 @@ func TestObjectInfo_AlternatesFallThrough(t *testing.T) {
 
 func TestObjectInfo_ConcurrentSameOIDConverges(t *testing.T) {
 	t.Parallel()
+
 	// Twenty goroutines hammer the same OID through `ObjectInfo`.
 	// Under `-race` the run must stay clean and every result must
 	// match. Catches both a data race in the cross-pack REF_DELTA cache
@@ -477,6 +494,7 @@ func TestObjectInfo_ConcurrentSameOIDConverges(t *testing.T) {
 // destination's lifetime.
 func materializeFixtureInto(t *testing.T, name, dir string) error {
 	t.Helper()
+
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	src := filepath.Join(wd, "..", "..", "testdata", "repos", name)
@@ -511,6 +529,7 @@ func materializeFixtureInto(t *testing.T, name, dir string) error {
 // damage at a known location.
 func corruptByte(t *testing.T, path string, off int64) {
 	t.Helper()
+
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	require.NoError(t, err)
 	defer func() { _ = f.Close() }()
@@ -537,6 +556,7 @@ func corruptByte(t *testing.T, path string, off int64) {
 // single-pack fixture cannot reach.
 func makeCrossPackRefDeltaRepo(t *testing.T, root string) {
 	t.Helper()
+
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "HEAD"),
 		[]byte("ref: refs/heads/main\n"), 0o644))
@@ -592,6 +612,7 @@ func makeCrossPackRefDeltaRepo(t *testing.T, root string) {
 // REF_DELTA's own OID for the test to feed into `ObjectInfo`.
 func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.SHA1Hash {
 	t.Helper()
+
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "HEAD"),
 		[]byte("ref: refs/heads/main\n"), 0o644))
@@ -642,6 +663,7 @@ func makeOrphanRefDeltaRepo(t *testing.T, root string) objfmt.SHA1Hash {
 // `at -= ofsBase` walks from head to base in the canonical direction.
 func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.SHA1Hash {
 	t.Helper()
+
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "objects", "pack"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "HEAD"),
 		[]byte("ref: refs/heads/main\n"), 0o644))
@@ -759,6 +781,7 @@ func makeDeepOfsDeltaChain(t *testing.T, root string, depth int) objfmt.SHA1Hash
 // generous for any synthetic-fixture payload.
 func buildBlobEntry(t *testing.T, body []byte) []byte {
 	t.Helper()
+
 	require.LessOrEqual(t, len(body), 15,
 		"buildBlobEntry only frames bodies that fit a 4-bit size field")
 	var buf bytes.Buffer
@@ -775,6 +798,7 @@ func buildBlobEntry(t *testing.T, body []byte) []byte {
 // opcode is never executed by `Store[objfmt.SHA1Hash].ObjectInfo`.
 func buildSyntheticDeltaBody(t *testing.T) []byte {
 	t.Helper()
+
 	// Two single-byte varints (each value 2; high bit clear) plus one
 	// extra byte to pad the inflate buffer past the varints.
 	return zlibCompress(t, []byte{0x02, 0x02, 0x00})
@@ -800,6 +824,7 @@ func syntheticOID(tag uint8) objfmt.SHA1Hash {
 // by the synthetic-pack helpers above to build per-entry bodies.
 func zlibCompress(t *testing.T, body []byte) []byte {
 	t.Helper()
+
 	var buf bytes.Buffer
 	zw := zlib.NewWriter(&buf)
 	_, err := io.Copy(zw, bytes.NewReader(body))

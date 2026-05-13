@@ -256,6 +256,7 @@ func (s *testServer) stdin() []byte {
 // fails with a clear diagnostic rather than the test runner's timeout.
 func (s *testServer) awaitStdin(t *testing.T, want int) []byte {
 	t.Helper()
+
 	deadline := t.Context().Done()
 	for {
 		got := s.stdin()
