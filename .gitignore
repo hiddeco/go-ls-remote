@@ -13,3 +13,5 @@ go.work.sum
 .idea/
 .vscode/
 *.swp
+
+.github/lint/node_modules/
