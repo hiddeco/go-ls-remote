@@ -221,7 +221,7 @@ func validateGitHandshake(payload []byte) error {
 
 // isGitClientHangupError reports whether err is the expected shape
 // when the client closes its end of the TCP connection before the
-// session completes. Four shapes arise on this path:
+// session completes. Five shapes arise on this path:
 //
 //   - [io.EOF] when the peer closes the connection cleanly between
 //     pkt-lines, which Go's [net.Conn.Read] surfaces verbatim.
@@ -234,6 +234,10 @@ func validateGitHandshake(payload []byte) error {
 //     hard — `conn.Close` after a write that the peer never read.
 //     Darwin and Linux both surface this as `read: connection
 //     reset by peer` instead of EOF.
+//   - Windows-only `WSAECONNRESET`/`WSAECONNABORTED` from
+//     [isPlatformHangup]; the POSIX-named `syscall.ECONNRESET`
+//     constant does not equal the WSA errno value the Go runtime
+//     surfaces, so a separate matcher is required.
 //
 // Surfacing any of them through `t.Errorf` would turn well-formed
 // teardown sequences into spurious harness failures.
@@ -243,5 +247,6 @@ func isGitClientHangupError(err error) bool {
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, context.Canceled)
+		errors.Is(err, context.Canceled) ||
+		isPlatformHangup(err)
 }

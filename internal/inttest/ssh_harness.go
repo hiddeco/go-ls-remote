@@ -363,17 +363,20 @@ func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) 
 // [io.ErrUnexpectedEOF], [net.ErrClosed], [syscall.ECONNRESET], and
 // [syscall.EPIPE]: x/crypto/ssh and the underlying TCP socket each
 // surface a different one depending on whether the peer closes
-// cleanly, mid-read, or mid-write. Surfacing any through `t.Errorf`
-// would turn well-formed teardown sequences (e.g. a test that dials,
-// accepts the advertisement up to the first capability, and closes)
-// into spurious harness failures.
+// cleanly, mid-read, or mid-write. On Windows the runtime adds
+// `WSAECONNRESET`/`WSAECONNABORTED` to that set; see
+// [isPlatformHangup]. Surfacing any through `t.Errorf` would turn
+// well-formed teardown sequences (e.g. a test that dials, accepts
+// the advertisement up to the first capability, and closes) into
+// spurious harness failures.
 func isClientHangupError(err error) bool {
 	return errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, context.Canceled)
+		errors.Is(err, context.Canceled) ||
+		isPlatformHangup(err)
 }
 
 // parseUploadPackCommand validates execCmd as
