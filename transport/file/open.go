@@ -76,6 +76,7 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 	if err != nil {
 		return nil, &ProtocolError{URL: redacted, Op: "dial", Err: ErrNotFound}
 	}
+	path = urlPathToOSPath(path)
 
 	// Discover the repository's hash algorithm before instantiating
 	// the typed store. This is the one polymorphism boundary in the
