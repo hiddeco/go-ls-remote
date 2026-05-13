@@ -12,6 +12,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    # Windows runners default to pwsh which mangles `-flag=value` style
+    # arguments (the `=` triggers PowerShell parameter parsing and
+    # `-coverprofile=cover.out` ends up split into separate tokens).
+    # Force Git Bash everywhere so command-line parsing matches Linux
+    # and macOS.
+    shell: bash
+
 jobs:
   test:
     strategy:
