@@ -1,1 +1,9 @@
-*.go text eol=lf
+# Normalise every text file to LF in the worktree and the index, so
+# Windows checkouts (`core.autocrlf=true` by default on Git for
+# Windows) do not corrupt protocol fixtures, reftable `tables.list`
+# manifests, shell scripts, or Go sources by inserting CRLF. Git's
+# `text=auto` heuristic skips files it identifies as binary (NUL
+# bytes in the first 8 KiB), so on-disk binary fixtures — `.pack`,
+# `.idx`, `multi-pack-index`, and binary `.ref` reftables — pass
+# through unchanged.
+* text=auto eol=lf
