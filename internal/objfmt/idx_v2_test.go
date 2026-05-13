@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -461,4 +462,30 @@ func TestIdx_OffsetAfter(t *testing.T) {
 		_, ok = idx.OffsetAfter(256)
 		assert.False(t, ok)
 	})
+}
+
+// TestFindOffsetV2_LOFFSignBitRejected covers the gosec G115 cast
+// guard. A corrupt v2 idx whose LOFF slot has the sign bit set
+// would, without the guard, produce `int64(0xFFF...) == -1` and
+// hand a negative offset to the pack reader. With the guard the
+// lookup reports a miss. Canonical Git carries the value as
+// `off_t` and does not narrow it
+// (`packfile.c::nth_packed_object_offset`, `packfile.c:2055`); the
+// Go conversion is the only place a sign bit changes meaning.
+//
+// [packfile.c:2055]: https://github.com/git/git/blob/v2.54.0/packfile.c#L2055
+func TestFindOffsetV2_LOFFSignBitRejected(t *testing.T) {
+	t.Parallel()
+
+	var h SHA1Hash // all-zero OID; fanout row 0
+	path := writeV2Idx(t, t.TempDir(), []v2Entry{
+		{oid: h, offset: math.MaxUint64, crc: 0},
+	})
+	i, err := OpenIdx[SHA1Hash](path, SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = i.Close() })
+
+	off, ok := i.FindOffset(h)
+	require.False(t, ok, "sign-bit LOFF offset must be rejected")
+	require.Equal(t, int64(-1), off)
 }

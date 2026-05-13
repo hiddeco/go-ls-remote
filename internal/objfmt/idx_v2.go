@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"math"
 )
 
 // idxV2OverflowMSB marks an offset entry whose lower 31 bits index
@@ -53,6 +54,14 @@ func (i *Idx[H]) findOffsetV2(h H) (int64, bool) {
 		return -1, false
 	}
 	big := binary.BigEndian.Uint64(i.data[overflowTable+int(overflowIdx)*8 : want])
+	if big > math.MaxInt64 {
+		// A LOFF offset with the sign bit set cannot be represented
+		// as a non-negative `int64`. Canonical Git carries the
+		// 64-bit offset as `off_t` and relies on `pread` bounds
+		// checks; in Go the conversion is the only place that loses
+		// information, so the guard lives here.
+		return -1, false
+	}
 	return int64(big), true
 }
 
