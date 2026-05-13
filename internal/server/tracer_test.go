@@ -124,8 +124,15 @@ func TestServe_TracerSingleLSRefs(t *testing.T) {
 	assert.Equal(t, "ls-refs", end.Name)
 	assert.Equal(t, trace.CommandEnd, end.Phase)
 	assert.Empty(t, end.URL)
-	assert.Positive(t, int64(end.Duration),
-		"end event must carry a positive duration")
+	// `end.Duration` must be non-negative; the empty-store `ls-refs`
+	// handler can finish inside a single monotonic-clock tick on
+	// `windows-latest` (Go's `nanotime` is backed by
+	// `QueryPerformanceCounter`, whose effective resolution on
+	// Hyper-V VMs is microsecond-coarse), so the assertion cannot
+	// require strictly positive elapsed time without becoming
+	// platform-dependent.
+	assert.GreaterOrEqual(t, int64(end.Duration), int64(0),
+		"end event must carry a non-negative duration")
 	require.NoError(t, end.Err,
 		"successful handler must surface a nil error on the end event")
 	assert.False(t, end.Time.IsZero())
