@@ -3,6 +3,7 @@ package objstore
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -133,6 +134,20 @@ func TestOpenAlternates_SingleRelativePath(t *testing.T) {
 
 func TestOpenAlternates_QuotedPath(t *testing.T) {
 	t.Parallel()
+
+	// The C-style quoter only round-trips POSIX paths: a Windows
+	// absolute path embeds `\` as its component separator, which
+	// `unquoteCStyle` reads as the start of an escape sequence and
+	// rejects (no valid escape begins with `U` for `C:\Users`).
+	// Canonical Git's `odb.c::parse_alternates` then falls through
+	// to the literal-with-quotes branch, just as our port does, so
+	// the resulting alternate path carries `"` characters that
+	// Windows refuses as filename syntax. The behaviour matches
+	// canonical Git; the test simply cannot stage a quoted-path
+	// fixture under Windows path conventions.
+	if runtime.GOOS == "windows" {
+		t.Skip("C-style escapes and Windows path separators are mutually exclusive")
+	}
 
 	// Build a quoted path with a space inside. The unquoter must strip
 	// the surrounding double quotes and the alternate must open against
