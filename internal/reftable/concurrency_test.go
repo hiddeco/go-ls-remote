@@ -19,15 +19,13 @@ import (
 // caller's responsibility to serialize. Run under `go test -race` to
 // let the race detector flag any unsynchronized writes.
 //
-// Each goroutine inserts a [runtime.Gosched] after every hammer
-// iteration so the Go scheduler rotates fairly across all 32 goroutines
-// inside the 100ms time budget. The allocation-free [Stack.IterRefs]
-// path is otherwise tight enough that with goroutines >> CPUs the
-// sysmon's 10ms preemption cadence can leave some goroutines unrun
-// before the time budget elapses, even though the contract under test
-// (concurrent reads remain safe and produce correct results) is met.
-// The yield does not change what is being tested; it only ensures the
-// per-goroutine progress assertion is observed deterministically.
+// Each goroutine runs one full round of IterRefs + FindRef work
+// before checking the stop flag, so the per-goroutine progress
+// assertion holds even when the scheduler runs the last goroutine
+// only after the 100ms time budget has expired. The intra-loop
+// [runtime.Gosched] keeps work fairly interleaved across all 32
+// goroutines while the budget is active; the yield does not change
+// what is being tested.
 
 const concurrentGoroutines = 32
 
@@ -59,7 +57,7 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 
 	for id := range concurrentGoroutines {
 		wg.Go(func() {
-			for !stop.Load() {
+			for {
 				// Walk the iterator end-to-end at least once per round.
 				for _, err := range r.IterRefs() {
 					if err != nil {
@@ -84,6 +82,9 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 						return
 					}
 					findHits[id]++
+				}
+				if stop.Load() {
+					return
 				}
 				runtime.Gosched()
 			}
@@ -157,7 +158,7 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 
 	for id := range concurrentGoroutines {
 		wg.Go(func() {
-			for !stop.Load() {
+			for {
 				for _, err := range s.IterRefs() {
 					if err != nil {
 						t.Errorf("goroutine %d: IterRefs error: %v", id, err)
@@ -181,6 +182,9 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 						return
 					}
 					findHits[id]++
+				}
+				if stop.Load() {
+					return
 				}
 				runtime.Gosched()
 			}
