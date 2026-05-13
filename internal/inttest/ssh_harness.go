@@ -11,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -358,15 +359,20 @@ func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) 
 
 // isClientHangupError reports whether err is the expected shape when
 // the client closes its end of the SSH channel before reading or
-// writing the full session. The shapes are [io.EOF] and
-// [io.ErrUnexpectedEOF]: x/crypto/ssh propagates the former when the
-// peer closes cleanly and the latter when the close races a pending
-// write. Surfacing either through `t.Errorf` would turn well-formed
-// teardown sequences (e.g. a test that dials, accepts the
-// advertisement up to the first capability, and closes) into spurious
-// harness failures.
+// writing the full session. The shapes are [io.EOF],
+// [io.ErrUnexpectedEOF], [net.ErrClosed], [syscall.ECONNRESET], and
+// [syscall.EPIPE]: x/crypto/ssh and the underlying TCP socket each
+// surface a different one depending on whether the peer closes
+// cleanly, mid-read, or mid-write. Surfacing any through `t.Errorf`
+// would turn well-formed teardown sequences (e.g. a test that dials,
+// accepts the advertisement up to the first capability, and closes)
+// into spurious harness failures.
 func isClientHangupError(err error) bool {
-	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE)
 }
 
 // parseUploadPackCommand validates execCmd as
