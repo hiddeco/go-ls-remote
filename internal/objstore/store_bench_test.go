@@ -317,7 +317,7 @@ func makeLooseRefsFixture(b *testing.B, n int) string {
 	// the numbered branches each get a distinct synthetic OID derived
 	// from their index. Distinct OIDs are not strictly required by the
 	// iterator but keep the fixture honest.
-	mainOID := fmt.Sprintf("%040x", 0xaaaaaaaa)
+	mainOID := fmt.Sprintf("%040x", uint64(0xaaaaaaaa))
 	if err := os.WriteFile(filepath.Join(gitDir, "refs", "heads", "main"),
 		[]byte(mainOID+"\n"), 0o644); err != nil {
 		b.Fatal(err)
