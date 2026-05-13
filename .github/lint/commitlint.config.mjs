@@ -8,8 +8,11 @@ export default {
     'signed-off-by': [0],
   },
   ignores: [
-    (msg) => /^chore\(deps\): bump /.test(msg),
-    (msg) => /^ci\(github-actions\): bump /.test(msg),
-    (msg) => /^ci\(deps(?:-dev)?\): bump /.test(msg),
+    // Dependabot autogen subjects: matches both individual
+    // (`bump foo from x to y`) and grouped (`Bump the X group
+    // in <dir> with N updates`) update shapes, lower- or
+    // capitalised. Covers all three ecosystems (`chore(deps)`,
+    // `ci(github-actions)`, `ci(deps)`, `ci(deps-dev)`).
+    (msg) => /^(chore|ci)\([^)]+\): [Bb]ump /.test(msg),
   ],
 };

@@ -12,8 +12,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: chore(deps)
     labels:
       - dependencies
       - go
@@ -34,8 +33,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
     commit-message:
-      prefix: ci
-      include: scope
+      prefix: ci(actions)
     labels:
       - dependencies
       - github-actions
@@ -51,8 +49,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 3
     commit-message:
-      prefix: ci
-      include: scope
+      prefix: ci(commitlint)
     labels:
       - dependencies
       - commitlint
