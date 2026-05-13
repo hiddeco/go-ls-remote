@@ -1,16 +1,11 @@
-name: fuzz
+name: fuzz-deep
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions: {}
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prepare:
@@ -43,16 +38,16 @@ jobs:
             | jq -sc '{include: .}')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-  fuzz-smoke:
+  fuzz-deep:
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
-    name: fuzz-smoke (${{ matrix.func }})
+    name: fuzz-deep (${{ matrix.func }})
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -65,7 +60,11 @@ jobs:
       - env:
           FUNC: ${{ matrix.func }}
           PKG: ${{ matrix.pkg }}
-        # Bound by iteration count, not wall-clock time, to avoid
-        # the Go fuzz runner's `context deadline exceeded` surface
-        # when a worker is mid-iteration at the `-fuzztime` boundary.
-        run: go test -run=^$ -fuzz="$FUNC" -fuzztime=10000x "$PKG"
+        run: go test -run=^$ -fuzz="$FUNC" -fuzztime=5m "$PKG"
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashers-${{ matrix.func }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/${{ matrix.func }}
+          if-no-files-found: ignore
+          retention-days: 30
