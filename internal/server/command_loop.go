@@ -75,7 +75,8 @@ func (a *argsReader) ReadPacket() (pktline.Packet, error) {
 //
 // [serve.c::protocol_v2_serve_loop lines 356-371]: https://github.com/git/git/blob/v2.54.0/serve.c#L356-L371
 func runV2CommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) error {
+	store *objstore.Store[H], opts Options,
+) error {
 	for {
 		// Cancellation point between commands: the bytes for the
 		// previous request have been fully serviced and the next
@@ -126,7 +127,8 @@ func runV2CommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *
 // [serve.c:314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 // [serve.c:323-329]: https://github.com/git/git/blob/v2.54.0/serve.c#L323-L329
 func processV2Request[H objfmt.Hash](r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) (bool, error) {
+	store *objstore.Store[H], opts Options,
+) (bool, error) {
 	var (
 		commandName  string
 		seenCmdOrCap bool
@@ -234,7 +236,8 @@ func processV2Request[H objfmt.Hash](r *pktline.Reader, w *pktline.Writer,
 //
 // [serve.c:343-344]: https://github.com/git/git/blob/v2.54.0/serve.c#L343-L344
 func dispatchV2[H objfmt.Hash](r *argsReader, w *pktline.Writer, store *objstore.Store[H],
-	opts Options, commandName string) error {
+	opts Options, commandName string,
+) error {
 	switch commandName {
 	case "":
 		return errors.New("server: v2 request had no command line")

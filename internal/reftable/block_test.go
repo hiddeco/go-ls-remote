@@ -2,7 +2,6 @@ package reftable
 
 import (
 	"encoding/binary"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -61,7 +60,9 @@ func buildFirstRefBlock(blockLen, firstByteOffset int, restarts []uint32) []byte
 }
 
 func Test_parseBlock(t *testing.T) {
+	t.Parallel()
 	t.Run("ref_block_basic", func(t *testing.T) {
+		t.Parallel()
 		buf := buildBlock('r', 32, []uint32{4, 16})
 		b, err := parseBlock(buf, 0)
 		require.NoError(t, err)
@@ -75,6 +76,7 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("index_block", func(t *testing.T) {
+		t.Parallel()
 		buf := buildBlock('i', 24, []uint32{4})
 		b, err := parseBlock(buf, 0)
 		require.NoError(t, err)
@@ -85,6 +87,7 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("obj_block", func(t *testing.T) {
+		t.Parallel()
 		buf := buildBlock('o', 24, []uint32{4})
 		b, err := parseBlock(buf, 0)
 		require.NoError(t, err)
@@ -92,10 +95,12 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("buf_larger_than_block_len", func(t *testing.T) {
+		t.Parallel()
 		// Padding zeros after blockLen should be ignored (aligned files
 		// pad each block with zeros up to the file's block size).
 		buf := buildBlock('r', 32, []uint32{4, 16})
-		padded := append(buf, make([]byte, 32)...)
+		padded := make([]byte, len(buf)+32)
+		copy(padded, buf)
 		b, err := parseBlock(padded, 0)
 		require.NoError(t, err)
 		assert.Equal(t, uint32(32), b.header.blockLen)
@@ -103,37 +108,42 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("log_block_rejected", func(t *testing.T) {
+		t.Parallel()
 		buf := buildBlock('g', 24, []uint32{4})
 		_, err := parseBlock(buf, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrLogBlockUnsupported), "want ErrLogBlockUnsupported, got %v", err)
+		assert.ErrorIs(t, err, ErrLogBlockUnsupported, "want ErrLogBlockUnsupported, got %v", err)
 	})
 
 	t.Run("bad_type_rejected", func(t *testing.T) {
+		t.Parallel()
 		buf := buildBlock('X', 24, []uint32{4})
 		_, err := parseBlock(buf, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrBadBlockType), "want ErrBadBlockType, got %v", err)
+		assert.ErrorIs(t, err, ErrBadBlockType, "want ErrBadBlockType, got %v", err)
 	})
 
 	t.Run("truncated_too_short_for_header", func(t *testing.T) {
+		t.Parallel()
 		// Only 3 bytes — cannot even read block_type + block_len.
 		_, err := parseBlock([]byte{'r', 0, 0}, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTruncatedBlock), "want ErrTruncatedBlock, got %v", err)
+		assert.ErrorIs(t, err, ErrTruncatedBlock, "want ErrTruncatedBlock, got %v", err)
 	})
 
 	t.Run("truncated_block_len_exceeds_buf", func(t *testing.T) {
+		t.Parallel()
 		// Header claims blockLen=32, but buf is only 16 bytes.
 		buf := make([]byte, 16)
 		buf[0] = 'r'
 		putBE24(buf[1:4], 32)
 		_, err := parseBlock(buf, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTruncatedBlock), "want ErrTruncatedBlock, got %v", err)
+		assert.ErrorIs(t, err, ErrTruncatedBlock, "want ErrTruncatedBlock, got %v", err)
 	})
 
 	t.Run("truncated_no_room_for_restart_table", func(t *testing.T) {
+		t.Parallel()
 		// blockLen too small to fit header + restart_count + claimed
 		// restart_offset entries.
 		buf := make([]byte, 8)
@@ -143,10 +153,11 @@ func Test_parseBlock(t *testing.T) {
 		binary.BigEndian.PutUint16(buf[6:8], 5)
 		_, err := parseBlock(buf, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTruncatedBlock), "want ErrTruncatedBlock, got %v", err)
+		assert.ErrorIs(t, err, ErrTruncatedBlock, "want ErrTruncatedBlock, got %v", err)
 	})
 
 	t.Run("empty_restart_table", func(t *testing.T) {
+		t.Parallel()
 		// [reftable.adoc § Ref block format]: "the restart_offset list,
 		// which must not be empty".
 		//
@@ -157,10 +168,11 @@ func Test_parseBlock(t *testing.T) {
 		binary.BigEndian.PutUint16(buf[6:8], 0)
 		_, err := parseBlock(buf, 0)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTruncatedBlock), "want ErrTruncatedBlock, got %v", err)
+		assert.ErrorIs(t, err, ErrTruncatedBlock, "want ErrTruncatedBlock, got %v", err)
 	})
 
 	t.Run("first_ref_block_offset_subtraction", func(t *testing.T) {
+		t.Parallel()
 		// First ref block carries restart_offsets relative to position
 		// 0 (i.e. they include the 24-byte file header).
 		// firstByteOffset=24 → on-disk offsets {28, 40} become
@@ -184,16 +196,18 @@ func Test_parseBlock(t *testing.T) {
 	})
 
 	t.Run("first_ref_block_offset_below_first_byte_rejected", func(t *testing.T) {
+		t.Parallel()
 		// A restart_offset smaller than firstByteOffset would
 		// underflow the subtraction. Reject it as a malformed block.
 		buf := buildFirstRefBlock(64, 24, []uint32{12, 28})
 		_, err := parseBlock(buf, 24)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTruncatedBlock), "want ErrTruncatedBlock, got %v", err)
+		assert.ErrorIs(t, err, ErrTruncatedBlock, "want ErrTruncatedBlock, got %v", err)
 	})
 }
 
 func Test_block_seekRestart(t *testing.T) {
+	t.Parallel()
 	// Build a block whose restart-table layout we control. The cmp
 	// function below maps each restart index to a synthetic key
 	// without touching the bytes, so we can drive seekRestart without
@@ -218,6 +232,7 @@ func Test_block_seekRestart(t *testing.T) {
 	}
 
 	t.Run("finds_largest_le", func(t *testing.T) {
+		t.Parallel()
 		cases := []struct {
 			probe string
 			want  int
@@ -231,6 +246,7 @@ func Test_block_seekRestart(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.probe, func(t *testing.T) {
+				t.Parallel()
 				got := b.seekRestart(cmpFor(tc.probe))
 				assert.Equal(t, tc.want, got)
 			})
@@ -238,6 +254,7 @@ func Test_block_seekRestart(t *testing.T) {
 	})
 
 	t.Run("probe_before_first_returns_minus_one", func(t *testing.T) {
+		t.Parallel()
 		// Probe sorts before everything in the table.
 		got := b.seekRestart(cmpFor("0"))
 		assert.Equal(t, -1, got)

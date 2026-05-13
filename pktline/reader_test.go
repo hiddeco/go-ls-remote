@@ -167,7 +167,7 @@ func TestReader_ReadPacket_maxPayload(t *testing.T) {
 	pkt, err := r.ReadPacket()
 	require.NoError(t, err)
 	assert.Equal(t, Data, pkt.Kind)
-	assert.Equal(t, MaxPayload, len(pkt.Data))
+	assert.Len(t, pkt.Data, MaxPayload)
 	assert.Equal(t, payload, string(pkt.Data))
 }
 

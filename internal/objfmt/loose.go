@@ -88,7 +88,7 @@ func ReadLooseHeader(r io.Reader) (typ ObjectType, size int64, body io.ReadClose
 //
 // [object-file.c:369-380]: https://github.com/git/git/blob/v2.54.0/object-file.c#L369-L380
 func parseLooseSize(s string) (int64, error) {
-	if len(s) == 0 {
+	if s == "" {
 		return 0, fmt.Errorf("objfmt: empty loose object size: %w", ErrCorrupt)
 	}
 	if len(s) > 1 && s[0] == '0' {

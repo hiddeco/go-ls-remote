@@ -2,9 +2,7 @@ package httpt
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,7 +20,7 @@ func TestBasic(t *testing.T) {
 	creds := Basic("alice", "s3cr3t")
 	require.NotNil(t, creds)
 
-	r, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/", http.NoBody)
 	require.NoError(t, err)
 	require.NoError(t, creds.Apply(r))
 
@@ -41,7 +39,7 @@ func TestBearer(t *testing.T) {
 	creds := Bearer("tok-abc")
 	require.NotNil(t, creds)
 
-	r, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/", http.NoBody)
 	require.NoError(t, err)
 	require.NoError(t, creds.Apply(r))
 
@@ -55,7 +53,7 @@ func TestStatic_Resolve(t *testing.T) {
 	resolver := Static(want)
 	require.NotNil(t, resolver)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	assert.Same(t, want, got, "Static must return the wrapped Credentials verbatim")
 }
@@ -65,7 +63,7 @@ func TestStatic_Resolve_Nil(t *testing.T) {
 	resolver := Static(nil)
 	require.NotNil(t, resolver)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, got, "Static(nil) means 'no credential available'")
 }
@@ -90,11 +88,11 @@ func TestNetrc_Resolve_MachineMatch(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
-	r, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/", http.NoBody)
 	require.NoError(t, err)
 	require.NoError(t, got.Apply(r))
 	user, pass, ok := r.BasicAuth()
@@ -116,11 +114,11 @@ func TestNetrc_Resolve_FirstMatchWins(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
-	r, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/", http.NoBody)
 	require.NoError(t, err)
 	require.NoError(t, got.Apply(r))
 	user, _, _ := r.BasicAuth()
@@ -140,11 +138,11 @@ func TestNetrc_Resolve_DefaultFallthrough(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "unknown.example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "unknown.example.com"})
 	require.NoError(t, err)
 	require.NotNil(t, got)
 
-	r, err := http.NewRequest(http.MethodGet, "https://unknown.example.com/", nil)
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://unknown.example.com/", http.NoBody)
 	require.NoError(t, err)
 	require.NoError(t, got.Apply(r))
 	user, pass, ok := r.BasicAuth()
@@ -162,7 +160,7 @@ func TestNetrc_Resolve_NoMatch(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "unmatched.example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "unmatched.example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, got, "no match and no default should return (nil, nil)")
 }
@@ -174,7 +172,7 @@ func TestNetrc_Resolve_MissingFile(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err, "missing file is not an error")
 	assert.Nil(t, got)
 }
@@ -193,7 +191,7 @@ func TestNetrc_Resolve_Comments(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	require.NotNil(t, got)
 }
@@ -208,7 +206,7 @@ func TestNetrc_Resolve_Malformed(t *testing.T) {
 
 	resolver := newNetrcResolver(path, nil)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.Error(t, err)
 	assert.Nil(t, got)
 }
@@ -229,7 +227,7 @@ func TestNetrc_Resolve_WorldReadableWarns(t *testing.T) {
 	var warn bytes.Buffer
 	resolver := newNetrcResolver(path, &warn)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err, "world-readable file is still parsed; warning only")
 	require.NotNil(t, got, "credential is still returned")
 
@@ -251,7 +249,7 @@ func TestNetrc_Resolve_RestrictiveModeNoWarn(t *testing.T) {
 	var warn bytes.Buffer
 	resolver := newNetrcResolver(path, &warn)
 
-	_, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	_, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	assert.Empty(t, warn.String(), "0600 must not warn")
 }
@@ -266,7 +264,7 @@ func TestNetrc_PublicConstructor(t *testing.T) {
 	resolver := Netrc()
 	require.NotNil(t, resolver)
 
-	got, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	got, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -281,9 +279,9 @@ func TestNetrc_ParseError_Is(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("machine\n"), 0o600))
 
 	resolver := newNetrcResolver(path, nil)
-	_, err := resolver.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	_, err := resolver.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNetrcParse), "parse errors must wrap ErrNetrcParse")
+	assert.ErrorIs(t, err, ErrNetrcParse, "parse errors must wrap ErrNetrcParse")
 }
 
 // TestNetrc_Resolve_WorldWritableWarns pins that a netrc whose mode
@@ -307,10 +305,9 @@ func TestNetrc_Resolve_WorldWritableWarns(t *testing.T) {
 
 	u, err := url.Parse("https://example.com/repo")
 	require.NoError(t, err)
-	_, err = resolver.Resolve(context.Background(), u)
+	_, err = resolver.Resolve(t.Context(), u)
 	require.NoError(t, err)
 
 	assert.Contains(t, buf.String(), "readable or writable by group or world",
 		"a world-writable netrc must emit the loose-permissions warning")
 }
-

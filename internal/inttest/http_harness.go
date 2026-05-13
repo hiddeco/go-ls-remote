@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -87,18 +87,18 @@ func httpHandler[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) http.Han
 		case r.Method == http.MethodGet && r.URL.Path == infoRefs:
 			w.Header().Set("Content-Type", httpSmartAdvContentType)
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-			require.NoError(t, pw.WriteFlush())
-			require.NoError(t, server.Serve(r.Context(),
+			assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+			assert.NoError(t, pw.WriteFlush())
+			assert.NoError(t, server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader([]byte("0000"))),
 				pw, store, server.Options{
 					PreferredProtocol: transport.ProtocolV2,
 				}))
 		case r.Method == http.MethodPost && r.URL.Path == uploadPack:
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			w.Header().Set("Content-Type", httpSmartRespContentType)
-			require.NoError(t, server.ServeCommandLoop(r.Context(),
+			assert.NoError(t, server.ServeCommandLoop(r.Context(),
 				pktline.NewReader(bytes.NewReader(body)),
 				pktline.NewWriter(w), store, server.Options{
 					PreferredProtocol: transport.ProtocolV2,

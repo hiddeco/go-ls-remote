@@ -2,7 +2,7 @@ package httpt
 
 import (
 	"bytes"
-	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,14 +29,14 @@ func TestConn_inflight_deregistersOnEOF(t *testing.T) {
 
 	const N = 16
 	for range N {
-		rdr, err := c.Command(context.Background(), "ls-refs",
+		rdr, err := c.Command(t.Context(), "ls-refs",
 			cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 		require.NoError(t, err)
 
 		// Drain to EOF — the wrapper must deregister itself.
 		for {
 			_, err := rdr.ReadPacket()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestConn_inflight_deregistersOnEOF(t *testing.T) {
 
 	c.inflightMu.Lock()
 	defer c.inflightMu.Unlock()
-	assert.Equal(t, 0, len(c.inflight),
+	assert.Empty(t, c.inflight,
 		"every drained command must deregister; got %d residual entries", len(c.inflight))
 }
 
@@ -80,7 +80,7 @@ func TestConn_inflight_abandonedReaderRecoveredByClose(t *testing.T) {
 		gitProtocolHeader: "version=2",
 	}
 
-	_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	_, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 
 	c.inflightMu.Lock()
@@ -93,7 +93,7 @@ func TestConn_inflight_abandonedReaderRecoveredByClose(t *testing.T) {
 
 	c.inflightMu.Lock()
 	defer c.inflightMu.Unlock()
-	assert.Equal(t, 0, len(c.inflight),
+	assert.Empty(t, c.inflight,
 		"Close must drain every still-tracked body, leaving the set empty")
 	assert.True(t, bodyClosed,
 		"Close must close the underlying body of every tracked wrapper")

@@ -164,8 +164,8 @@ func parseAlternates(raw []byte, relativeBase string) []string {
 		// `seen` map. Broken or unreadable symlinks fall back to a
 		// cleaned absolute path so the entry survives — the recursive
 		// `Open` will surface the real failure with a focused error.
-		if real, err := filepath.EvalSymlinks(entry); err == nil {
-			entry = real
+		if resolved, err := filepath.EvalSymlinks(entry); err == nil {
+			entry = resolved
 		} else if abs, err := filepath.Abs(filepath.Clean(entry)); err == nil {
 			entry = abs
 		} else {
@@ -187,8 +187,8 @@ func parseAlternates(raw []byte, relativeBase string) []string {
 // deterministic key rather than an empty string that would silently
 // disable the check.
 func canonicalRepoDir(p string) string {
-	if real, err := filepath.EvalSymlinks(p); err == nil {
-		return real
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
 	}
 	if abs, err := filepath.Abs(filepath.Clean(p)); err == nil {
 		return abs

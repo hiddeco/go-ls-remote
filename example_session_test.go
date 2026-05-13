@@ -37,7 +37,7 @@ func ExampleDial() {
 		Prefixes: []string{"refs/heads/"},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err) //nolint:gocritic // example doc pattern: log.Fatal mirrors typical caller code
 	}
 	fmt.Println("branches:", len(heads))
 }
@@ -62,7 +62,7 @@ func ExampleSession_Refs() {
 		Peel:     true,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err) //nolint:gocritic // example doc pattern: log.Fatal mirrors typical caller code
 	}
 
 	// Take the first ten tags only.
@@ -72,7 +72,8 @@ func ExampleSession_Refs() {
 			log.Fatal(err)
 		}
 		fmt.Println(ref.Name)
-		if n++; n == 10 {
+		n++
+		if n == 10 {
 			break
 		}
 	}
@@ -109,7 +110,7 @@ func ExampleSession_ObjectInfo() {
 			fmt.Println("server does not support object-info")
 			return
 		}
-		log.Fatal(err)
+		log.Fatal(err) //nolint:gocritic // example doc pattern: log.Fatal mirrors typical caller code
 	}
 	for _, info := range infos {
 		fmt.Printf("%s %d bytes\n", info.Hash, info.Size)

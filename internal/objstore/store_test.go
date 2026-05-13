@@ -1,17 +1,18 @@
 package objstore
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 func TestOpen_EmptyRepo(t *testing.T) {
+	t.Parallel()
 	// A brand-new sha1+files repo: no commits, no packs, no
 	// `packed-refs`. The opener must succeed, default to SHA-1, and
 	// surface a usable [Store[objfmt.SHA1Hash]].
@@ -28,6 +29,7 @@ func TestOpen_EmptyRepo(t *testing.T) {
 }
 
 func TestOpen_SHA256Repo(t *testing.T) {
+	t.Parallel()
 	// `extensions.objectFormat = sha256` must propagate through
 	// `readGitConfig` into [Store[objfmt.SHA256Hash].Algo].
 	root := materializeFixture(t, "sha256")
@@ -40,6 +42,7 @@ func TestOpen_SHA256Repo(t *testing.T) {
 }
 
 func TestOpen_ReftableRepo(t *testing.T) {
+	t.Parallel()
 	// `extensions.refStorage = reftable` must select the reftable ref
 	// backend. The `with-reftable-content` fixture carries a populated
 	// stack (HEAD plus refs/heads/main) — the empty-stack `with-reftable`
@@ -58,6 +61,7 @@ func TestOpen_ReftableRepo(t *testing.T) {
 }
 
 func TestOpen_MissingPathReturnsErrNotARepo(t *testing.T) {
+	t.Parallel()
 	// A path that does not exist must surface [ErrNotARepo] verbatim
 	// via [errors.Is]; opener errors must not paper over the resolver
 	// distinction the caller relies on.
@@ -65,10 +69,11 @@ func TestOpen_MissingPathReturnsErrNotARepo(t *testing.T) {
 
 	_, err := Open[objfmt.SHA1Hash](missing)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotARepo), "expected ErrNotARepo, got %v", err)
+	assert.ErrorIs(t, err, ErrNotARepo, "expected ErrNotARepo, got %v", err)
 }
 
 func TestOpen_UnknownRefStorageReturnsErrUnsupportedFormat(t *testing.T) {
+	t.Parallel()
 	// Build a minimal repo on the fly carrying a config the parser
 	// rejects. The opener must propagate [ErrUnsupportedFormat] without
 	// wrapping it into something callers cannot unwrap.
@@ -81,11 +86,12 @@ func TestOpen_UnknownRefStorageReturnsErrUnsupportedFormat(t *testing.T) {
 
 	_, err := Open[objfmt.SHA1Hash](dir)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+	assert.ErrorIs(t, err, ErrUnsupportedFormat,
 		"expected ErrUnsupportedFormat, got %v", err)
 }
 
 func TestWithoutCRCCheck_FlipsConfig(t *testing.T) {
+	t.Parallel()
 	// The default is verifyCRC = true; `WithoutCRCCheck` flips it to
 	// false. Probed via the unexported config field rather than a
 	// public surface so the test stays in lockstep with intent.
@@ -103,6 +109,7 @@ func TestWithoutCRCCheck_FlipsConfig(t *testing.T) {
 }
 
 func TestStore_CloseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	// `Close` must be safe to call repeatedly; subsequent calls return
 	// the joined error (here, nil) without panicking.
 	root := materializeFixture(t, "empty")
@@ -115,6 +122,7 @@ func TestStore_CloseIsIdempotent(t *testing.T) {
 }
 
 func TestStore_AlgoDelegatesToConfig(t *testing.T) {
+	t.Parallel()
 	// Focused assertion that [Store.Algo] mirrors the parsed config —
 	// implied by the SHA-1 / SHA-256 cases above but cheap to lock in
 	// directly so a future refactor that drops the field is caught.
@@ -129,6 +137,7 @@ func TestStore_AlgoDelegatesToConfig(t *testing.T) {
 }
 
 func TestOpen_SelectsMidxWhenPresent(t *testing.T) {
+	t.Parallel()
 	// A `multi-pack-index` file under `objects/pack/` flips the pack
 	// backend selector to the midx variant. `midx-with-siblings/`
 	// carries a real midx body (plus its packs and one sibling pack)
@@ -145,6 +154,7 @@ func TestOpen_SelectsMidxWhenPresent(t *testing.T) {
 }
 
 func TestOpen_SelectsIdxCatalogByDefault(t *testing.T) {
+	t.Parallel()
 	// Without a `multi-pack-index`, the opener falls back to the
 	// per-`.idx` catalogue. Pairs with the midx case to lock in the
 	// selector logic on both branches.

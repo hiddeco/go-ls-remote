@@ -8,7 +8,9 @@ import (
 )
 
 func Test_seekToLeaf(t *testing.T) {
+	t.Parallel()
 	t.Run("with_index_descends_O_log", func(t *testing.T) {
+		t.Parallel()
 		file := readFixture(t, "with-index-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(file)
 		require.NoError(t, err)
@@ -32,6 +34,7 @@ func Test_seekToLeaf(t *testing.T) {
 	})
 
 	t.Run("without_index_linear", func(t *testing.T) {
+		t.Parallel()
 		file := readFixture(t, "without-index-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(file)
 		require.NoError(t, err)
@@ -51,6 +54,7 @@ func Test_seekToLeaf(t *testing.T) {
 	})
 
 	t.Run("probe_before_first", func(t *testing.T) {
+		t.Parallel()
 		file := readFixture(t, "with-index-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(file)
 		require.NoError(t, err)
@@ -72,6 +76,7 @@ func Test_seekToLeaf(t *testing.T) {
 	})
 
 	t.Run("probe_after_last", func(t *testing.T) {
+		t.Parallel()
 		file := readFixture(t, "with-index-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(file)
 		require.NoError(t, err)

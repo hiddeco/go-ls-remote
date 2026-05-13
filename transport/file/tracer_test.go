@@ -2,7 +2,6 @@ package filet
 
 import (
 	"bytes"
-	"context"
 	"sync"
 	"testing"
 
@@ -84,7 +83,7 @@ func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, stri
 	tracer := &capturingTracer{}
 
 	tr := New(opts...)
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		UserAgent: "test/0.0",
 		Tracer:    tracer,
 	})
@@ -95,7 +94,7 @@ func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, stri
 
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -120,6 +119,7 @@ func runTracedRoundTrip(t *testing.T, opts ...Option) ([]trace.PacketEvent, stri
 // the pipe, so both directions are populated, but no event originates
 // from the in-process server's reader/writer.
 func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
+	t.Parallel()
 	pkts, wantURL := runTracedRoundTrip(t)
 	require.NotEmpty(t, pkts,
 		"the client-side tracer must observe pkt-line events for the round-trip")
@@ -135,9 +135,9 @@ func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
 		assert.Equal(t, wantURL, p.URL,
 			"every PacketEvent must carry the redacted file:// URL")
 	}
-	assert.Greater(t, inbound, 0,
+	assert.Positive(t, inbound,
 		"the client-side reader must observe inbound PacketEvents (server's writes)")
-	assert.Greater(t, outbound, 0,
+	assert.Positive(t, outbound,
 		"the client-side writer must observe outbound PacketEvents (client's writes)")
 }
 
@@ -150,6 +150,7 @@ func TestTracer_PacketEvents_DefaultClientSideOnly(t *testing.T) {
 // events in total, with matching inbound and outbound counts after a
 // fully drained round-trip.
 func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
+	t.Parallel()
 	defaultPkts, _ := runTracedRoundTrip(t)
 	endpointPkts, wantURL := runTracedRoundTrip(t, WithEndpointTrace())
 
@@ -158,7 +159,7 @@ func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
 	require.NotEmpty(t, endpointPkts,
 		"the endpoint-traced round-trip must produce at least one PacketEvent")
 
-	assert.Equal(t, 2*len(defaultPkts), len(endpointPkts),
+	assert.Len(t, endpointPkts, 2*len(defaultPkts),
 		"endpoint-traced round-trip should emit exactly twice as many events as the default")
 
 	var inbound, outbound int
@@ -172,9 +173,9 @@ func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
 		assert.Equal(t, wantURL, p.URL,
 			"every PacketEvent must carry the redacted file:// URL")
 	}
-	assert.Greater(t, inbound, 0,
+	assert.Positive(t, inbound,
 		"the tracer must observe inbound PacketEvents from both endpoints")
-	assert.Greater(t, outbound, 0,
+	assert.Positive(t, outbound,
 		"the tracer must observe outbound PacketEvents from both endpoints")
 
 	// With both endpoints wired, every byte that crosses the pipe is
@@ -192,6 +193,7 @@ func TestTracer_PacketEvents_WithEndpointTraceDoubles(t *testing.T) {
 // `server.Options.Tracer`). A single `ls-refs` round-trip must still
 // surface a `CommandStart`/`CommandEnd` pair.
 func TestTracer_CommandEvents_StillFlow(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
@@ -199,7 +201,7 @@ func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 	tracer := &capturingTracer{}
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		UserAgent: "test/0.0",
 		Tracer:    tracer,
 	})
@@ -210,7 +212,7 @@ func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -244,12 +246,13 @@ func TestTracer_CommandEvents_StillFlow(t *testing.T) {
 // on-disabled behaviour, this also asserts the option-builder path is
 // allocation-free (no slice header allocated, no option applied).
 func TestTracer_NilTracer_NoEvents(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		UserAgent: "test/0.0",
 		// Tracer left nil.
 	})
@@ -260,7 +263,7 @@ func TestTracer_NilTracer_NoEvents(t *testing.T) {
 
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)

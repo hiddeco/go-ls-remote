@@ -3,7 +3,6 @@ package objstore
 import (
 	"bytes"
 	"compress/zlib"
-	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -11,9 +10,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // Stable OIDs for the `loose-objects` fixture. The fixture script
@@ -63,6 +63,7 @@ func openLooseObjectsFromFixture256(t *testing.T, name string) *looseObjects[obj
 }
 
 func TestLooseObjects_FindHitBlob(t *testing.T) {
+	t.Parallel()
 	// Hit path: the blob exists under its `aa/rest` fanout. Verify the
 	// header fields and that draining body returns the canonical payload.
 	l := openLooseObjectsFromFixture(t, "loose-objects", objfmt.SHA1)
@@ -82,6 +83,7 @@ func TestLooseObjects_FindHitBlob(t *testing.T) {
 }
 
 func TestLooseObjects_FindMissReturnsNilError(t *testing.T) {
+	t.Parallel()
 	// Miss path: a hash whose fanout file does not exist must surface as
 	// (false, nil) — never `os.ErrNotExist`. Backends compose; the
 	// caller decides whether a miss here is fatal after checking packs
@@ -99,6 +101,7 @@ func TestLooseObjects_FindMissReturnsNilError(t *testing.T) {
 }
 
 func TestLooseObjects_FindMissingFanoutDirectory(t *testing.T) {
+	t.Parallel()
 	// Same observable shape as the miss case above, but exercises the
 	// branch where the `aa/` subdirectory itself never existed — the
 	// canonical state right after `git init` for any fanout bucket the
@@ -111,15 +114,16 @@ func TestLooseObjects_FindMissingFanoutDirectory(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
 
-	any := hashFromHex(t,
+	h := hashFromHex(t,
 		"abababababababababababababababababababab", objfmt.SHA1)
-	_, _, body, ok, err := l.Find(any)
+	_, _, body, ok, err := l.Find(h)
 	require.NoError(t, err)
 	assert.False(t, ok)
 	assert.Nil(t, body)
 }
 
 func TestLooseObjects_FindPermissionError(t *testing.T) {
+	t.Parallel()
 	// A permission-denied open is a real backend failure, not a miss.
 	// On systems where the test process is root (CI containers without
 	// USER set, occasionally) chmod-0000 reads still succeed; skip
@@ -152,11 +156,12 @@ func TestLooseObjects_FindPermissionError(t *testing.T) {
 	// Different platforms wrap the syscall error differently
 	// (`syscall.EACCES` on Linux / Darwin); `errors.Is` against
 	// `fs.ErrPermission` is the portable check.
-	assert.True(t, errors.Is(err, fs.ErrPermission),
+	assert.ErrorIs(t, err, fs.ErrPermission,
 		"expected fs.ErrPermission in chain, got %v", err)
 }
 
 func TestLooseObjects_FindCorruptObjectWrapsErrCorruptObject(t *testing.T) {
+	t.Parallel()
 	// A loose-object file whose zlib stream is malformed must surface
 	// as a real error chained through [ErrCorruptObject] — never a
 	// silent miss, never a panic. Synthetic bytes live in a tempdir so
@@ -178,11 +183,12 @@ func TestLooseObjects_FindCorruptObjectWrapsErrCorruptObject(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, ok)
 	assert.Nil(t, body)
-	assert.True(t, errors.Is(err, ErrCorruptObject),
+	assert.ErrorIs(t, err, ErrCorruptObject,
 		"expected ErrCorruptObject in chain, got %v", err)
 }
 
 func TestLooseObjects_FindSHA256Lookup(t *testing.T) {
+	t.Parallel()
 	// SHA-256 fanout: the first two of 64 hex chars select the
 	// directory; the remaining 62 form the file name. The blob payload
 	// matches the SHA-1 fixture so the assertion has a stable baseline.
@@ -203,6 +209,7 @@ func TestLooseObjects_FindSHA256Lookup(t *testing.T) {
 }
 
 func TestLooseObjects_FindAllTypeVariants(t *testing.T) {
+	t.Parallel()
 	// Each of the four [objfmt.ObjectType] non-delta variants resolves
 	// through the same code path; the test fixes the type-name parser
 	// against silent regressions in either direction.
@@ -220,6 +227,7 @@ func TestLooseObjects_FindAllTypeVariants(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			typ, _, body, ok, err := l.Find(hashFromHex(t, tc.oid, objfmt.SHA1))
 			require.NoError(t, err)
 			require.True(t, ok)
@@ -230,6 +238,7 @@ func TestLooseObjects_FindAllTypeVariants(t *testing.T) {
 }
 
 func TestLooseObjects_BodyCloseReleasesHandles(t *testing.T) {
+	t.Parallel()
 	// One body.Close() must release both the zlib decoder and the
 	// underlying file. A follow-up read after the body is fully drained
 	// must report an error (the file handle is closed, the zlib decoder
@@ -255,6 +264,7 @@ func TestLooseObjects_BodyCloseReleasesHandles(t *testing.T) {
 }
 
 func TestLooseObjects_FindThroughOpen(t *testing.T) {
+	t.Parallel()
 	// End-to-end: `Open` must thread `cfg.algo` into `openLoose` so
 	// `s.loose.Find` resolves OIDs through the resulting Store[objfmt.SHA1Hash]. The
 	// assertion mirrors the hit case on a fixture that is wired through
@@ -272,6 +282,7 @@ func TestLooseObjects_FindThroughOpen(t *testing.T) {
 }
 
 func TestLooseObjects_FindThroughOpenSHA256(t *testing.T) {
+	t.Parallel()
 	// SHA-256 sibling of the end-to-end check. Confirms `cfg.algo`
 	// propagates from `extensions.objectFormat = sha256` all the way
 	// into the loose-object path computation.

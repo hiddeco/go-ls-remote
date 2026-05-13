@@ -2,8 +2,6 @@ package httpt
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"io"
 	"net/url"
 	"strings"
@@ -66,9 +64,9 @@ func TestConn_Close_Idempotent(t *testing.T) {
 func TestConn_Command_DumbReturnsUnsupportedProtocol(t *testing.T) {
 	t.Parallel()
 	c := &Conn{dumb: true}
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"a dumb Conn must short-circuit Command to ErrUnsupportedProtocol; got %v", err)
 }

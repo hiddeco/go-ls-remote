@@ -13,6 +13,7 @@ import (
 // Each sentinel exists with the documented message. The fixture is a
 // table so a missing or mis-worded message is obvious at a glance.
 func TestSentinels(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  error
@@ -26,46 +27,56 @@ func TestSentinels(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.NotNil(t, tc.err)
+			t.Parallel()
+			require.Error(t, tc.err)
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}
 }
 
 func TestProtocolError_Unwrap(t *testing.T) {
+	t.Parallel()
 	t.Run("returns the wrapped Err", func(t *testing.T) {
+		t.Parallel()
 		want := errors.New("boom")
 		pe := &ProtocolError{Op: "dial", Err: want}
 		assert.Same(t, want, pe.Unwrap())
 	})
 
 	t.Run("nil Err unwraps to nil", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{Op: "dial"}
-		assert.Nil(t, pe.Unwrap())
+		assert.NoError(t, pe.Unwrap())
 	})
 }
 
 func TestProtocolError_ErrorsIs(t *testing.T) {
+	t.Parallel()
 	t.Run("direct sentinel match", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{Op: "ls-refs", Err: ErrNotFound}
-		assert.True(t, errors.Is(pe, ErrNotFound))
-		assert.False(t, errors.Is(pe, ErrAuthFailed))
+		require.ErrorIs(t, pe, ErrNotFound)
+		assert.NotErrorIs(t, pe, ErrAuthFailed)
 	})
 
 	t.Run("transitively wrapped sentinel match", func(t *testing.T) {
+		t.Parallel()
 		inner := fmt.Errorf("transport says: %w", ErrAuthRequired)
 		pe := &ProtocolError{Op: "advertisement", Err: inner}
-		assert.True(t, errors.Is(pe, ErrAuthRequired))
+		assert.ErrorIs(t, pe, ErrAuthRequired)
 	})
 
 	t.Run("non-matching sentinel returns false", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{Op: "probe", Err: ErrNotFound}
-		assert.False(t, errors.Is(pe, ErrServerRefused))
+		assert.NotErrorIs(t, pe, ErrServerRefused)
 	})
 }
 
 func TestProtocolError_Error(t *testing.T) {
+	t.Parallel()
 	t.Run("includes op and wrapped error", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:  "ls-refs",
 			URL: "https://example.test/repo.git",
@@ -80,6 +91,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("redacts credentials in URL", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:  "dial",
 			URL: "https://alice:secret@example.test/repo.git",
@@ -95,6 +107,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("omits status when zero", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:  "dial",
 			URL: "https://example.test/repo.git",
@@ -106,6 +119,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("includes status when non-zero", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:     "probe",
 			URL:    "https://example.test/repo.git",
@@ -118,6 +132,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("omits server section when empty", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:  "ls-refs",
 			URL: "https://example.test/repo.git",
@@ -127,6 +142,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("includes server section when present", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:     "ls-refs",
 			URL:    "https://example.test/repo.git",
@@ -139,6 +155,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("does not panic with nil Err", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:  "dial",
 			URL: "https://example.test/repo.git",
@@ -149,6 +166,7 @@ func TestProtocolError_Error(t *testing.T) {
 	})
 
 	t.Run("does not panic with a long Server payload", func(t *testing.T) {
+		t.Parallel()
 		pe := &ProtocolError{
 			Op:     "ls-refs",
 			URL:    "https://example.test/repo.git",

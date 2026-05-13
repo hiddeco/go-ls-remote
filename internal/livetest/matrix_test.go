@@ -57,6 +57,7 @@ func clearProviderEnv(t testing.TB) {
 }
 
 func TestProviders_curated(t *testing.T) {
+	t.Parallel()
 	// Lock the curated set so the surrounding sub-tests can rely on
 	// the field shape per provider without re-deriving it.
 	require.Len(t, Providers, 5)

@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // The tests in this file pin the concurrency contract documented on
@@ -43,6 +44,7 @@ var concurrentNames = []string{
 }
 
 func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
+	t.Parallel()
 	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = r.Close() })
@@ -95,12 +97,13 @@ func TestReader_concurrent_IterRefs_and_FindRef(t *testing.T) {
 	wg.Wait()
 
 	for i := range concurrentGoroutines {
-		assert.Greater(t, findHits[i], 0, "goroutine %d completed no FindRef hits", i)
-		assert.Greater(t, iterRuns[i], 0, "goroutine %d completed no IterRefs walks", i)
+		assert.Positive(t, findHits[i], "goroutine %d completed no FindRef hits", i)
+		assert.Positive(t, iterRuns[i], "goroutine %d completed no IterRefs walks", i)
 	}
 }
 
 func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
+	t.Parallel()
 	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 
@@ -137,6 +140,7 @@ func TestReader_close_idempotent_after_concurrent_reads(t *testing.T) {
 }
 
 func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
+	t.Parallel()
 	s, err := OpenStack[objfmt.SHA1Hash](stackDir(t, "with-index-sha1"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
@@ -185,7 +189,7 @@ func TestStack_concurrent_IterRefs_and_FindRef(t *testing.T) {
 	wg.Wait()
 
 	for i := range concurrentGoroutines {
-		assert.Greater(t, findHits[i], 0, "goroutine %d completed no FindRef hits", i)
-		assert.Greater(t, iterRuns[i], 0, "goroutine %d completed no IterRefs walks", i)
+		assert.Positive(t, findHits[i], "goroutine %d completed no FindRef hits", i)
+		assert.Positive(t, iterRuns[i], "goroutine %d completed no IterRefs walks", i)
 	}
 }

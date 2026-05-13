@@ -4,7 +4,6 @@ package httpt
 
 import (
 	"bytes"
-	"context"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -51,7 +50,7 @@ func TestNetrc_Resolve_WorldWritableSymlinkWarns(t *testing.T) {
 
 	u, err2 := url.Parse("https://example.com/repo")
 	require.NoError(t, err2)
-	_, err2 = resolver.Resolve(context.Background(), u)
+	_, err2 = resolver.Resolve(t.Context(), u)
 	require.NoError(t, err2)
 
 	assert.Contains(t, buf.String(), "readable or writable by group or world",

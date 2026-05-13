@@ -3,17 +3,17 @@ package server
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // runV2Session runs a single in-process [Serve] invocation against
@@ -36,7 +36,7 @@ func runV2Session[H objfmt.Hash](t *testing.T, store *objstore.Store[H], request
 	r := pktline.NewReader(src)
 	w := pktline.NewWriter(&sink)
 
-	err = Serve(context.Background(), r, w, store, Options{
+	err = Serve(t.Context(), r, w, store, Options{
 		Agent:             "test-agent/0.0",
 		PreferredProtocol: transport.ProtocolV2,
 	})
@@ -67,7 +67,7 @@ func lenV2Advertisement[H objfmt.Hash](t *testing.T, store *objstore.Store[H], a
 // prefix. The framing layer treats the trailing LF (if any) as part of
 // the payload; the helper does not add or strip it.
 func pktBytes(payload string) []byte {
-	hdr := make([]byte, 4)
+	hdr := make([]byte, 4, 4+len(payload))
 	const hex = "0123456789abcdef"
 	v := 4 + len(payload)
 	hdr[0] = hex[(v>>12)&0xf]
@@ -91,6 +91,7 @@ var delimBytes = []byte("0001")
 //
 // [serve.c::process_request lines 314-321]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L321
 func TestServe_V2EmptyRequestTerminates(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, flushBytes)
@@ -107,6 +108,7 @@ func TestServe_V2EmptyRequestTerminates(t *testing.T) {
 //
 // [serve.c::process_request lines 292-297]: https://github.com/git/git/blob/v2.54.0/serve.c#L292-L297
 func TestServe_V2StreamCloseTerminates(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	// An empty request body — the server reads one packet, gets EOF,
@@ -122,6 +124,7 @@ func TestServe_V2StreamCloseTerminates(t *testing.T) {
 // response; the loop must then read the empty-request flush and exit
 // cleanly.
 func TestServe_V2SingleLSRefsThenEmpty(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -142,6 +145,7 @@ func TestServe_V2SingleLSRefsThenEmpty(t *testing.T) {
 // `ls-refs`, then `object-info`, then a bare flush. Both stubs must
 // run; the response is two flushes concatenated, one per stub.
 func TestServe_V2SequenceLSRefsObjectInfo(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -165,6 +169,7 @@ func TestServe_V2SequenceLSRefsObjectInfo(t *testing.T) {
 // supported` data pkt-line followed by a flush, and `Serve` returns
 // an error wrapping [wire.ErrServerRefused].
 func TestServe_V2UnknownCommand(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -174,7 +179,7 @@ func TestServe_V2UnknownCommand(t *testing.T) {
 
 	resp, err := runV2Session(t, store, req.Bytes())
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, wire.ErrServerRefused),
+	require.ErrorIs(t, err, wire.ErrServerRefused,
 		"want errors.Is(err, wire.ErrServerRefused); got %v", err)
 
 	r := pktline.NewReader(bytes.NewReader(resp))
@@ -200,9 +205,10 @@ func TestServe_V2UnknownCommand(t *testing.T) {
 // strictest variant: the loop must observe `ctx.Err()` on its very
 // first iteration after the advertisement.
 func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	var req bytes.Buffer
@@ -221,7 +227,7 @@ func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 		PreferredProtocol: transport.ProtocolV2,
 	})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled),
+	assert.ErrorIs(t, err, context.Canceled,
 		"want errors.Is(err, context.Canceled); got %v", err)
 }
 
@@ -243,6 +249,7 @@ func TestServe_V2CancelledContextStopsDispatch(t *testing.T) {
 //
 // [serve.c::process_request lines 314-329]: https://github.com/git/git/blob/v2.54.0/serve.c#L314-L329
 func TestServe_V2FlushBeforeDelimDispatchesWithEmptyArgs(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer

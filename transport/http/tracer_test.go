@@ -87,7 +87,7 @@ func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -95,7 +95,7 @@ func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 	require.Len(t, got, 1, "exactly one HTTPEvent for the probe GET")
 	assert.Equal(t, http.MethodGet, got[0].Method)
 	assert.Equal(t, http.StatusOK, got[0].Status)
-	assert.NoError(t, got[0].Err, "a 200 must emit Err == nil")
+	require.NoError(t, got[0].Err, "a 200 must emit Err == nil")
 	assert.Greater(t, got[0].Duration, time.Duration(0),
 		"Duration must be measured wall-clock time")
 	assert.False(t, got[0].Time.IsZero(), "Time must be set")
@@ -117,7 +117,7 @@ func TestTracer_HTTPEvent_OnDumb200(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -139,7 +139,7 @@ func TestTracer_HTTPEvent_On500(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	_, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	_, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.Error(t, err)
 
 	got := tracer.httpEvents()
@@ -159,7 +159,7 @@ func TestTracer_HTTPEvent_OnDialError(t *testing.T) {
 
 	tracer := &capturingTracer{}
 	tr := New()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	_, openErr := tr.Open(ctx, u, transport.OpenOptions{Tracer: tracer})
@@ -193,7 +193,7 @@ func TestTracer_HTTPEvent_RedactsCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	tracer := &capturingTracer{}
-	conn, err := New().Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := New().Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -215,13 +215,13 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -235,7 +235,7 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 			sawPost = true
 			assert.Equal(t, http.StatusOK, e.Status,
 				"the success-path POST must have emitted a 200 HTTPEvent")
-			assert.NoError(t, e.Err)
+			require.NoError(t, e.Err)
 			assert.Contains(t, e.URL, "/repo.git/git-upload-pack",
 				"the POST URL must name the upload-pack endpoint")
 		}
@@ -256,7 +256,7 @@ func TestTracer_PacketEvent_OnAdvertisement(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -296,13 +296,13 @@ func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -351,7 +351,7 @@ func TestTracer_PacketEvent_OnDumbAdvertisement(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -400,7 +400,7 @@ func TestTracer_NoEmissions_WhenNil(t *testing.T) {
 
 	// A nil Tracer must never panic on the no-emission path: every
 	// emission site is gated by `trace.IsEnabled` (or equivalent).
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: nil})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: nil})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -441,7 +441,7 @@ func TestTracer_HTTPEvent_OnAuthRetry(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -468,13 +468,13 @@ func TestTracer_PacketEvent_BytesAreCopySafe(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -528,7 +528,7 @@ func TestTracer_HTTPEvent_OnRedirect(t *testing.T) {
 	u := parseTestURL(t, srv, "/old.git")
 	tracer := &capturingTracer{}
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -578,7 +578,7 @@ func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 	respBody := respBuf.Bytes()
 
 	rt := &stubRoundTripper{}
-	rt.respond = func(req *http.Request, hop int) *http.Response {
+	rt.respond = func(req *http.Request, _ int) *http.Response {
 		switch {
 		case req.Method == http.MethodGet:
 			h := http.Header{}
@@ -616,13 +616,13 @@ func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 	u, err := transport.ParseURL("http://example.com/repo.git")
 	require.NoError(t, err)
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -672,13 +672,13 @@ func TestTracer_PacketEvent_NoEmissionsWhenNoTracer(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 
 	// No tracer: open, drain, command, drain — must complete cleanly.
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)

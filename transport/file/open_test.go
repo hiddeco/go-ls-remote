@@ -1,8 +1,6 @@
 package filet
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +15,13 @@ import (
 )
 
 func TestTransport_Open_AdvertisementIsV2(t *testing.T) {
+	t.Parallel()
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{UserAgent: "test/0.0"})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{UserAgent: "test/0.0"})
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
@@ -34,24 +33,26 @@ func TestTransport_Open_AdvertisementIsV2(t *testing.T) {
 }
 
 func TestTransport_Open_NotARepo(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	u, err := transport.ParseURL("file://" + dir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	assert.Nil(t, conn)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"missing repo must surface ErrNotFound; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"missing repo must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "dial", pe.Op)
 }
 
 func TestTransport_Open_PathPercentDecodeError(t *testing.T) {
+	t.Parallel()
 	// `%2g` is not a valid percent-escape: `g` is not a hex digit. The
 	// dial path must reject the URL up-front rather than passing the
 	// undecoded string to `objstore.Open`.
@@ -59,14 +60,15 @@ func TestTransport_Open_PathPercentDecodeError(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	assert.Nil(t, conn)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	assert.ErrorIs(t, err, ErrNotFound,
 		"malformed escape is callable equivalent to non-existent repo; got %v", err)
 }
 
 func TestTransport_Open_PathPercentDecodeSucceeds(t *testing.T) {
+	t.Parallel()
 	// Materialise the fixture under a directory whose name contains a
 	// space, then dial with the percent-encoded URL. The dial path must
 	// reach `objstore.Open` with the decoded path.
@@ -82,28 +84,30 @@ func TestTransport_Open_PathPercentDecodeSucceeds(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
-	defer func() { _ = conn.Close() }()
+	require.NoError(t, conn.Close())
 }
 
 func TestTransport_Open_PinV1Rejected(t *testing.T) {
+	t.Parallel()
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	v1 := transport.ProtocolV1
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		PreferredProtocol: &v1,
 	})
 	require.Error(t, err)
 	assert.Nil(t, conn)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"v1 pin must surface ErrUnsupportedProtocol; got %v", err)
 }
 
 func TestTransport_Open_UnsupportedFormat(t *testing.T) {
+	t.Parallel()
 	// A gitdir with `extensions.refStorage = packed` is rejected by
 	// `objstore.Open` with `objstore.ErrUnsupportedFormat`. The dial
 	// path must surface that as the format-specific sentinel
@@ -120,27 +124,28 @@ func TestTransport_Open_UnsupportedFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	assert.Nil(t, conn)
-	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+	require.ErrorIs(t, err, ErrUnsupportedFormat,
 		"unsupported repo format must surface ErrUnsupportedFormat; got %v", err)
-	assert.False(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.NotErrorIs(t, err, ErrUnsupportedProtocol,
 		"format errors must not match the protocol-pin sentinel; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"unsupported format must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "dial", pe.Op)
 }
 
 func TestTransport_Open_CloseMidStreamIsIdempotent(t *testing.T) {
+	t.Parallel()
 	gitdir := testfixture.MaterializeRepo(t, "empty")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 
 	// Read one packet so the goroutine has produced output and is

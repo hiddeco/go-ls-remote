@@ -19,7 +19,9 @@ import (
 // pack-relative offset and a pack index whose `PackNames` entry
 // references the corresponding `.idx`.
 func TestMidx_Find(t *testing.T) {
+	t.Parallel()
 	t.Run("cross-checks every OID against the paired idx", func(t *testing.T) {
+		t.Parallel()
 		midxPath := idxFixture(t, "multi-pack-index")
 		m, err := OpenMidx[SHA1Hash](midxPath, SHA1)
 		require.NoError(t, err)
@@ -55,6 +57,7 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("cross-checks every OID against the paired SHA-256 idx", func(t *testing.T) {
+		t.Parallel()
 		// Same round-trip as the SHA-1 case but on the SHA-256
 		// fixture, exercising the 32-byte OID stride through
 		// `OIDF`, `OIDL`, and `OOFF`.
@@ -91,6 +94,7 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("absent oid returns ok=false", func(t *testing.T) {
+		t.Parallel()
 		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })
@@ -102,6 +106,7 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("offset > 2 GiB resolves via LOFF", func(t *testing.T) {
+		t.Parallel()
 		small, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		big, err := ParseSHA1Hex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -133,6 +138,7 @@ func TestMidx_Find(t *testing.T) {
 	})
 
 	t.Run("LOFF bit set without LOFF chunk is treated as a miss", func(t *testing.T) {
+		t.Parallel()
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeMidx(t, t.TempDir(), midxFixture{

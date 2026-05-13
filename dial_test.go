@@ -27,6 +27,7 @@ import (
 // error must propagate from `transport.ParseURL`, not be wrapped in a
 // `*ProtocolError` — the connection never reached the wire.
 func TestDial_invalidURL(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -37,14 +38,15 @@ func TestDial_invalidURL(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := Dial(context.Background(), tc.url)
+			t.Parallel()
+			s, err := Dial(t.Context(), tc.url)
 			assert.Nil(t, s)
 			require.Error(t, err)
 
 			var pe *ProtocolError
-			assert.False(t, errors.As(err, &pe),
+			assert.NotErrorAs(t, err, &pe,
 				"URL parse failures must not surface as *ProtocolError; got %T", err)
-			assert.False(t, errors.Is(err, ErrUnsupportedProtocol),
+			assert.NotErrorIs(t, err, ErrUnsupportedProtocol,
 				"URL parse failures must not match ErrUnsupportedProtocol; got %v", err)
 		})
 	}
@@ -56,16 +58,17 @@ func TestDial_invalidURL(t *testing.T) {
 // the redacted URL stored, and `errors.Is(err, ErrUnsupportedProtocol)`
 // true.
 func TestDial_unsupportedScheme(t *testing.T) {
+	t.Parallel()
 	// `ssh://` parses but is not in the default HTTP-only registry.
-	s, err := Dial(context.Background(), "ssh://user@example.com/repo.git")
+	s, err := Dial(t.Context(), "ssh://user@example.com/repo.git")
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"missing-transport must surface as ErrUnsupportedProtocol; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"missing-transport must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "dial", pe.Op)
 	assert.Equal(t, 0, pe.Status,
@@ -80,11 +83,12 @@ func TestDial_unsupportedScheme(t *testing.T) {
 // contract on the unsupported-scheme path: a `user:password@` userinfo
 // must be redacted before storage on `*ProtocolError.URL`.
 func TestDial_unsupportedScheme_redactsPassword(t *testing.T) {
-	_, err := Dial(context.Background(), "ssh://alice:secret@example.com/repo.git")
+	t.Parallel()
+	_, err := Dial(t.Context(), "ssh://alice:secret@example.com/repo.git")
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.NotContains(t, pe.URL, "secret",
 		"the password must be redacted before storage on *ProtocolError.URL")
 	assert.Contains(t, pe.URL, "alice:***",
@@ -97,11 +101,12 @@ func TestDial_unsupportedScheme_redactsPassword(t *testing.T) {
 // advertisement-time ref slice empty; callers issue `ls-refs`
 // separately).
 func TestDial_advertisementHappyPath_V2(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	t.Cleanup(func() { _ = s.conn.Close() })
@@ -125,11 +130,12 @@ func TestDial_advertisementHappyPath_V2(t *testing.T) {
 // advertises refs inline on its capability list and the client
 // populates `Session.refs`.
 func TestDial_advertisementHappyPath_V0(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	t.Cleanup(func() { _ = s.conn.Close() })
@@ -148,20 +154,21 @@ func TestDial_advertisementHappyPath_V0(t *testing.T) {
 // reaches the public `lsremote.ErrUnsupportedProtocol` via
 // `errors.Is`.
 func TestDial_versionPin_mismatch(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git",
+	s, err := Dial(t.Context(), srv.URL+"/repo.git",
 		WithProtocol(ProtocolV2))
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"a version pin mismatch must reach ErrUnsupportedProtocol via errors.Is; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a version pin mismatch must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "advertisement", pe.Op,
 		"the failure happened while parsing the advertisement, not while dialling")
@@ -173,18 +180,19 @@ func TestDial_versionPin_mismatch(t *testing.T) {
 // called with so we can assert each field round-trips through the
 // dial layer.
 func TestDial_options_passthrough(t *testing.T) {
-	cap := &captureTransport{
+	t.Parallel()
+	capt := &captureTransport{
 		schemes: []string{"https"},
 		conn: &stubConn{
 			adv: pktline.NewReader(bytes.NewReader(buildV2Advertisement(t))),
 		},
 	}
-	reg := transport.NewRegistry(cap)
+	reg := transport.NewRegistry(capt)
 
 	tr := &recordingTracerEvents{}
 	pinned := ProtocolV2
 
-	s, err := Dial(context.Background(), "https://example.com/repo.git",
+	s, err := Dial(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg),
 		WithTracer(tr),
 		WithUserAgent("ua/1"),
@@ -193,19 +201,19 @@ func TestDial_options_passthrough(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 
-	assert.Equal(t, tr, cap.gotOpts.Tracer,
+	assert.Equal(t, tr, capt.gotOpts.Tracer,
 		"WithTracer must reach Transport.Open via OpenOptions.Tracer")
-	assert.Equal(t, "ua/1", cap.gotOpts.UserAgent,
+	assert.Equal(t, "ua/1", capt.gotOpts.UserAgent,
 		"WithUserAgent must reach Transport.Open via OpenOptions.UserAgent")
-	require.NotNil(t, cap.gotOpts.PreferredProtocol,
+	require.NotNil(t, capt.gotOpts.PreferredProtocol,
 		"WithProtocol must set OpenOptions.PreferredProtocol to a non-nil pointer")
-	assert.Equal(t, pinned, *cap.gotOpts.PreferredProtocol,
+	assert.Equal(t, pinned, *capt.gotOpts.PreferredProtocol,
 		"OpenOptions.PreferredProtocol must echo the pinned version")
-	require.NotNil(t, cap.gotURL,
+	require.NotNil(t, capt.gotURL,
 		"Dial must hand a parsed *transport.URL to the underlying Open")
-	assert.Equal(t, "https", cap.gotURL.Scheme)
-	assert.Equal(t, "example.com", cap.gotURL.Host)
-	assert.Equal(t, "/repo.git", cap.gotURL.Path)
+	assert.Equal(t, "https", capt.gotURL.Scheme)
+	assert.Equal(t, "example.com", capt.gotURL.Host)
+	assert.Equal(t, "/repo.git", capt.gotURL.Path)
 }
 
 // TestDial_options_defaultsPassthrough pins the zero-value path: when
@@ -213,23 +221,24 @@ func TestDial_options_passthrough(t *testing.T) {
 // `Transport.Open` sees the corresponding `OpenOptions` zero values
 // (nil tracer, empty user-agent, nil preferred protocol).
 func TestDial_options_defaultsPassthrough(t *testing.T) {
-	cap := &captureTransport{
+	t.Parallel()
+	capt := &captureTransport{
 		schemes: []string{"https"},
 		conn: &stubConn{
 			adv: pktline.NewReader(bytes.NewReader(buildV2Advertisement(t))),
 		},
 	}
-	reg := transport.NewRegistry(cap)
+	reg := transport.NewRegistry(capt)
 
-	_, err := Dial(context.Background(), "https://example.com/repo.git",
+	_, err := Dial(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg))
 	require.NoError(t, err)
 
-	assert.Nil(t, cap.gotOpts.Tracer,
+	assert.Nil(t, capt.gotOpts.Tracer,
 		"omitting WithTracer must leave OpenOptions.Tracer nil")
-	assert.Empty(t, cap.gotOpts.UserAgent,
+	assert.Empty(t, capt.gotOpts.UserAgent,
 		"omitting WithUserAgent must leave OpenOptions.UserAgent empty")
-	assert.Nil(t, cap.gotOpts.PreferredProtocol,
+	assert.Nil(t, capt.gotOpts.PreferredProtocol,
 		"omitting WithProtocol must leave OpenOptions.PreferredProtocol nil")
 }
 
@@ -238,11 +247,12 @@ func TestDial_options_defaultsPassthrough(t *testing.T) {
 // side — `WithTransports(custom)` routes through `custom` — is
 // exercised by `TestDial_options_passthrough`.
 func TestDial_defaultRegistryFallback(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err, "without WithTransports, Dial must use the HTTP-only default registry")
 	require.NotNil(t, s)
 	t.Cleanup(func() { _ = s.conn.Close() })
@@ -263,6 +273,7 @@ func TestDial_defaultRegistryFallback(t *testing.T) {
 // must succeed because the HTTP-layer sentinel re-wraps to the public
 // one via its own error chain.
 func TestDial_transportErrorPreservesSentinels(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -270,15 +281,15 @@ func TestDial_transportErrorPreservesSentinels(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"a 404 from the transport must reach lsremote.ErrNotFound via errors.Is; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a transport-level failure must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "dial", pe.Op,
 		"the failure happened during the dial (transport open), not advertisement parsing")
@@ -298,6 +309,7 @@ func TestDial_transportErrorPreservesSentinels(t *testing.T) {
 // this test exercises the session-layer propagation by driving the
 // same path end-to-end through Dial.
 func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
+	t.Parallel()
 	const garbage = "this is definitely not a pkt-line stream\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type",
@@ -306,11 +318,11 @@ func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := Dial(context.Background(), srv.URL+"/repo.git")
+	_, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"want *lsremote.ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "dial", pe.Op)
 	assert.Equal(t, http.StatusOK, pe.Status,
@@ -326,7 +338,7 @@ func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
 	// so callers who already match on `*httpt.ProtocolError` keep
 	// working — the propagation is additive, not a replacement.
 	var inner *httpt.ProtocolError
-	require.True(t, errors.As(err, &inner),
+	require.ErrorAs(t, err, &inner,
 		"the inner *httpt.ProtocolError must remain reachable")
 	assert.Equal(t, pe.Server, inner.Server,
 		"the outer Server must mirror the inner Server verbatim")
@@ -339,23 +351,24 @@ func TestDial_transportOpenError_propagatesServerExcerpt(t *testing.T) {
 // wrap must preserve the underlying error via `Unwrap` so callers can
 // inspect with `errors.As`.
 func TestDial_transportOpenError_genericWrapping(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("captureTransport: synthetic open failure")
-	cap := &captureTransport{
+	capt := &captureTransport{
 		schemes: []string{"https"},
 		err:     sentinel,
 	}
-	reg := transport.NewRegistry(cap)
+	reg := transport.NewRegistry(capt)
 
-	s, err := Dial(context.Background(), "https://example.com/repo.git",
+	s, err := Dial(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg))
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, sentinel),
+	require.ErrorIs(t, err, sentinel,
 		"the underlying transport error must remain reachable via errors.Is; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "dial", pe.Op)
 }
 
@@ -364,6 +377,7 @@ func TestDial_transportOpenError_genericWrapping(t *testing.T) {
 // Dial to close the underlying `transport.Conn` before returning, so
 // the caller never sees a leaked half-open connection.
 func TestDial_advertisementError_closesConn(t *testing.T) {
+	t.Parallel()
 	closed := false
 	// An empty pkt-line stream causes ParseAdvertisement to surface
 	// `io.ErrUnexpectedEOF`, which is the cleanest way to drive the
@@ -372,17 +386,17 @@ func TestDial_advertisementError_closesConn(t *testing.T) {
 		adv:     pktline.NewReader(bytes.NewReader(nil)),
 		closeFn: func() error { closed = true; return nil },
 	}
-	cap := &captureTransport{schemes: []string{"https"}, conn: conn}
-	reg := transport.NewRegistry(cap)
+	capt := &captureTransport{schemes: []string{"https"}, conn: conn}
+	reg := transport.NewRegistry(capt)
 
-	s, err := Dial(context.Background(), "https://example.com/repo.git",
+	s, err := Dial(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg))
 	assert.Nil(t, s)
 	require.Error(t, err)
 	assert.True(t, closed, "Dial must close the Conn when advertisement parsing fails")
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "advertisement", pe.Op)
 }
 
@@ -391,6 +405,7 @@ func TestDial_advertisementError_closesConn(t *testing.T) {
 // unexported fields are inspected by tests in the same package. This
 // is a sanity test, not a behavioural one.
 func TestSession_zeroValue(t *testing.T) {
+	t.Parallel()
 	var s Session
 	assert.Nil(t, s.conn)
 	assert.Empty(t, s.url)
@@ -406,6 +421,7 @@ func TestSession_zeroValue(t *testing.T) {
 // scheme-specific identity (for example to read an HTTP status code
 // off a wrapping `*httpt.ProtocolError`) still get there.
 func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		open       error
@@ -418,25 +434,26 @@ func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cap := &captureTransport{
+			t.Parallel()
+			capt := &captureTransport{
 				schemes: []string{"https"},
 				err:     tc.open,
 			}
-			reg := transport.NewRegistry(cap)
+			reg := transport.NewRegistry(capt)
 
-			s, err := Dial(context.Background(), "https://example.com/repo.git",
+			s, err := Dial(t.Context(), "https://example.com/repo.git",
 				WithTransports(reg))
 			assert.Nil(t, s)
 			require.Error(t, err)
 
-			assert.True(t, errors.Is(err, tc.wantPublic),
+			require.ErrorIs(t, err, tc.wantPublic,
 				"transport sentinel %v must bridge to %v via errors.Is; got %v",
 				tc.open, tc.wantPublic, err)
-			assert.True(t, errors.Is(err, tc.open),
+			require.ErrorIs(t, err, tc.open,
 				"the underlying transport sentinel must stay reachable on the joined chain; got %v", err)
 
 			var pe *ProtocolError
-			require.True(t, errors.As(err, &pe),
+			require.ErrorAs(t, err, &pe,
 				"every bridged error must surface as *ProtocolError; got %T", err)
 			assert.Equal(t, "dial", pe.Op)
 		})
@@ -450,21 +467,22 @@ func TestDial_bridgeOpenError_httpSentinels(t *testing.T) {
 // generic identities the dial layer hard-coded `httpt.Err*` and this
 // path failed silently.
 func TestDial_bridgeOpenError_fileNotFound(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir() // empty — not a Git repository
 	reg := transport.NewRegistry(filet.New())
 
-	s, err := Dial(context.Background(), "file://"+dir,
+	s, err := Dial(t.Context(), "file://"+dir,
 		WithTransports(reg))
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"filet.ErrNotFound must bridge to lsremote.ErrNotFound via errors.Is; got %v", err)
-	assert.True(t, errors.Is(err, filet.ErrNotFound),
+	require.ErrorIs(t, err, filet.ErrNotFound,
 		"the underlying filet sentinel must stay reachable on the joined chain; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "dial", pe.Op)
 }
 
@@ -474,24 +492,25 @@ func TestDial_bridgeOpenError_fileNotFound(t *testing.T) {
 // into `lsremote.ErrNotFound` without any library change. This is
 // what makes the bridge work for third-party transports.
 func TestDial_bridgeOpenError_userTransport(t *testing.T) {
+	t.Parallel()
 	userSentinel := &transport.SchemeError{
 		Parent: transport.ErrNotFound,
 		Msg:    "transport/ssh: repository not found",
 	}
-	cap := &captureTransport{
+	capt := &captureTransport{
 		schemes: []string{"ssh"},
 		err:     userSentinel,
 	}
-	reg := transport.NewRegistry(cap)
+	reg := transport.NewRegistry(capt)
 
-	s, err := Dial(context.Background(), "ssh://user@example.com/repo.git",
+	s, err := Dial(t.Context(), "ssh://user@example.com/repo.git",
 		WithTransports(reg))
 	assert.Nil(t, s)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"a user-defined SchemeError must bridge through transport.ErrNotFound; got %v", err)
-	assert.True(t, errors.Is(err, userSentinel),
+	assert.ErrorIs(t, err, userSentinel,
 		"the user-defined sentinel identity must stay reachable; got %v", err)
 }
 
@@ -499,6 +518,7 @@ func TestDial_bridgeOpenError_userTransport(t *testing.T) {
 // sentinel listed in [wireSentinelBridges] is joined onto a public
 // sentinel and that an unknown error passes through unchanged.
 func Test_bridgeWireSentinel_joinsKnownSentinels(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		in     error
@@ -506,12 +526,15 @@ func Test_bridgeWireSentinel_joinsKnownSentinels(t *testing.T) {
 	}{
 		{"server-refused", wire.ErrServerRefused, ErrServerRefused},
 		{"unsupported-protocol", wire.ErrUnsupportedProtocol, ErrUnsupportedProtocol},
-		{"wrapped-server-refused",
-			fmt.Errorf("decode: %w", wire.ErrServerRefused), ErrServerRefused},
+		{
+			"wrapped-server-refused",
+			fmt.Errorf("decode: %w", wire.ErrServerRefused), ErrServerRefused,
+		},
 		{"unknown", errors.New("something else"), nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := bridgeWireSentinel(tc.in)
 			require.ErrorIs(t, got, tc.in, "original cause must remain reachable")
 			if tc.public != nil {
@@ -536,7 +559,8 @@ type stubTransport struct {
 
 func (s stubTransport) Schemes() []string { return s.schemes }
 func (s stubTransport) Open(_ context.Context, _ *transport.URL,
-	_ transport.OpenOptions) (transport.Conn, error) {
+	_ transport.OpenOptions,
+) (transport.Conn, error) {
 	return nil, s.err
 }
 
@@ -544,6 +568,7 @@ func (s stubTransport) Open(_ context.Context, _ *transport.URL,
 // whose underlying `*ssht.ProtocolError` carries a `Server` excerpt
 // lifts that excerpt onto the outer `*lsremote.ProtocolError.Server`.
 func TestPopulateFromTransportError_SSH(t *testing.T) {
+	t.Parallel()
 	want := "ssh: handshake failed: server rejected every offered method"
 	stub := stubTransport{
 		schemes: []string{"ssh"},
@@ -556,21 +581,22 @@ func TestPopulateFromTransportError_SSH(t *testing.T) {
 	}
 	reg := transport.NewRegistry(stub)
 
-	_, err := Dial(context.Background(), "ssh://git@example.com/repo.git",
+	_, err := Dial(t.Context(), "ssh://git@example.com/repo.git",
 		WithTransports(reg))
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, want, pe.Server,
 		"SSH transport Server excerpt must surface on the public ProtocolError")
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	assert.ErrorIs(t, err, ErrAuthFailed,
 		"the SSH ErrAuthFailed sentinel must bridge to the public sentinel")
 }
 
 // TestPopulateFromTransportError_File pins the same lift for the
 // `file://` transport's corrupt-object branch (transport/file/open.go).
 func TestPopulateFromTransportError_File(t *testing.T) {
+	t.Parallel()
 	want := "objstore: corrupt object 0123abcd..."
 	stub := stubTransport{
 		schemes: []string{"file"},
@@ -583,12 +609,12 @@ func TestPopulateFromTransportError_File(t *testing.T) {
 	}
 	reg := transport.NewRegistry(stub)
 
-	_, err := Dial(context.Background(), "file:///tmp/repo",
+	_, err := Dial(t.Context(), "file:///tmp/repo",
 		WithTransports(reg))
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, want, pe.Server,
 		"file transport Server excerpt must surface on the public ProtocolError")
 }

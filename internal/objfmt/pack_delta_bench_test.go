@@ -9,14 +9,14 @@ import "testing"
 // (`get_delta_hdr_size`). The walker calls `Pack.ReadDeltaHeader`
 // once per delta hop, so this is the hot path.
 //
-// [delta.h lines 85-102]: https://github.com/git/git/blob/v2.54.0/delta.h#L85-L102
-//
 // `ofs-delta.pack` places the OFS_DELTA at offset 207 with `BodyAt`
 // at 210 (header `0x69`, offset varint `0x80 0x43`). The deltified
 // payload's source/target sizes encode as `0xc5 0x89 0x01` /
 // `0xc0 0x89 0x01` — three-byte varints decoding to 17605 and 17600,
 // representative of the medium-sized base + same-size target shape
 // produced by the `git pack-objects` heuristic for blob deltas.
+//
+// [delta.h lines 85-102]: https://github.com/git/git/blob/v2.54.0/delta.h#L85-L102
 func BenchmarkPack_ReadDeltaHeader(b *testing.B) {
 	p, err := OpenPack[SHA1Hash](benchPackFixture("ofs-delta.pack"), SHA1)
 	if err != nil {

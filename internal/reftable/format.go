@@ -28,6 +28,7 @@
 package reftable
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -204,7 +205,7 @@ func verifyTrailer(file []byte, h header) error {
 	// parsing footer fields; mismatch is a format error.
 	//
 	// [reftable.adoc § Footer]: https://github.com/git/git/blob/v2.54.0/Documentation/technical/reftable.adoc#footer
-	if string(footer[:headerLen]) != string(file[:headerLen]) {
+	if !bytes.Equal(footer[:headerLen], file[:headerLen]) {
 		return fmt.Errorf("reftable: footer header copy diverges from file header")
 	}
 

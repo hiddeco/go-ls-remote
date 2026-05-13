@@ -1,13 +1,13 @@
 package objstore
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // TestParsePackedRefs pins down the parser's contract directly, free of
@@ -20,6 +20,7 @@ import (
 //
 // [refs/packed-backend.c::next_record]: https://github.com/git/git/blob/v2.54.0/refs/packed-backend.c#L886
 func TestParsePackedRefs(t *testing.T) {
+	t.Parallel()
 	// SHA-1 fixture OIDs. Forty hex chars each so the parser's
 	// length check passes.
 	const (
@@ -541,11 +542,12 @@ func TestParsePackedRefs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parsePackedRefs[objfmt.SHA1Hash](strings.NewReader(tc.input))
 			if tc.wantErr {
 				require.Error(t, err)
 				if tc.wantErrIs != nil {
-					assert.True(t, errors.Is(err, tc.wantErrIs),
+					require.ErrorIs(t, err, tc.wantErrIs,
 						"expected error to wrap %v, got %v", tc.wantErrIs, err)
 				}
 				return

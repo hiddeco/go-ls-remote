@@ -140,7 +140,7 @@ func FuzzPack_ReadHeader(f *testing.F) {
 		f.Add(off)
 	}
 
-	f.Fuzz(func(t *testing.T, at int64) {
+	f.Fuzz(func(_ *testing.T, at int64) {
 		_, _ = p.ReadHeader(at)
 	})
 }
@@ -169,7 +169,7 @@ func FuzzPack_ReadDeltaHeader(f *testing.F) {
 		f.Add(off)
 	}
 
-	f.Fuzz(func(t *testing.T, bodyAt int64) {
+	f.Fuzz(func(_ *testing.T, bodyAt int64) {
 		_, _, _ = p.ReadDeltaHeader(bodyAt)
 	})
 }

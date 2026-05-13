@@ -1,15 +1,14 @@
 package objstore
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // writeConfig drops body into <commonDir>/config and returns commonDir.
@@ -21,6 +20,7 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 func TestReadGitConfig_NoConfigFile(t *testing.T) {
+	t.Parallel()
 	// A bare common dir with no `config` file is treated as
 	// all-defaults: SHA-1 objects, files-backed refs.
 	commonDir := t.TempDir()
@@ -29,10 +29,11 @@ func TestReadGitConfig_NoConfigFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, objfmt.SHA1, cfg.algo)
 	assert.Equal(t, "files", cfg.refStorage.format)
-	assert.Equal(t, "", cfg.refStorage.location)
+	assert.Empty(t, cfg.refStorage.location)
 }
 
 func TestReadGitConfig_NoExtensionsSection(t *testing.T) {
+	t.Parallel()
 	// Config file present but missing the `[extensions]` section. The
 	// reader must consult only that section and return defaults
 	// otherwise.
@@ -45,6 +46,7 @@ func TestReadGitConfig_NoExtensionsSection(t *testing.T) {
 }
 
 func TestReadGitConfig_EmptyExtensionsSection(t *testing.T) {
+	t.Parallel()
 	// `[extensions]` header with no keys: same as absent — defaults.
 	commonDir := writeConfig(t, "[extensions]\n")
 
@@ -55,6 +57,7 @@ func TestReadGitConfig_EmptyExtensionsSection(t *testing.T) {
 }
 
 func TestReadGitConfig_ParseTable(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		body         string
@@ -200,6 +203,7 @@ func TestReadGitConfig_ParseTable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			commonDir := writeConfig(t, tc.body)
 
 			cfg, err := readGitConfig(commonDir)
@@ -212,38 +216,42 @@ func TestReadGitConfig_ParseTable(t *testing.T) {
 }
 
 func TestReadGitConfig_UnknownObjectFormat(t *testing.T) {
+	t.Parallel()
 	commonDir := writeConfig(t, "[extensions]\n\tobjectFormat = sha512\n")
 
 	_, err := readGitConfig(commonDir)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+	require.ErrorIs(t, err, ErrUnsupportedFormat,
 		"expected ErrUnsupportedFormat, got %v", err)
 	assert.Contains(t, err.Error(), "sha512")
 	assert.Contains(t, err.Error(), "extensions.objectFormat")
 }
 
 func TestReadGitConfig_UnknownRefStorage(t *testing.T) {
+	t.Parallel()
 	commonDir := writeConfig(t, "[extensions]\n\trefStorage = packed\n")
 
 	_, err := readGitConfig(commonDir)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+	require.ErrorIs(t, err, ErrUnsupportedFormat,
 		"expected ErrUnsupportedFormat, got %v", err)
 	assert.Contains(t, err.Error(), "packed")
 	assert.Contains(t, err.Error(), "extensions.refStorage")
 }
 
 func TestReadGitConfig_UnknownURIFormat(t *testing.T) {
+	t.Parallel()
 	commonDir := writeConfig(t, "[extensions]\n\trefStorage = packed://./somewhere\n")
 
 	_, err := readGitConfig(commonDir)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedFormat),
+	require.ErrorIs(t, err, ErrUnsupportedFormat,
 		"expected ErrUnsupportedFormat, got %v", err)
 	assert.Contains(t, err.Error(), "packed://./somewhere")
 }
 
 func TestReadGitConfig_ReadErrorWrapped(t *testing.T) {
+	t.Parallel()
 	// A directory at <commonDir>/config makes the read fail with a
 	// non-NotExist error. The wrapper must surface the path.
 	commonDir := t.TempDir()
@@ -251,7 +259,7 @@ func TestReadGitConfig_ReadErrorWrapped(t *testing.T) {
 
 	_, err := readGitConfig(commonDir)
 	require.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "objstore: read "),
+	assert.Contains(t, err.Error(), "objstore: read ",
 		"want wrapped read error, got %v", err)
 	assert.Contains(t, err.Error(), filepath.Join(commonDir, "config"))
 }

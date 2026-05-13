@@ -84,11 +84,12 @@ func openObjectInfoFixture(t *testing.T) (store *objstore.Store[objfmt.SHA1Hash]
 // the session's internal snapshot, so a caller mutating any slice or
 // map on the returned struct cannot corrupt later observations.
 func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
@@ -130,15 +131,16 @@ func TestSession_Capabilities_returnsDeepCopy(t *testing.T) {
 // `ls-refs` command and the iterator yields at least HEAD and the
 // fixture's single branch with no errors.
 func TestSession_Refs_v2(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	seq, err := s.Refs(context.Background(), RefsRequest{})
+	seq, err := s.Refs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 
 	var got []Ref
@@ -167,16 +169,17 @@ func TestSession_Refs_v2(t *testing.T) {
 // advertises a single branch, so a prefix of `refs/heads/` admits
 // refs/heads/main but not HEAD (which is not under that namespace).
 func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
 	// First: bound the response to `refs/heads/` only.
-	seq, err := s.Refs(context.Background(), RefsRequest{
+	seq, err := s.Refs(t.Context(), RefsRequest{
 		Prefixes: []string{"refs/heads/"},
 	})
 	require.NoError(t, err)
@@ -193,7 +196,7 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 
 	// Second: ask for symrefs and confirm HEAD carries Symref =
 	// refs/heads/main.
-	seq, err = s.Refs(context.Background(), RefsRequest{Symrefs: true})
+	seq, err = s.Refs(t.Context(), RefsRequest{Symrefs: true})
 	require.NoError(t, err)
 	var sawHEADSymref bool
 	for ref, err := range seq {
@@ -211,17 +214,18 @@ func TestSession_Refs_v2_prefixesAndSymrefs(t *testing.T) {
 // advertisement-time slice is filtered client-side by `RefsRequest.Prefixes`,
 // no command is issued, and no error is returned.
 func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
 
 	// No filter: every cached ref comes back, including HEAD.
-	seq, err := s.Refs(context.Background(), RefsRequest{})
+	seq, err := s.Refs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	var all []Ref
 	for ref, err := range seq {
@@ -231,7 +235,7 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	require.NotEmpty(t, all)
 
 	// Filter on `refs/heads/`: HEAD is dropped, refs/heads/main survives.
-	seq, err = s.Refs(context.Background(), RefsRequest{
+	seq, err = s.Refs(t.Context(), RefsRequest{
 		Prefixes: []string{"refs/heads/"},
 	})
 	require.NoError(t, err)
@@ -242,7 +246,7 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 	}
 	require.NotEmpty(t, filtered)
 	for _, ref := range filtered {
-		assert.True(t, ref.Name != "HEAD",
+		assert.NotEqual(t, "HEAD", ref.Name,
 			"client-side prefix filter on v0 must drop HEAD; got %q", ref.Name)
 		assert.Contains(t, ref.Name, "refs/heads/",
 			"every retained ref must carry the requested prefix; got %q", ref.Name)
@@ -254,11 +258,12 @@ func TestSession_Refs_v0_clientSideFilter(t *testing.T) {
 // Ref.Symref — callers that do not opt in to symref resolution must not
 // observe the capability-level mapping.
 func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
@@ -266,7 +271,7 @@ func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
 	// Default request does not set Symrefs; every yielded ref must have
 	// an empty Symref, even HEAD whose capability-level mapping is
 	// `symref=HEAD:refs/heads/main`.
-	seq, err := s.Refs(context.Background(), RefsRequest{})
+	seq, err := s.Refs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	var got []Ref
 	for ref, err := range seq {
@@ -287,16 +292,17 @@ func TestSession_Refs_v0_SymrefsFalseLeavesEmpty(t *testing.T) {
 // v2. The fixture advertises `symref=HEAD:refs/heads/main`, so HEAD
 // must carry Symref == "refs/heads/main" when the flag is set.
 func TestSession_Refs_v0_SymrefsFlagFillsRefSymref(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
 
-	seq, err := s.Refs(context.Background(), RefsRequest{Symrefs: true})
+	seq, err := s.Refs(t.Context(), RefsRequest{Symrefs: true})
 	require.NoError(t, err)
 	var sawHEAD bool
 	for ref, err := range seq {
@@ -318,13 +324,14 @@ func TestSession_Refs_v0_SymrefsFlagFillsRefSymref(t *testing.T) {
 // rather than synthesising data. The stub uses
 // buildV0NoSymrefAdvertisement, which emits HEAD with no symref cap.
 func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
+	t.Parallel()
 	advBytes := buildV0NoSymrefAdvertisement(t)
 	conn := &stubConn{
 		adv: pktline.NewReader(bytes.NewReader(advBytes)),
 	}
-	cap := &captureTransport{schemes: []string{"file"}, conn: conn}
-	reg := transport.NewRegistry(cap)
-	s, err := Dial(context.Background(), "file:///stub",
+	capt := &captureTransport{schemes: []string{"file"}, conn: conn}
+	reg := transport.NewRegistry(capt)
+	s, err := Dial(t.Context(), "file:///stub",
 		WithTransports(reg))
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
@@ -332,7 +339,7 @@ func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
 
 	// No symref capability in the advertisement; Symrefs: true must
 	// still yield refs with empty Symref rather than injecting data.
-	seq, err := s.Refs(context.Background(), RefsRequest{Symrefs: true})
+	seq, err := s.Refs(t.Context(), RefsRequest{Symrefs: true})
 	require.NoError(t, err)
 	for ref, err := range seq {
 		require.NoError(t, err)
@@ -345,19 +352,20 @@ func TestSession_Refs_v0_NoSymrefsCapability(t *testing.T) {
 // TestSession_ListRefs pins the slice-collection helper: it drains the
 // iterator and returns the same refs.
 func TestSession_ListRefs(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	refs, err := s.ListRefs(context.Background(), RefsRequest{})
+	refs, err := s.ListRefs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, refs)
 
-	var names []string
+	names := make([]string, 0, len(refs))
 	for _, r := range refs {
 		names = append(names, r.Name)
 	}
@@ -369,20 +377,21 @@ func TestSession_ListRefs(t *testing.T) {
 // for a packed commit OID with `Size: true` returns one row whose Hash
 // matches the request and whose Size is strictly positive.
 func TestSession_ObjectInfo_v2(t *testing.T) {
+	t.Parallel()
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	got, err := s.ObjectInfo(context.Background(),
+	got, err := s.ObjectInfo(t.Context(),
 		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, commitOID, got[0].Hash)
-	assert.Greater(t, got[0].Size, int64(0),
+	assert.Positive(t, got[0].Size,
 		"a real packed commit must report a strictly positive size")
 }
 
@@ -390,24 +399,25 @@ func TestSession_ObjectInfo_v2(t *testing.T) {
 // is a v2-only command, so a v0-negotiated session must return a
 // `*ProtocolError` whose chain matches `ErrUnsupportedProtocol`.
 func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
+	t.Parallel()
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 	require.Equal(t, ProtocolV0, s.Capabilities().Version)
 
-	got, err := s.ObjectInfo(context.Background(),
+	got, err := s.ObjectInfo(t.Context(),
 		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	assert.Nil(t, got)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"object-info on v0 must match ErrUnsupportedProtocol; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "object-info", pe.Op)
 }
 
@@ -421,6 +431,7 @@ func TestSession_ObjectInfo_unsupportedOnV0(t *testing.T) {
 // otherwise elicit a raw transport-level failure rather than a
 // public-typed error.
 func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
+	t.Parallel()
 	const commitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 
 	s := &Session{
@@ -431,16 +442,16 @@ func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 		},
 	}
 
-	got, err := s.ObjectInfo(context.Background(),
+	got, err := s.ObjectInfo(t.Context(),
 		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	assert.Nil(t, got)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"object-info on a v2 session lacking the capability must match "+
 			"ErrUnsupportedProtocol; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, "object-info", pe.Op)
 }
 
@@ -460,15 +471,16 @@ func TestSession_ObjectInfo_unsupportedWhenCapabilityAbsent(t *testing.T) {
 //
 // [protocol-caps.c::send_info lines 47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
 func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
+	t.Parallel()
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 
-	got, err := s.ObjectInfo(context.Background(),
+	got, err := s.ObjectInfo(t.Context(),
 		[]string{commitOID}, ObjectInfoRequest{})
 	require.NoError(t, err)
 	require.Len(t, got, 1,
@@ -486,6 +498,7 @@ func TestSession_ObjectInfo_sizeFalseSeam(t *testing.T) {
 // opt into. A stub `transport.Conn` pins the bytes the Session writes
 // without rebuilding the in-process server here.
 func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
+	t.Parallel()
 	commitOID := "26dae744f51e61913f50bd402cbe63953c7d637b"
 
 	// Synthesise a canonical no-attrs response so the Session call
@@ -506,7 +519,7 @@ func TestSession_ObjectInfo_sizeFalseNoSizeArg(t *testing.T) {
 		},
 	}
 
-	_, err := s.ObjectInfo(context.Background(),
+	_, err := s.ObjectInfo(t.Context(),
 		[]string{commitOID}, ObjectInfoRequest{})
 	require.NoError(t, err)
 
@@ -551,7 +564,8 @@ func (f *fakeCommandConn) Advertisement() *pktline.Reader {
 }
 
 func (f *fakeCommandConn) Command(_ context.Context, name string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	f.lastCmdName = name
 	f.lastCmdBody.Reset()
 	if err := body(pktline.NewWriter(&f.lastCmdBody)); err != nil {
@@ -576,7 +590,8 @@ type sharedStreamConn struct {
 func (c *sharedStreamConn) Advertisement() *pktline.Reader { return c.reader }
 
 func (c *sharedStreamConn) Command(_ context.Context, _ string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	if err := body(pktline.NewWriter(io.Discard)); err != nil {
 		return nil, err
 	}
@@ -598,7 +613,8 @@ func (c *closeRecordingStubConn) Advertisement() *pktline.Reader {
 }
 
 func (c *closeRecordingStubConn) Command(ctx context.Context, name string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	return c.inner.Command(ctx, name, body)
 }
 
@@ -623,6 +639,7 @@ func (c *closeRecordingStubConn) Close() error {
 //
 // [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
+	t.Parallel()
 	const (
 		oidHEAD = "4444444444444444444444444444444444444444"
 		oidMain = "1111111111111111111111111111111111111111"
@@ -656,7 +673,7 @@ func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
 	// First call: break after the first ref. The iterator must drain
 	// response 1's remaining refs and flush before its goroutine
 	// returns.
-	seq, err := s.Refs(context.Background(), RefsRequest{})
+	seq, err := s.Refs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	var seen []Ref
 	for ref, err := range seq {
@@ -673,7 +690,7 @@ func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
 	// the trailing flush from response 1, and the second call would
 	// observe two refs whose names match response 1's tail rather
 	// than the single ref response 2 carries.
-	refs, err := s.ListRefs(context.Background(), RefsRequest{})
+	refs, err := s.ListRefs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	require.Len(t, refs, 1,
 		"second command must see a clean wire state; got %d refs", len(refs))
@@ -684,11 +701,12 @@ func TestSession_Refs_v2_DrainsOnEarlyBreak(t *testing.T) {
 // TestSession_Close_idempotent pins the idempotent-Close contract: two
 // successive calls must both return nil.
 func TestSession_Close_idempotent(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	s, err := Dial(context.Background(), srv.URL+"/repo.git")
+	s, err := Dial(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 
 	assert.NoError(t, s.Close(), "first Close must succeed")
@@ -703,6 +721,7 @@ func TestSession_Close_idempotent(t *testing.T) {
 // process-exit, but as a library we must surface a typed error
 // instead of dispatching into a misaligned stream.
 func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
+	t.Parallel()
 	// Build a `commandStubConn` whose ls-refs response carries an
 	// in-stream `ERR <msg>` pkt-line. `wire.DecodeLSRefs` surfaces
 	// this as `wire.ErrServerRefused` mid-stream, which is exactly
@@ -727,7 +746,7 @@ func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 	}
 
 	// Consume the iterator; the mid-stream error must surface.
-	seq, err := s.Refs(context.Background(), RefsRequest{})
+	seq, err := s.Refs(t.Context(), RefsRequest{})
 	require.NoError(t, err)
 	var sawErr error
 	for _, e := range seq {
@@ -738,7 +757,7 @@ func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 		break
 	}
 	require.Error(t, sawErr, "iterator must surface the mid-stream error")
-	require.True(t, errors.Is(sawErr, ErrServerRefused),
+	require.ErrorIs(t, sawErr, ErrServerRefused,
 		"mid-stream ERR pkt-line bridges to ErrServerRefused")
 
 	// After the mid-stream error, markDead must have eagerly closed
@@ -748,21 +767,21 @@ func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 		"markDead must eagerly close the conn")
 
 	// Subsequent commands must now reject with ErrSessionDead.
-	_, err = s.ObjectInfo(context.Background(), []string{"deadbeef"}, ObjectInfoRequest{})
+	_, err = s.ObjectInfo(t.Context(), []string{"deadbeef"}, ObjectInfoRequest{})
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrSessionDead),
+	require.ErrorIs(t, err, ErrSessionDead,
 		"second command on dead session must wrap ErrSessionDead")
-	require.True(t, errors.Is(err, ErrServerRefused),
+	require.ErrorIs(t, err, ErrServerRefused,
 		"original cause must remain reachable on the dead-session chain")
 
 	// A repeated call on a dead session must return the same typed
 	// error consistently — the dead-state machinery is set-once and
 	// every subsequent dispatch goes through checkAlive.
-	_, err2 := s.ObjectInfo(context.Background(), []string{"deadbeef"}, ObjectInfoRequest{})
+	_, err2 := s.ObjectInfo(t.Context(), []string{"deadbeef"}, ObjectInfoRequest{})
 	require.Error(t, err2)
-	require.True(t, errors.Is(err2, ErrSessionDead),
+	require.ErrorIs(t, err2, ErrSessionDead,
 		"repeated dispatch on dead session must consistently return ErrSessionDead")
-	require.True(t, errors.Is(err2, ErrServerRefused),
+	require.ErrorIs(t, err2, ErrServerRefused,
 		"original cause must remain reachable on repeated dispatches")
 }
 
@@ -774,44 +793,48 @@ func TestSession_rejectsCommandsAfterMidStreamError(t *testing.T) {
 // wire package. The verbatim wire-level identity must remain reachable
 // via `errors.Is` on the same chain — joining never severs it.
 func TestSession_protocolError_bridgesServerRefused(t *testing.T) {
+	t.Parallel()
 	s := &Session{
 		url:  "http://example.test/repo.git",
 		caps: Capabilities{Version: ProtocolV2},
 	}
 
 	t.Run("direct wire.ErrServerRefused is bridged", func(t *testing.T) {
+		t.Parallel()
 		err := s.protocolError("ls-refs", wire.ErrServerRefused)
 		require.Error(t, err)
 
-		assert.True(t, errors.Is(err, ErrServerRefused),
+		require.ErrorIs(t, err, ErrServerRefused,
 			"public ErrServerRefused must match the joined chain")
-		assert.True(t, errors.Is(err, wire.ErrServerRefused),
+		require.ErrorIs(t, err, wire.ErrServerRefused,
 			"wire.ErrServerRefused must remain reachable on the joined chain")
 
 		var pe *ProtocolError
-		require.True(t, errors.As(err, &pe))
+		require.ErrorAs(t, err, &pe)
 		assert.Equal(t, "ls-refs", pe.Op)
 	})
 
 	t.Run("wrapped wire.ErrServerRefused is bridged", func(t *testing.T) {
+		t.Parallel()
 		wrapped := fmt.Errorf("ls-refs: %w", wire.ErrServerRefused)
 		err := s.protocolError("ls-refs", wrapped)
 		require.Error(t, err)
 
-		assert.True(t, errors.Is(err, ErrServerRefused),
+		require.ErrorIs(t, err, ErrServerRefused,
 			"public ErrServerRefused must match even through a wrapping layer")
-		assert.True(t, errors.Is(err, wire.ErrServerRefused),
+		assert.ErrorIs(t, err, wire.ErrServerRefused,
 			"wire.ErrServerRefused must remain reachable through the wrap")
 	})
 
 	t.Run("unrelated wire error is not bridged", func(t *testing.T) {
+		t.Parallel()
 		other := errors.New("decode: short read")
 		err := s.protocolError("object-info", other)
 		require.Error(t, err)
 
-		assert.False(t, errors.Is(err, ErrServerRefused),
+		require.NotErrorIs(t, err, ErrServerRefused,
 			"ErrServerRefused must not match an unrelated wire error")
-		assert.True(t, errors.Is(err, other),
+		assert.ErrorIs(t, err, other,
 			"the original wire error must remain reachable")
 	})
 }

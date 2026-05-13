@@ -2,7 +2,7 @@ package lsremote
 
 import (
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/hiddeco/go-ls-remote/transport/http"
+	httpt "github.com/hiddeco/go-ls-remote/transport/http"
 )
 
 // defaultRegistry returns a [transport.Registry] populated with only

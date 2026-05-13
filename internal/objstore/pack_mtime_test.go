@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // packMtimeAnchor is a fixed reference timestamp the pack-ordering

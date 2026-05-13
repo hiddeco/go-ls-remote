@@ -1,7 +1,6 @@
 package wire
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -44,7 +43,7 @@ func TestCheckERRPacket(t *testing.T) {
 		t.Parallel()
 		err := CheckERRPacket([]byte("ERR "))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Equal(t, "wire: server refused: ", err.Error())
 	})
 
@@ -52,7 +51,7 @@ func TestCheckERRPacket(t *testing.T) {
 		t.Parallel()
 		err := CheckERRPacket([]byte("ERR access denied"))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "access denied")
 	})
 
@@ -60,7 +59,7 @@ func TestCheckERRPacket(t *testing.T) {
 		t.Parallel()
 		err := CheckERRPacket([]byte("ERR boom\n"))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		// The single trailing LF on the payload is stripped per the
 		// canonical-Git producer at [pkt-line.c:699].
 		//
@@ -72,7 +71,7 @@ func TestCheckERRPacket(t *testing.T) {
 		t.Parallel()
 		err := CheckERRPacket([]byte("ERR \n"))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Equal(t, "wire: server refused: ", err.Error())
 	})
 
@@ -82,7 +81,7 @@ func TestCheckERRPacket(t *testing.T) {
 		// byte of the message and must be preserved verbatim.
 		err := CheckERRPacket([]byte("ERR  doubled"))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Equal(t, "wire: server refused:  doubled", err.Error())
 	})
 
@@ -91,12 +90,12 @@ func TestCheckERRPacket(t *testing.T) {
 		payload := []byte("ERR access\x00denied")
 		err := CheckERRPacket(payload)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		// NULs are preserved verbatim — `%s` formatting includes raw
 		// bytes without escaping.
-		assert.True(t, strings.Contains(err.Error(), "access"))
-		assert.True(t, strings.Contains(err.Error(), "denied"))
-		assert.True(t, strings.Contains(err.Error(), "access\x00denied"),
+		assert.Contains(t, err.Error(), "access")
+		assert.Contains(t, err.Error(), "denied")
+		assert.Contains(t, err.Error(), "access\x00denied",
 			"raw NUL byte must round-trip into the wrapped message")
 	})
 
@@ -106,7 +105,7 @@ func TestCheckERRPacket(t *testing.T) {
 		// `bytes.TrimSuffix` with a one-byte suffix).
 		err := CheckERRPacket([]byte("ERR boom\n\n"))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Equal(t, "wire: server refused: boom\n", err.Error())
 	})
 }

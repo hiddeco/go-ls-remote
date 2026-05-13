@@ -230,7 +230,8 @@ func resolveCommandCreds(ctx context.Context, r CredentialResolver, postURL *url
 //
 // [remote-curl.c::post_rpc]: https://github.com/git/git/blob/v2.54.0/remote-curl.c#L913
 func doCommandPOST(ctx context.Context, client *http.Client, postURL *url.URL, body []byte,
-	ua, gitProto string, creds Credentials, tracer trace.Tracer) (*http.Response, error) {
+	ua, gitProto string, creds Credentials, tracer trace.Tracer,
+) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err

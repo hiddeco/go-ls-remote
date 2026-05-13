@@ -2,15 +2,15 @@ package server
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/wire"
-	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/wire"
+	"github.com/hiddeco/go-ls-remote/pktline"
 )
 
 // reftableContentMainSHA1 mirrors `reftableContentFixtureMain` in the
@@ -45,6 +45,7 @@ func buildLSRefsRequest(argLines []string) []byte {
 //
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_NoArgs(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -58,6 +59,7 @@ func TestLSRefs_Empty_NoArgs(t *testing.T) {
 //
 // [ls-refs.c:136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L136
 func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"unborn\n"}))
@@ -73,6 +75,7 @@ func TestLSRefs_Empty_UnbornOnly(t *testing.T) {
 //
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -88,6 +91,7 @@ func TestLSRefs_Empty_SymrefsOnly(t *testing.T) {
 //
 // [ls-refs.c:91-94]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L91-L94
 func TestLSRefs_Empty_UnbornSymrefs(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	req := buildLSRefsRequest([]string{"unborn\n", "symrefs\n"})
@@ -103,6 +107,7 @@ func TestLSRefs_Empty_UnbornSymrefs(t *testing.T) {
 // with a peel line in `packed-refs`. No attrs requested: just OID +
 // refname per ref. HEAD's OID equals the tip of refs/heads/main.
 func TestLSRefs_PackedRefsFullyPeeled_NoArgs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -125,6 +130,7 @@ func TestLSRefs_PackedRefsFullyPeeled_NoArgs(t *testing.T) {
 //
 // [ls-refs.c:111-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L111-L115
 func TestLSRefs_PackedRefsFullyPeeled_Peel(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"peel\n"}))
@@ -147,6 +153,7 @@ func TestLSRefs_PackedRefsFullyPeeled_Peel(t *testing.T) {
 // emulator (documented divergence from canonical Git: see the doc
 // comment on `writeLSRefsResponse`).
 func TestLSRefs_PackedRefsFullyPeeled_Symrefs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -168,6 +175,7 @@ func TestLSRefs_PackedRefsFullyPeeled_Symrefs(t *testing.T) {
 //
 // [ls-refs.c:95-115]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95-L115
 func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{"peel\n", "symrefs\n"})
@@ -192,6 +200,7 @@ func TestLSRefs_PackedRefsFullyPeeled_PeelSymrefs(t *testing.T) {
 //
 // [ls-refs.c:54-67]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L54-L67
 func TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{"ref-prefix refs/tags/\n"})
@@ -210,6 +219,7 @@ func TestLSRefs_PackedRefsFullyPeeled_SingleTagPrefix(t *testing.T) {
 // filtered out. C-locale sort puts `refs/heads/main` before
 // `refs/tags/v1`.
 func TestLSRefs_PackedRefsFullyPeeled_TwoPrefixes(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	req := buildLSRefsRequest([]string{
@@ -232,6 +242,7 @@ func TestLSRefs_PackedRefsFullyPeeled_TwoPrefixes(t *testing.T) {
 // args: HEAD's OID is non-zero, so `send_possibly_unborn_head` emits
 // it as a normal ref. There are no other refs in this fixture.
 func TestLSRefs_DetachedHead_NoArgs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "detached-head")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -249,6 +260,7 @@ func TestLSRefs_DetachedHead_NoArgs(t *testing.T) {
 //
 // [ls-refs.c:95]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95
 func TestLSRefs_DetachedHead_Symrefs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "detached-head")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -266,6 +278,7 @@ func TestLSRefs_DetachedHead_Symrefs(t *testing.T) {
 // HEAD is symbolic, so it lands first with the same OID as the loose
 // `refs/heads/main`.
 func TestLSRefs_Mixed_LooseOverridesPacked(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "mixed")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest(nil))
@@ -286,6 +299,7 @@ func TestLSRefs_Mixed_LooseOverridesPacked(t *testing.T) {
 // flowing through the handler. The fixture has no refs, just a
 // symbolic HEAD pointing at refs/heads/main.
 func TestLSRefs_SHA256_Empty(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture256(t, "sha256")
 
 	req := buildLSRefsRequest([]string{"unborn\n", "symrefs\n"})
@@ -302,6 +316,7 @@ func TestLSRefs_SHA256_Empty(t *testing.T) {
 // a `symref-target:` attribute. The test exercises both the reftable
 // backend and the sha1 OID hex length.
 func TestLSRefs_Reftable_Symrefs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "with-reftable-content")
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"symrefs\n"}))
@@ -320,11 +335,12 @@ func TestLSRefs_Reftable_Symrefs(t *testing.T) {
 //
 // [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestLSRefs_UnknownArg(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildLSRefsRequest([]string{"blah\n"}))
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, wire.ErrServerRefused),
+	require.ErrorIs(t, err, wire.ErrServerRefused,
 		"want errors.Is(err, wire.ErrServerRefused); got %v", err)
 
 	want := pktLine(`ERR ls-refs: unknown argument "blah"`+"\n") + "0000"
@@ -344,6 +360,8 @@ func TestLSRefs_UnknownArg(t *testing.T) {
 // The fixture carries 1000 packed refs to amortise per-call constant
 // overhead (the HEAD line, the iterator setup) so the per-ref
 // average isolates the loop body's work.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests
 func TestWriteLSRefsResponse_AllocsPerRef(t *testing.T) {
 	const refCount = 1000
 	const maxAllocsPerRef = 1.0

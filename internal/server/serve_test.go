@@ -2,18 +2,17 @@ package server
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // openEmptyStore materialises the `empty` fixture from
@@ -34,6 +33,7 @@ func openEmptyStore(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 // `PreferredProtocol` value outside the supported set: `Serve` must
 // surface an error rather than emit silence.
 func TestServe_UnknownProtocolReturnsError(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	clientToServer, _ := io.Pipe()
@@ -44,7 +44,7 @@ func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		err := Serve(context.Background(), r, w, store, Options{
+		err := Serve(t.Context(), r, w, store, Options{
 			Agent:             "test-agent/0.0",
 			PreferredProtocol: transport.ProtocolVersion(99),
 		})
@@ -65,7 +65,7 @@ func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 
 	err := <-errCh
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"want errors.Is(err, ErrUnsupportedProtocol); got %v", err)
 }
 
@@ -80,6 +80,7 @@ func TestServe_UnknownProtocolReturnsError(t *testing.T) {
 //
 // [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	// Build a v2 request: `command=ls-refs`, delim, flush (end of
@@ -94,7 +95,7 @@ func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
 	r := pktline.NewReader(bytes.NewReader(req.Bytes()))
 	w := pktline.NewWriter(&sink)
 
-	err := ServeCommandLoop(context.Background(), r, w, store, Options{
+	err := ServeCommandLoop(t.Context(), r, w, store, Options{
 		Agent:             "test-agent/0.0",
 		PreferredProtocol: transport.ProtocolV2,
 	})
@@ -119,6 +120,7 @@ func TestServeCommandLoop_NoAdvertisementPrefix(t *testing.T) {
 // [TestServe_V2SingleLSRefsThenEmpty], minus the leading
 // advertisement that [Serve] would have emitted.
 func TestServeCommandLoop_HandlesLSRefs(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -133,7 +135,7 @@ func TestServeCommandLoop_HandlesLSRefs(t *testing.T) {
 	r := pktline.NewReader(bytes.NewReader(req.Bytes()))
 	w := pktline.NewWriter(&sink)
 
-	err := ServeCommandLoop(context.Background(), r, w, store, Options{
+	err := ServeCommandLoop(t.Context(), r, w, store, Options{
 		Agent:             "test-agent/0.0",
 		PreferredProtocol: transport.ProtocolV2,
 	})

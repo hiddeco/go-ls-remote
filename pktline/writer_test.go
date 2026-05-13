@@ -101,7 +101,7 @@ type errWriter struct{}
 
 var errWriterFail = errors.New("errWriter: forced failure")
 
-func (errWriter) Write(p []byte) (int, error) { return 0, errWriterFail }
+func (errWriter) Write(_ []byte) (int, error) { return 0, errWriterFail }
 
 // captureTracer records every [trace.PacketEvent] it receives, cloning
 // the event so the caller can inspect it after subsequent emits reuse

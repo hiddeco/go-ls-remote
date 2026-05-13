@@ -127,7 +127,8 @@ func NewSSHServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) *SSHSer
 	hostSigner, err := ssh.NewSignerFromKey(hostPriv)
 	require.NoError(t, err)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	host, port, err := net.SplitHostPort(ln.Addr().String())

@@ -83,12 +83,17 @@ type agentResolver struct{}
 // publickey method. The dial happens on every call so an agent that is
 // restarted between dials is picked up on the next attempt. The
 // returned cleanup hook closes the socket connection.
-func (agentResolver) Resolve(_ context.Context, _ string) ([]ssh.AuthMethod, func() error, error) {
+//
+// The dial honours `ctx`: a cancelled or expired context aborts the
+// Unix-socket connect so a slow or wedged agent does not block the
+// caller indefinitely.
+func (agentResolver) Resolve(ctx context.Context, _ string) ([]ssh.AuthMethod, func() error, error) {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
 		return nil, nil, errors.New("ssht: SSH_AUTH_SOCK is unset; no ssh-agent to query")
 	}
-	conn, err := net.Dial("unix", sock)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", sock)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ssht: dial ssh-agent at %q: %w", sock, err)
 	}

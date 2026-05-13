@@ -1,7 +1,6 @@
 package ssht
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -95,7 +94,7 @@ func BenchmarkTransport_Open(b *testing.B) {
 				WithKnownHosts(srv.hostKeyCallback()),
 			)
 			u := srv.URL()
-			ctx := context.Background()
+			ctx := b.Context()
 			opts := transport.OpenOptions{
 				UserAgent: "bench/0.0",
 				Tracer:    tr.tracer,

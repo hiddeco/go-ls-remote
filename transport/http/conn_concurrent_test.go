@@ -1,7 +1,6 @@
 package httpt
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -30,12 +29,12 @@ func TestConn_Command_ConcurrentInFlight(t *testing.T) {
 
 	c := openSmartTestConn(t, srv, "/repo.git")
 
-	rdr1, err := c.Command(context.Background(), "ls-refs",
+	rdr1, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr1)
 
-	rdr2, err := c.Command(context.Background(), "ls-refs",
+	rdr2, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr2)
@@ -62,7 +61,7 @@ func TestConn_Command_ConcurrentInFlight(t *testing.T) {
 				main = true
 			}
 		}
-		return
+		return head, main
 	}
 	h1, m1 := hasShape(pkts1)
 	h2, m2 := hasShape(pkts2)
@@ -91,9 +90,9 @@ func TestConn_Command_ConcurrentGoroutines(t *testing.T) {
 	for range goroutines {
 		wg.Go(func() {
 			for range iterations {
-				rdr, err := c.Command(context.Background(), "ls-refs",
+				rdr, err := c.Command(t.Context(), "ls-refs",
 					cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				if rdr == nil {
 					return
 				}
@@ -108,7 +107,7 @@ func TestConn_Command_ConcurrentGoroutines(t *testing.T) {
 					if errors.Is(err, io.EOF) {
 						break
 					}
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					if p.Kind == pktline.Data {
 						sawData = true
 					}
@@ -156,7 +155,7 @@ func TestConn_Close_DrainsAbandonedInflightBody(t *testing.T) {
 	}
 
 	// Issue a command, abandon the returned reader.
-	_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	_, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 
 	require.NoError(t, c.Close())

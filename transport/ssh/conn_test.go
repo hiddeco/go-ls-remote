@@ -1,7 +1,6 @@
 package ssht
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,13 +15,14 @@ import (
 // path; a plain struct-literal Conn would let the body short-circuit
 // before exercising those calls.
 func TestConn_Close_Idempotent(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: []byte("0000")})
 
 	tr := New(
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
 
 	require.NoError(t, conn.Close(), "first Close returns the captured teardown error (nil here)")

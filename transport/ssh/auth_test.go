@@ -5,7 +5,6 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -44,7 +43,8 @@ func startAgentServer(t *testing.T, priv ed25519.PrivateKey) string {
 	t.Helper()
 
 	sockPath := filepath.Join(t.TempDir(), "agent.sock")
-	ln, err := net.Listen("unix", sockPath)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", sockPath)
 	require.NoError(t, err)
 
 	keyring := agent.NewKeyring()
@@ -100,7 +100,7 @@ func TestAgent(t *testing.T) {
 
 	t.Setenv("SSH_AUTH_SOCK", sockPath)
 
-	methods, cleanup, err := Agent().Resolve(context.Background(), "example.com")
+	methods, cleanup, err := Agent().Resolve(t.Context(), "example.com")
 	require.NoError(t, err)
 	require.NotNil(t, cleanup, "Agent must return a non-nil cleanup hook: the resolver holds an open Unix-socket conn to the agent")
 	t.Cleanup(func() { _ = cleanup() })
@@ -116,7 +116,7 @@ func TestAgent_NoSocketEnv(t *testing.T) {
 	// Force the env var to empty so the resolver sees no agent.
 	t.Setenv("SSH_AUTH_SOCK", "")
 
-	methods, cleanup, err := Agent().Resolve(context.Background(), "example.com")
+	methods, cleanup, err := Agent().Resolve(t.Context(), "example.com")
 	require.Error(t, err, "Agent must error rather than silently return an empty AuthMethod slice when SSH_AUTH_SOCK is unset")
 	assert.Nil(t, methods)
 	assert.Nil(t, cleanup, "cleanup must be nil on the error path: no resource was acquired")
@@ -131,13 +131,38 @@ func TestAgent_DialFailure(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist.sock")
 	t.Setenv("SSH_AUTH_SOCK", missing)
 
-	methods, cleanup, err := Agent().Resolve(context.Background(), "example.com")
+	methods, cleanup, err := Agent().Resolve(t.Context(), "example.com")
 	require.Error(t, err, "Agent must surface dial errors, not swallow them")
 	assert.Nil(t, methods)
 	assert.Nil(t, cleanup, "cleanup must be nil on the error path: no resource was acquired")
 }
 
+// TestAgent_ContextCancelled pins that the agent dial honours an
+// already-cancelled context: callers must not block on a slow agent
+// after their parent context is done.
+func TestAgent_ContextCancelled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ssh-agent Unix-socket convention is Unix-only; Windows uses a named pipe")
+	}
+
+	priv, _ := newEd25519Signer(t)
+	sockPath := startAgentServer(t, priv)
+
+	t.Setenv("SSH_AUTH_SOCK", sockPath)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	methods, cleanup, err := Agent().Resolve(ctx, "example.com")
+	require.Error(t, err, "cancelled context must abort the dial")
+	require.ErrorIs(t, err, context.Canceled,
+		"cancelled context must surface as context.Canceled via errors.Is; got %v", err)
+	assert.Nil(t, methods)
+	assert.Nil(t, cleanup, "cleanup must be nil when the dial was aborted")
+}
+
 func TestKeyFile(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem and key handling exercised here matches the package's Unix-only scope")
 	}
@@ -152,7 +177,7 @@ func TestKeyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "id_ed25519")
 	require.NoError(t, os.WriteFile(path, keyBytes, 0o600))
 
-	methods, cleanup, err := KeyFile(path, "").Resolve(context.Background(), "example.com")
+	methods, cleanup, err := KeyFile(path, "").Resolve(t.Context(), "example.com")
 	require.NoError(t, err)
 	assert.Nil(t, cleanup, "KeyFile holds no resources past the parse; cleanup must be nil")
 	require.Len(t, methods, 1, "KeyFile should expose a single publickey AuthMethod")
@@ -160,13 +185,14 @@ func TestKeyFile(t *testing.T) {
 }
 
 func TestKeyFile_Missing(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem semantics here are Unix-only by design for this package")
 	}
 
 	missing := filepath.Join(t.TempDir(), "absent")
 
-	methods, cleanup, err := KeyFile(missing, "").Resolve(context.Background(), "example.com")
+	methods, cleanup, err := KeyFile(missing, "").Resolve(t.Context(), "example.com")
 	require.Error(t, err)
 	assert.Nil(t, methods)
 	assert.Nil(t, cleanup, "cleanup must be nil on the error path: no resource was acquired")
@@ -174,6 +200,7 @@ func TestKeyFile_Missing(t *testing.T) {
 }
 
 func TestKeyFile_Malformed(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("filesystem semantics here are Unix-only by design for this package")
 	}
@@ -181,7 +208,7 @@ func TestKeyFile_Malformed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "garbage")
 	require.NoError(t, os.WriteFile(path, []byte("not a key"), 0o600))
 
-	methods, cleanup, err := KeyFile(path, "").Resolve(context.Background(), "example.com")
+	methods, cleanup, err := KeyFile(path, "").Resolve(t.Context(), "example.com")
 	require.Error(t, err)
 	assert.Nil(t, methods)
 	assert.Nil(t, cleanup, "cleanup must be nil on the error path: no resource was acquired")
@@ -191,13 +218,14 @@ func TestKeyFile_Malformed(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse", "malformed-key error should mention parse failure")
 	// And it must not look like a missing-file error to callers
 	// branching on os.ErrNotExist.
-	assert.False(t, errors.Is(err, os.ErrNotExist))
+	assert.NotErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestSigner(t *testing.T) {
+	t.Parallel()
 	_, signer := newEd25519Signer(t)
 
-	methods, cleanup, err := Signer(signer).Resolve(context.Background(), "example.com")
+	methods, cleanup, err := Signer(signer).Resolve(t.Context(), "example.com")
 	require.NoError(t, err)
 	assert.Nil(t, cleanup, "Signer holds no resources beyond the signer itself; cleanup must be nil")
 	require.Len(t, methods, 1, "Signer should expose a single publickey AuthMethod backed by the provided signer")

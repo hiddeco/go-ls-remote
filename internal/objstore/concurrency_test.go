@@ -8,9 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // TestStore_ConcurrentReadsRaceClean is the cross-method `-race` probe
@@ -46,6 +47,7 @@ import (
 // worker on `<-start` until the test loop releases them, maximising
 // the contention window the race detector gets to inspect.
 func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
+	t.Parallel()
 	s := openConcurrencyFixture(t)
 
 	// Snapshot expectations once on the orchestrator so the worker loop
@@ -59,7 +61,7 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 
 	wantHead, err := s.Head()
 	require.NoError(t, err)
-	require.Equal(t, commitOID, wantHead.OID,
+	require.Equal(t, wantHead.OID, commitOID,
 		"fixture invariant: HEAD must resolve to the loose commit")
 
 	wantRefs := snapshotRefs(t, s)
@@ -68,7 +70,7 @@ func TestStore_ConcurrentReadsRaceClean(t *testing.T) {
 	wantPeeled, ok, err := s.Peel(tagOID)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, commitOID, wantPeeled)
+	require.Equal(t, wantPeeled, commitOID)
 
 	wantBlobInfo, err := s.ObjectInfo(blobOID)
 	require.NoError(t, err)

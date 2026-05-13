@@ -10,6 +10,7 @@ import (
 )
 
 func Test_convertCaps(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		raw     wire.RawCapabilities
@@ -22,7 +23,7 @@ func Test_convertCaps(t *testing.T) {
 			version: ProtocolV2,
 			check: func(t *testing.T, c Capabilities) {
 				assert.Equal(t, ProtocolV2, c.Version)
-				assert.Equal(t, "", c.Agent)
+				assert.Empty(t, c.Agent)
 				assert.Equal(t, ObjectFormat(""), c.ObjectFormat)
 				assert.Nil(t, c.Commands)
 				assert.Nil(t, c.LSRefsArgs)
@@ -225,6 +226,7 @@ func Test_convertCaps(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := convertCaps(tc.raw, tc.version)
 			tc.check(t, got)
 		})
@@ -234,6 +236,7 @@ func Test_convertCaps(t *testing.T) {
 // Test_convertCaps_rawIsolation pins that mutating the returned
 // Capabilities.Raw does not alter the source RawCapabilities slice.
 func Test_convertCaps_rawIsolation(t *testing.T) {
+	t.Parallel()
 	raw := wire.RawCapabilities{
 		{Name: "agent", Value: "git/2.45.0"},
 	}
@@ -255,6 +258,8 @@ func Test_convertCaps_rawIsolation(t *testing.T) {
 // the heap (header + buckets + one slice per unique capability name),
 // the `LSRefsArgs` and `ObjectInfoArgs` slices produced by
 // `strings.Fields`, and the pre-sized `Commands` slice.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests.
 func Test_convertCaps_v2Typical_AllocBudget(t *testing.T) {
 	raw := wire.RawCapabilities{
 		{Name: "agent", Value: "git/2.44.0"},
@@ -281,6 +286,8 @@ func Test_convertCaps_v2Typical_AllocBudget(t *testing.T) {
 // matches `Benchmark_convertCaps_v0WithSymrefs`. The structural floor is
 // dominated by the escaping `Capabilities.Raw` map and the growth of
 // `Capabilities.Symrefs` as the three `symref` entries are appended.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests.
 func Test_convertCaps_v0WithSymrefs_AllocBudget(t *testing.T) {
 	raw := wire.RawCapabilities{
 		{Name: "agent", Value: "git/2.44.0"},
@@ -302,6 +309,7 @@ func Test_convertCaps_v0WithSymrefs_AllocBudget(t *testing.T) {
 }
 
 func Test_convertRef(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   wire.RawRef
@@ -354,6 +362,7 @@ func Test_convertRef(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := convertRef(tc.in)
 			assert.Equal(t, tc.want, got)
 		})
@@ -361,17 +370,21 @@ func Test_convertRef(t *testing.T) {
 }
 
 func Test_convertRefs(t *testing.T) {
+	t.Parallel()
 	t.Run("nil input returns nil", func(t *testing.T) {
+		t.Parallel()
 		assert.Nil(t, convertRefs(nil))
 	})
 
 	t.Run("empty slice returns empty non-nil slice", func(t *testing.T) {
+		t.Parallel()
 		got := convertRefs([]wire.RawRef{})
 		assert.NotNil(t, got)
 		assert.Empty(t, got)
 	})
 
 	t.Run("multiple refs preserve order", func(t *testing.T) {
+		t.Parallel()
 		in := []wire.RawRef{
 			{OID: "a", Name: "refs/heads/main"},
 			{OID: "b", Name: "refs/heads/dev", Peeled: "p"},
@@ -387,6 +400,7 @@ func Test_convertRefs(t *testing.T) {
 }
 
 func Test_convertObjectInfo(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   wire.RawObjectInfo
@@ -410,6 +424,7 @@ func Test_convertObjectInfo(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := convertObjectInfo(tc.in)
 			assert.Equal(t, tc.want, got)
 		})
@@ -417,17 +432,21 @@ func Test_convertObjectInfo(t *testing.T) {
 }
 
 func Test_convertObjectInfos(t *testing.T) {
+	t.Parallel()
 	t.Run("nil input returns nil", func(t *testing.T) {
+		t.Parallel()
 		assert.Nil(t, convertObjectInfos(nil))
 	})
 
 	t.Run("empty slice returns empty non-nil slice", func(t *testing.T) {
+		t.Parallel()
 		got := convertObjectInfos([]wire.RawObjectInfo{})
 		assert.NotNil(t, got)
 		assert.Empty(t, got)
 	})
 
 	t.Run("multiple rows preserve order", func(t *testing.T) {
+		t.Parallel()
 		in := []wire.RawObjectInfo{
 			{OID: "a", Size: 1},
 			{OID: "b", Size: 2},

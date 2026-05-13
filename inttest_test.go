@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -38,10 +37,13 @@ import (
 // `t.Run` cases name the (fixture, transport) pair so a failure pinpoints
 // both axes.
 func TestRefs_AcrossAllTransports(t *testing.T) {
+	t.Parallel()
 	for _, entry := range inttest.Entries() {
 		t.Run(entry.Name, func(t *testing.T) {
+			t.Parallel()
 			for _, tp := range transports() {
 				t.Run(tp.name, func(t *testing.T) {
+					t.Parallel()
 					runEquivalence(t, entry, tp)
 				})
 			}
@@ -58,7 +60,7 @@ func runEquivalence(t *testing.T, entry inttest.Entry, tp transportSetup) {
 	gitdir := entry.Materialize(t)
 	ep := tp.start(t, entry, gitdir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := []lsremote.Option{
 		lsremote.WithTransports(ep.registry),
 		lsremote.WithProtocol(lsremote.ProtocolV2),
@@ -89,7 +91,7 @@ func runEquivalence(t *testing.T, entry inttest.Entry, tp transportSetup) {
 	iterRefs := collectRefs(t, session, refsArgs)
 	listRefs, err := session.ListRefs(ctx, refsArgs)
 	require.NoError(t, err)
-	require.Equal(t, len(iterRefs), len(listRefs),
+	require.Len(t, listRefs, len(iterRefs),
 		"Refs iterator and ListRefs must agree on length")
 	for i := range iterRefs {
 		assert.Equal(t, iterRefs[i], listRefs[i],
@@ -103,11 +105,11 @@ func runEquivalence(t *testing.T, entry inttest.Entry, tp transportSetup) {
 	// `ref-prefix HEAD` and `symrefs`; it must surface the same symref
 	// target the wire emits. Detached fixtures advertise no symref, so
 	// the helper returns `ErrNoDefaultBranch`.
-	checkDefaultBranch(t, ctx, ep, entry, opts)
+	checkDefaultBranch(ctx, t, ep, entry, opts)
 
 	// Top-level `Tags` and `Heads` helpers re-dial; pass the same
 	// registry so they hit the harness rather than the package default.
-	checkPrefixHelpers(t, ctx, ep, entry, opts)
+	checkPrefixHelpers(ctx, t, ep, entry, opts)
 
 	// `ObjectInfo` is exercised only for entries whose declared OIDs
 	// resolve to real on-disk objects; synthetic-OID fixtures leave the
@@ -128,7 +130,7 @@ func runEquivalence(t *testing.T, entry inttest.Entry, tp transportSetup) {
 // any iterator-yielded error.
 func collectRefs(t *testing.T, s *lsremote.Session, args lsremote.RefsRequest) []lsremote.Ref {
 	t.Helper()
-	seq, err := s.Refs(context.Background(), args)
+	seq, err := s.Refs(t.Context(), args)
 	require.NoError(t, err)
 	var refs []lsremote.Ref
 	for ref, err := range seq {
@@ -154,13 +156,14 @@ func collectRefs(t *testing.T, s *lsremote.Session, args lsremote.RefsRequest) [
 //     [ErrNoDefaultBranch] regardless of the wire it travelled.
 //
 // [connect.c:591-592]: https://github.com/git/git/blob/v2.54.0/connect.c#L591-L592
-func checkDefaultBranch(t *testing.T, ctx context.Context,
-	ep endpoint, entry inttest.Entry, opts []lsremote.Option) {
+func checkDefaultBranch(ctx context.Context, t *testing.T,
+	ep endpoint, entry inttest.Entry, opts []lsremote.Option,
+) {
 	t.Helper()
 	got, err := lsremote.DefaultBranch(ctx, ep.url, opts...)
 	if entry.Detached {
 		require.Error(t, err, "%s: detached HEAD must error", entry.Name)
-		assert.True(t, errors.Is(err, lsremote.ErrNoDefaultBranch),
+		assert.ErrorIs(t, err, lsremote.ErrNoDefaultBranch,
 			"%s: must surface ErrNoDefaultBranch; got %v", entry.Name, err)
 		return
 	}
@@ -174,8 +177,9 @@ func checkDefaultBranch(t *testing.T, ctx context.Context,
 // guarantee here is that the prefix filter survives every transport's
 // command path. The shared expectations are derived from the entry's
 // declared ref set.
-func checkPrefixHelpers(t *testing.T, ctx context.Context,
-	ep endpoint, entry inttest.Entry, opts []lsremote.Option) {
+func checkPrefixHelpers(ctx context.Context, t *testing.T,
+	ep endpoint, entry inttest.Entry, opts []lsremote.Option,
+) {
 	t.Helper()
 
 	var wantTags, wantHeads []inttest.ExpectedRef
@@ -366,7 +370,8 @@ func startFile(t *testing.T, _ inttest.Entry, gitdir string) endpoint {
 // capture into outer-scope variables from inside fn rather than going
 // through this return value.
 func openServer(t *testing.T, entry inttest.Entry, gitdir string,
-	fn func(store any) string) string {
+	fn func(store any) string,
+) string {
 	t.Helper()
 	switch entry.ObjectFormat {
 	case lsremote.ObjectFormatSHA1:

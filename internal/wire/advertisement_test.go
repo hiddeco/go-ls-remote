@@ -109,7 +109,7 @@ func TestParseAdvertisement(t *testing.T) {
 		)
 		_, err := ParseAdvertisement(r, nil)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 			"expected ErrUnsupportedProtocol, got %v", err)
 	})
 
@@ -121,7 +121,7 @@ func TestParseAdvertisement(t *testing.T) {
 		)
 		_, err := ParseAdvertisement(r, nil)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 			"expected ErrUnsupportedProtocol, got %v", err)
 	})
 
@@ -133,7 +133,7 @@ func TestParseAdvertisement(t *testing.T) {
 		)
 		_, err := ParseAdvertisement(r, nil)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 			"expected ErrUnsupportedProtocol, got %v", err)
 	})
 
@@ -163,7 +163,7 @@ func TestParseAdvertisement(t *testing.T) {
 		r := buildAdvertisement(t, packet{kind: pktline.Flush})
 		_, err := ParseAdvertisement(r, &v2)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 			"expected ErrUnsupportedProtocol, got %v", err)
 	})
 
@@ -183,7 +183,7 @@ func TestParseAdvertisement(t *testing.T) {
 		)
 		_, err := ParseAdvertisement(r, &v1)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 			"expected ErrUnsupportedProtocol, got %v", err)
 	})
 

@@ -16,9 +16,11 @@ import (
 // Packet events are dispatched through OnPacketEvent; all other events
 // flow through OnEvent. The two dispatch paths are exercised separately.
 func TestNewWriterTracer(t *testing.T) {
+	t.Parallel()
 	at := time.Unix(0, 0)
 
 	t.Run("packet-data-outbound", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		tr := NewWriterTracer(&buf)
 		e := PacketEvent{
@@ -34,6 +36,7 @@ func TestNewWriterTracer(t *testing.T) {
 	})
 
 	t.Run("packet-flush-inbound", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
 		tr := NewWriterTracer(&buf)
 		e := PacketEvent{Time: at, Direction: DirectionInbound, Kind: PacketFlush}
@@ -74,6 +77,7 @@ func TestNewWriterTracer(t *testing.T) {
 	}
 	for _, tt := range onEventCases {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf bytes.Buffer
 			tr := NewWriterTracer(&buf)
 			tr.OnEvent(tt.event)

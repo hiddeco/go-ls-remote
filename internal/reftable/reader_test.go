@@ -1,13 +1,13 @@
 package reftable
 
 import (
-	"errors"
 	"path/filepath"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // fixturePath resolves a reftable fixture relative to testdata/reftable.
@@ -17,7 +17,9 @@ func fixturePath(t *testing.T, rel string) string {
 }
 
 func TestOpenReader(t *testing.T) {
+	t.Parallel()
 	t.Run("sha1_fixture_opens", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -26,6 +28,7 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("sha256_fixture_opens", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -34,6 +37,7 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("with_index_opens", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -41,39 +45,45 @@ func TestOpenReader(t *testing.T) {
 	})
 
 	t.Run("hash_algo_mismatch_rejected", func(t *testing.T) {
+		t.Parallel()
 		// Opening a SHA-256 file as a SHA-1 reader (and vice versa)
 		// surfaces as [ErrMixedHashAlgo] before any record is touched.
 		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrMixedHashAlgo), "want ErrMixedHashAlgo, got %v", err)
+		require.ErrorIs(t, err, ErrMixedHashAlgo, "want ErrMixedHashAlgo, got %v", err)
 
 		_, err = OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrMixedHashAlgo), "want ErrMixedHashAlgo, got %v", err)
+		assert.ErrorIs(t, err, ErrMixedHashAlgo, "want ErrMixedHashAlgo, got %v", err)
 	})
 
 	t.Run("corrupt_trailer_rejected", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "corrupt-trailer-sha1.ref"))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTrailerChecksum), "want ErrTrailerChecksum, got %v", err)
+		assert.ErrorIs(t, err, ErrTrailerChecksum, "want ErrTrailerChecksum, got %v", err)
 	})
 
 	t.Run("truncated_rejected", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "truncated-sha1.ref"))
 		require.Error(t, err)
 		// Either the header guard or the trailer guard fires; both
 		// surface as ErrShortFile under the chosen 50-byte truncation.
-		assert.True(t, errors.Is(err, ErrShortFile), "want ErrShortFile, got %v", err)
+		assert.ErrorIs(t, err, ErrShortFile, "want ErrShortFile, got %v", err)
 	})
 
 	t.Run("missing_path", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "does-not-exist.ref"))
 		require.Error(t, err)
 	})
 }
 
 func TestReader_HashAlgo(t *testing.T) {
+	t.Parallel()
 	t.Run("sha1", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -81,6 +91,7 @@ func TestReader_HashAlgo(t *testing.T) {
 	})
 
 	t.Run("sha256", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -89,6 +100,7 @@ func TestReader_HashAlgo(t *testing.T) {
 }
 
 func TestReader_Close_Idempotent(t *testing.T) {
+	t.Parallel()
 	r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
 	require.NoError(t, r.Close())
@@ -97,7 +109,9 @@ func TestReader_Close_Idempotent(t *testing.T) {
 }
 
 func TestReader_IterRefs(t *testing.T) {
+	t.Parallel()
 	t.Run("single_sha1_yields_records", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -136,6 +150,7 @@ func TestReader_IterRefs(t *testing.T) {
 	})
 
 	t.Run("sha256_yields_records", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -146,10 +161,11 @@ func TestReader_IterRefs(t *testing.T) {
 			assert.NotEmpty(t, rec.Name)
 			count++
 		}
-		assert.Greater(t, count, 0)
+		assert.Positive(t, count)
 	})
 
 	t.Run("with_index_yields_all_records", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -184,6 +200,7 @@ func TestReader_IterRefs(t *testing.T) {
 	})
 
 	t.Run("iter_stops_on_break", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -216,6 +233,7 @@ func TestReader_IterRefs(t *testing.T) {
 	// or 10000) because the fixture generator uses a fixed loop; HEAD
 	// adds one symref record on top.
 	t.Run("at_scale_fixtures_yield_exact_counts", func(t *testing.T) {
+		t.Parallel()
 		for _, sc := range []struct {
 			fixture      string
 			wantBranches int
@@ -224,6 +242,7 @@ func TestReader_IterRefs(t *testing.T) {
 			{"many-refs-10k-sha1", 10000},
 		} {
 			t.Run(sc.fixture, func(t *testing.T) {
+				t.Parallel()
 				r, err := OpenReader[objfmt.SHA1Hash](
 					fixturePath(t, sc.fixture+"/0001-0001-aaaaaaaa.ref"))
 				require.NoError(t, err)
@@ -250,7 +269,9 @@ func TestReader_IterRefs(t *testing.T) {
 }
 
 func TestReader_FindRef(t *testing.T) {
+	t.Parallel()
 	t.Run("single_sha1_hit", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -263,6 +284,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("single_sha1_head_symref", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -276,6 +298,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("single_sha1_miss", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "single-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -287,6 +310,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("with_index_hit", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -301,6 +325,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("with_index_miss", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA1Hash](fixturePath(t, "with-index-sha1/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -311,6 +336,7 @@ func TestReader_FindRef(t *testing.T) {
 	})
 
 	t.Run("sha256_hit", func(t *testing.T) {
+		t.Parallel()
 		r, err := OpenReader[objfmt.SHA256Hash](fixturePath(t, "single-sha256/0001-0001-aaaaaaaa.ref"))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = r.Close() })
@@ -340,6 +366,7 @@ func TestReader_FindRef(t *testing.T) {
 // reused) and then advances enough records that the buffer the
 // snapshot aliased is decoded into again.
 func TestReader_IterRefs_NameContract(t *testing.T) {
+	t.Parallel()
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-1k-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
@@ -385,6 +412,7 @@ func TestReader_IterRefs_NameContract(t *testing.T) {
 // previous record's Name. This is the FindRef counterpart to
 // TestReader_IterRefs_NameContract.
 func TestReader_FindRef_NameStability(t *testing.T) {
+	t.Parallel()
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-1k-sha1/0001-0001-aaaaaaaa.ref"))
 	require.NoError(t, err)
@@ -416,6 +444,8 @@ func TestReader_FindRef_NameStability(t *testing.T) {
 // `[]byte(name)` probe conversion, and a small fixed amount of
 // iterator harness bookkeeping. A ceiling of 11 leaves room for
 // Go-runtime alloc drift between point releases.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests
 func TestReader_FindRef_AllocBudget(t *testing.T) {
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))
@@ -446,6 +476,8 @@ func TestReader_FindRef_AllocBudget(t *testing.T) {
 // pair). A ceiling of 25 leaves room for Go-runtime alloc drift
 // between point releases; a regression that brings even one alloc
 // per record back would push this to ~10000.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests
 func TestReader_IterRefs_AllocBudget(t *testing.T) {
 	r, err := OpenReader[objfmt.SHA1Hash](
 		fixturePath(t, "many-refs-10k-sha1/0001-0001-aaaaaaaa.ref"))

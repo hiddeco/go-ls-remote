@@ -152,7 +152,8 @@ func newTestServer(tb testing.TB, opts testServerOpts) *testServer {
 	clientSigner, err := ssh.NewSignerFromKey(clientPriv)
 	require.NoError(tb, err)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(tb.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(tb, err)
 
 	s := &testServer{
@@ -246,19 +247,19 @@ func (s *testServer) stdin() []byte {
 	return out
 }
 
-// awaitStdin waits until at least `min` bytes have been captured on
+// awaitStdin waits until at least `want` bytes have been captured on
 // the session's stdin and then returns a copy of those bytes. The
 // stdin-drain goroutine in [testServer.handleSession] signals
 // `s.stdinNotify` after each read; this method selects on the channel
 // to wake without polling. The deadline is the test's own deadline
 // (via `t.Context()`) plus a generous local cap so a hung fixture
 // fails with a clear diagnostic rather than the test runner's timeout.
-func (s *testServer) awaitStdin(t *testing.T, min int) []byte {
+func (s *testServer) awaitStdin(t *testing.T, want int) []byte {
 	t.Helper()
 	deadline := t.Context().Done()
 	for {
 		got := s.stdin()
-		if len(got) >= min {
+		if len(got) >= want {
 			return got
 		}
 		select {
@@ -266,7 +267,7 @@ func (s *testServer) awaitStdin(t *testing.T, min int) []byte {
 			// Loop and re-check; a notification means at least one
 			// byte was appended since the last check.
 		case <-deadline:
-			t.Fatalf("testServer.awaitStdin: test context cancelled while waiting for %d stdin bytes (got %d)", min, len(s.stdin()))
+			t.Fatalf("testServer.awaitStdin: test context cancelled while waiting for %d stdin bytes (got %d)", want, len(s.stdin()))
 			return nil
 		}
 	}

@@ -50,7 +50,7 @@ func BenchmarkSession_Refs_v0_noSymrefs(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		seq, err := s.Refs(context.Background(), req)
+		seq, err := s.Refs(b.Context(), req)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func BenchmarkSession_Refs_v0_withSymrefs(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		seq, err := s.Refs(context.Background(), req)
+		seq, err := s.Refs(b.Context(), req)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -247,7 +247,7 @@ func BenchmarkSession_Refs_v2_emit(b *testing.B) {
 		Peel:     true,
 		Symrefs:  true,
 	}
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -315,7 +315,7 @@ func BenchmarkSession_ObjectInfo_emit(b *testing.B) {
 	}
 	oids := benchObjectInfoOIDs(16)
 	args := ObjectInfoRequest{Size: true}
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -413,7 +413,8 @@ func (c *reuseCommandConn) Advertisement() *pktline.Reader {
 }
 
 func (c *reuseCommandConn) Command(_ context.Context, _ string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	c.bodyB.Reset()
 	if err := body(c.bodyW); err != nil {
 		return nil, err

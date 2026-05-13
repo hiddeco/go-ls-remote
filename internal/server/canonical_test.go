@@ -2,17 +2,17 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/pktline"
-	"github.com/stretchr/testify/require"
 )
 
 // canonicalDir returns the absolute path to the canonical-corpus
@@ -65,6 +65,7 @@ func openCanonicalStore(t *testing.T, fixture string) *objstore.Store[objfmt.SHA
 // on the substantive common subset: version line, ordering, framing,
 // and the `agent`, `ls-refs`, `object-format` cap lines.
 func TestCanonical_AdvertisementV2_empty(t *testing.T) {
+	t.Parallel()
 	want := readCanonical(t, "empty", "advertisement-v2.bin")
 	store := openCanonicalStore(t, "empty")
 
@@ -88,8 +89,10 @@ func TestCanonical_AdvertisementV2_empty(t *testing.T) {
 // against fixtures the empty case does not (loose, packed,
 // reftable-backed).
 func TestCanonical_AdvertisementV2_matrix(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range []string{"loose-only", "packed-only", "with-reftable-content"} {
 		t.Run(fixture, func(t *testing.T) {
+			t.Parallel()
 			want := readCanonical(t, fixture, "advertisement-v2.bin")
 			store := openCanonicalStore(t, fixture)
 
@@ -120,8 +123,10 @@ func TestCanonical_AdvertisementV2_matrix(t *testing.T) {
 // any future ERR-pkt or session-id-like cap on the response side
 // is normalised by the same machinery as the advertisement test.
 func TestCanonical_LSRefs_matrix(t *testing.T) {
+	t.Parallel()
 	for _, fixture := range []string{"empty", "loose-only", "packed-only", "with-reftable-content"} {
 		t.Run(fixture, func(t *testing.T) {
+			t.Parallel()
 			req := readCanonical(t, fixture, "ls-refs.req")
 			want := readCanonical(t, fixture, "ls-refs.bin")
 
@@ -130,7 +135,7 @@ func TestCanonical_LSRefs_matrix(t *testing.T) {
 			var out bytes.Buffer
 			r := pktline.NewReader(bytes.NewReader(req))
 			w := pktline.NewWriter(&out)
-			err := runV2CommandLoop(context.Background(), r, w, store, Options{})
+			err := runV2CommandLoop(t.Context(), r, w, store, Options{})
 			require.NoError(t, err)
 
 			got := maskAgent(out.Bytes())

@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,12 +10,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestServe_ConcurrentSessionsRaceClean is the cross-session `-race`
@@ -57,6 +57,7 @@ import (
 // the same store every worker uses, so the test does not duplicate the
 // byte-pinned single-session expectations elsewhere in the package.
 func TestServe_ConcurrentSessionsRaceClean(t *testing.T) {
+	t.Parallel()
 	store := openConcurrentSessionsFixture(t)
 
 	commitOID := packCommitOID
@@ -171,7 +172,10 @@ func runConcurrentSession(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], 
 	r := pktline.NewReader(bytes.NewReader(request))
 	w := pktline.NewWriter(&sink)
 
-	require.NoError(t, Serve(context.Background(), r, w, store, Options{
+	// `assert` (not `require`) because the helper runs on worker
+	// goroutines — `require.FailNow` is unsafe off the test goroutine.
+	//nolint:testifylint // go-require / require-error tension; assert wins inside the worker goroutine
+	assert.NoError(t, Serve(t.Context(), r, w, store, Options{
 		Agent:             agent,
 		PreferredProtocol: transport.ProtocolV2,
 	}))
@@ -197,7 +201,10 @@ func runConcurrentAdvertise(t *testing.T, store *objstore.Store[objfmt.SHA1Hash]
 	r := pktline.NewReader(src)
 	w := pktline.NewWriter(&sink)
 
-	require.NoError(t, Serve(context.Background(), r, w, store, Options{
+	// `assert` (not `require`) because the helper runs on worker
+	// goroutines — `require.FailNow` is unsafe off the test goroutine.
+	//nolint:testifylint // go-require / require-error tension; assert wins inside the worker goroutine
+	assert.NoError(t, Serve(t.Context(), r, w, store, Options{
 		Agent:             agent,
 		PreferredProtocol: proto,
 	}))

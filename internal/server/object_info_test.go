@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // buildObjectInfoRequest builds a single v2 object-info command-request
@@ -73,6 +73,7 @@ const packCommitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
 //
 // [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_Empty(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildObjectInfoRequest(nil))
@@ -88,6 +89,7 @@ func TestObjectInfo_Empty(t *testing.T) {
 //
 // [protocol-caps.c:44-45]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L44-L45
 func TestObjectInfo_EmptySizeOnly(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	resp, err := runV2Session(t, store, buildObjectInfoRequest([]string{"size\n"}))
@@ -102,6 +104,7 @@ func TestObjectInfo_EmptySizeOnly(t *testing.T) {
 //
 // [protocol-caps.c:47-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L71
 func TestObjectInfo_Loose_SingleHit(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -127,6 +130,7 @@ func TestObjectInfo_Loose_SingleHit(t *testing.T) {
 // [protocol-caps.c:47-48]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L47-L48
 // [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_Loose_NoSizeAttr(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 
 	req := buildObjectInfoRequest([]string{
@@ -144,6 +148,7 @@ func TestObjectInfo_Loose_NoSizeAttr(t *testing.T) {
 // three OIDs requested in caller order; the response must echo them in
 // the same order interspersed with their resolved sizes.
 func TestObjectInfo_Loose_MultipleOIDs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 	treeSize := querySize(t, store, looseTreeOID)
@@ -175,6 +180,7 @@ func TestObjectInfo_Loose_MultipleOIDs(t *testing.T) {
 // dispatches internally — so the wire shape is unchanged from the
 // loose case, but the test exercises a different `objstore` lookup.
 func TestObjectInfo_Pack_SingleHit(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "pack-only")
 	commitSize := querySize(t, store, packCommitOID)
 
@@ -205,6 +211,7 @@ func TestObjectInfo_Pack_SingleHit(t *testing.T) {
 //
 // [protocol-caps.c:66-67]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L66-L67
 func TestObjectInfo_MissingOID(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
 
@@ -231,6 +238,7 @@ func TestObjectInfo_MissingOID(t *testing.T) {
 //
 // [protocol-caps.c:63-71]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L63-L71
 func TestObjectInfo_MissingOID_NoSize(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	missing := strings.Repeat("d", 40)
 
@@ -250,6 +258,7 @@ func TestObjectInfo_MissingOID_NoSize(t *testing.T) {
 // real, missing, and real OIDs: the response interleaves the resolved
 // hits with the empty-size form for the miss in caller order.
 func TestObjectInfo_MixedHitsAndMisses(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 	commitSize := querySize(t, store, looseCommitOID)
@@ -280,6 +289,7 @@ func TestObjectInfo_MixedHitsAndMisses(t *testing.T) {
 //
 // [protocol-caps.c:55-61]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L55-L61
 func TestObjectInfo_OIDParseError(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -311,6 +321,7 @@ func TestObjectInfo_OIDParseError(t *testing.T) {
 // [protocol-caps.c:96-99]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L96-L99
 // [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func TestObjectInfo_UnknownArg(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "loose-objects")
 	blobSize := querySize(t, store, looseBlobOID)
 
@@ -337,6 +348,7 @@ func TestObjectInfo_UnknownArg(t *testing.T) {
 // through the handler. The fixture has one resolvable blob; the
 // response shape is the same as the sha1 case but with longer OIDs.
 func TestObjectInfo_SHA256(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture256(t, "loose-objects-sha256")
 	blobSize := querySize(t, store, loose256BlobOID)
 
@@ -370,6 +382,7 @@ func TestObjectInfo_SHA256(t *testing.T) {
 // `TestObjectInfo_CRC32MismatchWrapsErrCorruptObject` — to land a CRC
 // mismatch in `Store.ObjectInfo`.
 func TestObjectInfo_CorruptObject(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "repos", "pack-only")
 	require.NoError(t, copyFixtureTree(src, dir))
@@ -394,7 +407,7 @@ func TestObjectInfo_CorruptObject(t *testing.T) {
 	})
 	resp, err := runV2Session(t, store, req)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, wire.ErrServerRefused),
+	require.ErrorIs(t, err, wire.ErrServerRefused,
 		"want errors.Is(err, wire.ErrServerRefused); got %v", err)
 
 	// Decode the response stream:
@@ -486,6 +499,8 @@ func flipPackByte(t *testing.T, packPath string, off int64) {
 // setup, the iterator hand-off) round to zero so the average
 // isolates the loop body. The budget is set tight enough to fail if
 // any future change re-introduces a formatting-side alloc.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests
 func TestEmitObjectInfoLine_AllocBudget(t *testing.T) {
 	const oidCount = 1000
 	// 5 allocs/OID come from `Store.ObjectInfo`'s pack-resolution

@@ -1,7 +1,6 @@
 package ssht
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -37,7 +36,7 @@ func BenchmarkKeyFile_Resolve(b *testing.B) {
 	require.NoError(b, os.WriteFile(path, keyBytes, 0o600))
 
 	r := KeyFile(path, "")
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -70,7 +69,7 @@ func BenchmarkSigner_Resolve(b *testing.B) {
 	require.NoError(b, err)
 
 	r := Signer(signer)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()

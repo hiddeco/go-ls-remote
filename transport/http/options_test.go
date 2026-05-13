@@ -51,7 +51,7 @@ func TestWithCredentials(t *testing.T) {
 	tr := New(WithCredentials(want))
 
 	require.NotNil(t, tr.creds, "WithCredentials stores the resolver")
-	_, err := tr.creds.Resolve(context.Background(), &url.URL{Scheme: "https", Host: "example.com"})
+	_, err := tr.creds.Resolve(t.Context(), &url.URL{Scheme: "https", Host: "example.com"})
 	require.NoError(t, err)
 	assert.Equal(t, 1, resolverCalls, "stored resolver is the one passed in")
 }
@@ -81,7 +81,7 @@ func TestWithFollowRedirects_zeroValueIsInitial(t *testing.T) {
 	t.Parallel()
 	// The zero value of FollowRedirects MUST be Initial per
 	// Documentation/config/http.adoc:359-365.
-	assert.Equal(t, FollowRedirects(0), FollowRedirectsInitial,
+	assert.Equal(t, FollowRedirectsInitial, FollowRedirects(0),
 		"FollowRedirectsInitial must be the zero value (iota 0)")
 	assert.Equal(t, FollowRedirectsInitial, New().followRedirects)
 }

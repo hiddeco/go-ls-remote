@@ -60,7 +60,7 @@ func TestProtocolError_Unwrap(t *testing.T) {
 
 	assert.Same(t, cause, err.Unwrap(),
 		"Unwrap returns the wrapped cause for errors.Is/As")
-	assert.True(t, errors.Is(err, cause))
+	assert.ErrorIs(t, err, cause)
 }
 
 func TestProtocolError_Error_OmitsZeroStatus(t *testing.T) {
@@ -87,7 +87,7 @@ func TestSentinels_Distinct(t *testing.T) {
 			if i == j {
 				continue
 			}
-			assert.False(t, errors.Is(a, b),
+			assert.NotErrorIs(t, a, b,
 				"sentinels at indices %d and %d must not match", i, j)
 		}
 	}
@@ -132,12 +132,12 @@ func TestSentinels_BridgeToTransport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.True(t, errors.Is(tt.scheme, tt.generic),
+			assert.ErrorIs(t, tt.scheme, tt.generic,
 				"errors.Is(%v, %v) must be true", tt.scheme, tt.generic)
 		})
 	}
 
 	// Negative: no cross-pollination between distinct sentinels.
-	assert.False(t, errors.Is(ErrNotFound, transport.ErrAuthRequired),
+	assert.NotErrorIs(t, ErrNotFound, transport.ErrAuthRequired,
 		"ErrNotFound must not match transport.ErrAuthRequired")
 }

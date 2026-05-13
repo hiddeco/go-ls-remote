@@ -21,7 +21,7 @@ func FuzzParseCapabilities(f *testing.F) {
 		f.Add(s)
 	}
 
-	f.Fuzz(func(t *testing.T, in string) {
+	f.Fuzz(func(_ *testing.T, in string) {
 		_ = ParseCapabilities(in)
 	})
 }

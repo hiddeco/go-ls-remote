@@ -38,10 +38,12 @@ func (fakeConn) Command(context.Context, string, CommandBody) (*pktline.Reader, 
 func (fakeConn) Close() error { return nil }
 
 func TestTransport_interfaceCompiles(t *testing.T) {
+	t.Parallel()
 	var _ Transport = fakeTransport{}
 }
 
 func TestConn_interfaceCompiles(t *testing.T) {
+	t.Parallel()
 	var _ Conn = fakeConn{}
 }
 
@@ -51,6 +53,7 @@ func TestConn_interfaceCompiles(t *testing.T) {
 // is the zero value, not a sentinel that can be confused with a real
 // version (which would have made the integer zero mean v0).
 func TestOpenOptions_zeroValue(t *testing.T) {
+	t.Parallel()
 	var o OpenOptions
 	assert.Nil(t, o.Tracer)
 	assert.Empty(t, o.UserAgent)

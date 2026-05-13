@@ -27,6 +27,7 @@ import (
 // [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 // [connect.c::git_connect_git lines 1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
 func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
+	t.Parallel()
 	payloadCh := make(chan []byte, 1)
 
 	host, port := startEchoListener(t, func(c net.Conn) {
@@ -58,7 +59,7 @@ func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 		Path:   "/repo",
 		Raw:    "git://" + host + ":" + port + "/repo",
 	}
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
@@ -73,6 +74,7 @@ func TestTransport_Open_DialsAndSendsInitialRequest(t *testing.T) {
 // calling [hostAddress] directly — a white-box check of the same
 // helper [Transport.Open] uses.
 func TestTransport_Open_DefaultPort(t *testing.T) {
+	t.Parallel()
 	u := &transport.URL{
 		Scheme: "git",
 		Host:   "example.com",
@@ -86,6 +88,7 @@ func TestTransport_Open_DefaultPort(t *testing.T) {
 // TestTransport_Open_PortFromURL verifies that a URL with an explicit
 // Port passes that port through to the dial address unchanged.
 func TestTransport_Open_PortFromURL(t *testing.T) {
+	t.Parallel()
 	u := &transport.URL{
 		Scheme: "git",
 		Host:   "example.com",
@@ -102,6 +105,7 @@ func TestTransport_Open_PortFromURL(t *testing.T) {
 // is appended (`::1:9418` is not a valid dial address; `[::1]:9418` is).
 // The [transport.URL] contract is that `Host` is always unbracketed.
 func TestHostAddress(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		host string
@@ -119,6 +123,7 @@ func TestHostAddress(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			u := &transport.URL{Host: tc.host, Port: tc.port}
 			assert.Equal(t, tc.want, hostAddress(u))
 		})
@@ -131,9 +136,11 @@ func TestHostAddress(t *testing.T) {
 // connection if v1 rejection fires before the dial, keeping
 // `dialCalled` false.
 func TestTransport_Open_PinV1Rejected(t *testing.T) {
+	t.Parallel()
 	var dialCalled atomic.Bool
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
 	go func() {
@@ -156,16 +163,16 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 		Path:   "/repo",
 		Raw:    "git://" + h + ":" + p + "/repo",
 	}
-	_, openErr := tr.Open(context.Background(), u, transport.OpenOptions{
+	_, openErr := tr.Open(t.Context(), u, transport.OpenOptions{
 		PreferredProtocol: &v1,
 	})
 
 	require.Error(t, openErr)
-	assert.True(t, errors.Is(openErr, ErrUnsupportedProtocol),
+	require.ErrorIs(t, openErr, ErrUnsupportedProtocol,
 		"err must match ErrUnsupportedProtocol; got %v", openErr)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(openErr, &pe))
+	require.ErrorAs(t, openErr, &pe)
 	assert.Equal(t, "dial", pe.Op)
 	assert.False(t, dialCalled.Load(), "dialer must not be invoked when v1 is pinned")
 }
@@ -176,17 +183,18 @@ func TestTransport_Open_PinV1Rejected(t *testing.T) {
 // [mapDialError] directly to avoid OS-specific "connection refused" vs
 // "no route to host" variability.
 func TestTransport_Open_DialError(t *testing.T) {
+	t.Parallel()
 	dialErr := errors.New("connection refused")
 
 	err := mapDialError(dialErr, "git://example.com/repo")
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe), "dial error must wrap *ProtocolError")
+	require.ErrorAs(t, err, &pe, "dial error must wrap *ProtocolError")
 	assert.Equal(t, "dial", pe.Op)
-	assert.False(t, errors.Is(err, ErrUnsupportedProtocol),
+	require.NotErrorIs(t, err, ErrUnsupportedProtocol,
 		"dial error must not match ErrUnsupportedProtocol")
-	assert.True(t, errors.Is(err, dialErr),
+	assert.ErrorIs(t, err, dialErr,
 		"dial error must wrap the original network error")
 }
 
@@ -194,7 +202,8 @@ func TestTransport_Open_DialError(t *testing.T) {
 // context returns [context.Canceled] directly, not wrapped in
 // `*ProtocolError`.
 func TestTransport_Open_ContextCanceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	tr := New()
@@ -246,6 +255,7 @@ func (f *failingConn) Close() error {
 // not part of the public API; it exists solely so this path can be
 // covered without a flaky network-timing dependency.
 func TestTransport_Open_WriteFailureClosesConn(t *testing.T) {
+	t.Parallel()
 	closed := make(chan struct{})
 
 	// net.Pipe gives two synchronised ends; we only need the client side.
@@ -267,16 +277,16 @@ func TestTransport_Open_WriteFailureClosesConn(t *testing.T) {
 		Path:   "/repo",
 		Raw:    "git://example.com/repo",
 	}
-	_, openErr := tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, openErr := tr.Open(t.Context(), u, transport.OpenOptions{})
 
 	require.Error(t, openErr, "Open must fail when the write fails")
 
 	var pe *ProtocolError
-	require.True(t, errors.As(openErr, &pe),
+	require.ErrorAs(t, openErr, &pe,
 		"error must be *ProtocolError; got %T: %v", openErr, openErr)
 	assert.Equal(t, "dial", pe.Op,
 		"Op must be \"dial\" for a write failure during open")
-	assert.NotNil(t, pe.Err,
+	require.Error(t, pe.Err,
 		"ProtocolError.Err must carry the write failure cause")
 	assert.Contains(t, pe.Err.Error(), "write initial pkt-line",
 		"wrapped cause must identify the write step")

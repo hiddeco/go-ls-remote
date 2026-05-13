@@ -15,6 +15,7 @@ import (
 var _ transport.Transport = (*Transport)(nil)
 
 func TestTransport_Schemes(t *testing.T) {
+	t.Parallel()
 	tr := New()
 	require.NotNil(t, tr)
 
@@ -23,6 +24,7 @@ func TestTransport_Schemes(t *testing.T) {
 }
 
 func TestTransport_implementsTransportInterface(t *testing.T) {
+	t.Parallel()
 	// Satisfies the interface dynamically too: assigning to the
 	// interface-typed local will fail to compile if the method set
 	// drifts.
@@ -31,6 +33,7 @@ func TestTransport_implementsTransportInterface(t *testing.T) {
 }
 
 func TestNew_nilOptionSkipped(t *testing.T) {
+	t.Parallel()
 	// Pinning the documented contract: nil entries in opts are
 	// silently skipped so callers can pass conditionally built options
 	// without guarding each one. No concrete options exist yet — the

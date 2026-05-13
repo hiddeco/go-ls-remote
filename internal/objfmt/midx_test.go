@@ -35,7 +35,9 @@ func midxPackNames(t *testing.T, midxPath string) []string {
 }
 
 func TestMidx_OpenMidx(t *testing.T) {
+	t.Parallel()
 	t.Run("SHA-1 fixture reports algo, version, count, packs", func(t *testing.T) {
+		t.Parallel()
 		path := idxFixture(t, "multi-pack-index")
 		m, err := OpenMidx[SHA1Hash](path, SHA1)
 		require.NoError(t, err)
@@ -50,6 +52,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("SHA-256 fixture reports SHA256 and version 1", func(t *testing.T) {
+		t.Parallel()
 		path := idxFixture(t, "sha256-multi-pack-index")
 		m, err := OpenMidx[SHA256Hash](path, SHA256)
 		require.NoError(t, err)
@@ -62,6 +65,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects a non-MIDX magic", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "bad.midx")
 		buf := make([]byte, 12+20)
 		copy(buf, "NOTM")
@@ -73,6 +77,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects unsupported version 0", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "v0.midx")
 		buf := make([]byte, 12+20)
 		copy(buf, "MIDX")
@@ -85,6 +90,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects unsupported version 99", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "v99.midx")
 		buf := make([]byte, 12+20)
 		copy(buf, "MIDX")
@@ -97,6 +103,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects a non-zero reserved byte", func(t *testing.T) {
+		t.Parallel()
 		// Canonical Git's `write_midx_header` writes byte 7 as 0; a
 		// non-zero value either means a malformed file or a future
 		// extension that this reader is not equipped to handle.
@@ -114,6 +121,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects an algo mismatch", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenMidx[SHA256Hash](idxFixture(t, "multi-pack-index"), SHA256)
 		require.Error(t, err)
 
@@ -122,6 +130,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects truncated input", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "tiny.midx")
 		require.NoError(t, os.WriteFile(path, []byte("MIDX"), 0o600))
 		_, err := OpenMidx[SHA1Hash](path, SHA1)
@@ -129,16 +138,19 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects a nil algo", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), nil)
 		require.Error(t, err)
 	})
 
 	t.Run("rejects a missing file", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenMidx[SHA1Hash](filepath.Join(t.TempDir(), "nope.midx"), SHA1)
 		require.Error(t, err)
 	})
 
 	t.Run("Close is idempotent", func(t *testing.T) {
+		t.Parallel()
 		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		assert.NoError(t, m.Close())
@@ -146,6 +158,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects non-monotonic OIDF fanout", func(t *testing.T) {
+		t.Parallel()
 		// Build a clean midx, locate its OIDF chunk via the TOC, and
 		// patch fanout[5] above fanout[6]. Mirrors [midx.c:62-71],
 		// which rejects "oid fanout out of order".
@@ -168,11 +181,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "fanout")
 	})
 
 	t.Run("rejects OOFF packIdx out of range", func(t *testing.T) {
+		t.Parallel()
 		// One pack listed in PNAM, but the object's packIdx is 7 —
 		// past the end. A corrupt midx must not become a runtime
 		// slice-bounds panic at the downstream `midxBackend.Lookup`
@@ -191,11 +205,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack")
 	})
 
 	t.Run("rejects v1 non-ascending pack names", func(t *testing.T) {
+		t.Parallel()
 		// Canonical Git rejects v1 midx files whose PNAM entries are
 		// not in strict-ascending lexicographic order. Mirrors
 		// [midx.c:213-218] ("multi-pack-index pack names out of order").
@@ -211,11 +226,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack name")
 	})
 
 	t.Run("rejects v1 duplicate pack names", func(t *testing.T) {
+		t.Parallel()
 		// Canonical Git's check is `strcmp(...) <= 0`, which also
 		// rejects duplicate basenames. Mirrors [midx.c:213-218].
 		//
@@ -230,11 +246,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "pack name")
 	})
 
 	t.Run("accepts v2 unsorted pack names", func(t *testing.T) {
+		t.Parallel()
 		// Canonical Git relaxes the ordering check for v2; only v1 is
 		// strict. Build a fixture with packs out of order, flip the
 		// version byte to 2, and confirm the parser accepts it.
@@ -258,6 +275,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 	})
 
 	t.Run("rejects non-ascending OIDL", func(t *testing.T) {
+		t.Parallel()
 		// Build a clean two-object midx, locate its OIDL chunk via the
 		// TOC, and swap the two OIDs so the lookup table is no longer
 		// strictly ascending. The fanout-bounded binary search in
@@ -295,11 +313,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "OIDL")
 	})
 
 	t.Run("rejects duplicate OIDL entries", func(t *testing.T) {
+		t.Parallel()
 		// Stamp the second OID record on top of the first so OIDL
 		// holds the same OID twice. The midx invariant requires
 		// unique OIDs (each object appears once); equal consecutive
@@ -329,11 +348,12 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "OIDL")
 	})
 
 	t.Run("rejects misaligned chunk offset", func(t *testing.T) {
+		t.Parallel()
 		// Patch the TOC entry for OIDF to a misaligned absolute
 		// offset (off by 1). Mirrors [chunk-format.c:127-130], which
 		// rejects "chunk id ... not 4-byte aligned" with
@@ -372,7 +392,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 
 		_, err = OpenMidx[SHA1Hash](path, SHA1)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "align")
 	})
 }
@@ -382,7 +402,7 @@ func TestMidx_OpenMidx(t *testing.T) {
 // surgically corrupt one chunk's contents.
 func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
 	t.Helper()
-	require.Equal(t, 4, len(id))
+	require.Len(t, id, 4)
 	tocStart := 12
 	numChunks := int(raw[6])
 	for i := range numChunks {
@@ -405,6 +425,7 @@ func findChunkOffset(t *testing.T, raw []byte, id string) int64 {
 // on `xcalloc`/`die()` on allocation failure; Go's `make` panics the
 // host process instead.
 func TestMidx_parsePackNames_rejectsOversizedNumPacks(t *testing.T) {
+	t.Parallel()
 	oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 	require.NoError(t, err)
 
@@ -430,7 +451,9 @@ func TestMidx_parsePackNames_rejectsOversizedNumPacks(t *testing.T) {
 }
 
 func TestMidx_PackNames(t *testing.T) {
+	t.Parallel()
 	t.Run("returned slice is a copy", func(t *testing.T) {
+		t.Parallel()
 		m, err := OpenMidx[SHA1Hash](idxFixture(t, "multi-pack-index"), SHA1)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = m.Close() })

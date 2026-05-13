@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	lsremote "github.com/hiddeco/go-ls-remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	lsremote "github.com/hiddeco/go-ls-remote"
 )
 
 // TestProtocolVersion asserts that every provider in [Providers]
@@ -31,10 +32,12 @@ import (
 // which providers currently advertise `object-info` versus those
 // that omit it.
 func TestProtocolVersion(t *testing.T) {
+	t.Parallel()
 	for _, p := range Providers {
 		t.Run(p.Name, func(t *testing.T) {
+			t.Parallel()
 			p.skipIfOffline(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			s, err := lsremote.Dial(ctx, p.PublicHTTPS)
 			require.NoErrorf(t, err, "%s: Dial failed", p.Name)

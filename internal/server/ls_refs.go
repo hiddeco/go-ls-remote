@@ -47,7 +47,8 @@ import (
 // [ls-refs.c:95-109]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L95-L109
 // [ls-refs.c:188]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L188
 func handleLSRefs[H objfmt.Hash](r *argsReader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) error {
+	store *objstore.Store[H], opts Options,
+) error {
 	_ = opts
 
 	args, err := parseLSRefsArgs(r, w)
@@ -209,7 +210,8 @@ func writeLSRefsResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store
 //
 // [ls-refs.c:88]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L88
 func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
-	head objstore.Head[H], args wire.RefsArgs) error {
+	head objstore.Head[H], args wire.RefsArgs,
+) error {
 	if !refMatch(args.Prefixes, "HEAD") {
 		return nil
 	}
@@ -273,7 +275,8 @@ func emitHead[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
 // allocated. OID hex is appended directly into the scratch via the
 // typed `H.AppendHex` so no per-ref string allocates either.
 func formatRefLine[H objfmt.Hash](dst []byte, store *objstore.Store[H],
-	ref objstore.RefEntry[H], args wire.RefsArgs) ([]byte, error) {
+	ref objstore.RefEntry[H], args wire.RefsArgs,
+) ([]byte, error) {
 	dst = ref.OID.AppendHex(dst)
 	dst = append(dst, ' ')
 	dst = append(dst, ref.Name...)

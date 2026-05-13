@@ -106,7 +106,8 @@ func (t *Transport) open(ctx context.Context, u *transport.URL, opts transport.O
 // picks the type parameter based on the algo discovered from the
 // repo config.
 func openTyped[H objfmt.Hash](ctx context.Context, t *Transport, opts transport.OpenOptions,
-	path, redacted string, preferred transport.ProtocolVersion) (transport.Conn, error) {
+	path, redacted string, preferred transport.ProtocolVersion,
+) (transport.Conn, error) {
 	store, err := objstore.Open[H](path)
 	if err != nil {
 		return nil, mapOpenError(err, redacted)
@@ -115,7 +116,7 @@ func openTyped[H objfmt.Hash](ctx context.Context, t *Transport, opts transport.
 	clientReader, serverWriter := io.Pipe()
 	serverReader, clientWriter := io.Pipe()
 
-	derivedCtx, cancel := context.WithCancel(ctx)
+	derivedCtx, cancel := context.WithCancel(ctx) //nolint:gosec // G118: `cancel` is stored on `Conn.cancel` (see `conn.go:65`) and invoked from `Conn.Close()` (`conn.go:138`); gosec cannot trace lifetime through the struct field.
 
 	// Wire the tracer at the client-side reader/writer
 	// unconditionally. The server-side endpoints in the goroutine

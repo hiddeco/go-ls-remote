@@ -6,13 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
 	"github.com/hiddeco/go-ls-remote/internal/testfixture"
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // openStoreFromFixture materializes the named fixture, creates any
@@ -62,6 +63,7 @@ func openStoreFromFixture256(t *testing.T, name string) *objstore.Store[objfmt.S
 // [upload-pack.c:1416-1438]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1416-L1438
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0EmptyRepoPlaceholder(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -84,6 +86,7 @@ func TestServe_V0EmptyRepoPlaceholder(t *testing.T) {
 // `format_symref_info` formats whatever `data.symref` carries
 // regardless of the placeholder ref's name.
 func TestServe_V0UnbornHeadPlaceholder(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "unborn-head")
 
 	got := runAdvertise(t, store, Options{
@@ -104,6 +107,7 @@ func TestServe_V0UnbornHeadPlaceholder(t *testing.T) {
 //
 // [upload-pack.c:1262]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1262
 func TestServe_V0DefaultsAgent(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -124,6 +128,7 @@ func TestServe_V0DefaultsAgent(t *testing.T) {
 //
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0DetachedHead(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "detached-head")
 
 	got := runAdvertise(t, store, Options{
@@ -165,6 +170,7 @@ func TestServe_V0DetachedHead(t *testing.T) {
 // [upload-pack.c:1416-1422]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1416-L1422
 // [upload-pack.c:1268-1270]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1268-L1270
 func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "packed-refs-fully-peeled")
 
 	got := runAdvertise(t, store, Options{
@@ -194,8 +200,6 @@ func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 // this via `for_each_namespaced_ref_1` which iterates the merged
 // ref view in sorted order.
 //
-// [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
-//
 // Layout of the `mixed` fixture:
 //
 //	dotgit/refs/heads/main         -> 3333...  (loose, overrides packed)
@@ -203,7 +207,10 @@ func TestServe_V0PackedRefsWithPeeledTag(t *testing.T) {
 //	  1111... refs/heads/main             (shadowed by loose)
 //	  2222... refs/heads/old
 //	dotgit/HEAD                    -> ref: refs/heads/main
+//
+// [gitprotocol-pack.adoc:201-203]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc?plain=1#L201-L203
 func TestServe_V0SortedRefs(t *testing.T) {
+	t.Parallel()
 	store := openStoreFromFixture(t, "mixed")
 
 	got := runAdvertise(t, store, Options{
@@ -267,6 +274,7 @@ func buildUnbornHeadStrayRefsFixture(t *testing.T, strayOID string) *objstore.St
 //
 // [upload-pack.c:1216-1224]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1216-L1224
 func TestServe_V0UnbornHeadWithStrayRefs(t *testing.T) {
+	t.Parallel()
 	strayOID := strings.Repeat("e", 40)
 	store := buildUnbornHeadStrayRefsFixture(t, strayOID)
 

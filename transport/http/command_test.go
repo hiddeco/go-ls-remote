@@ -73,18 +73,18 @@ func serveHandler(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath
 		case r.Method == http.MethodGet && r.URL.Path == infoRefsPath:
 			w.Header().Set("Content-Type", smartAdvHeader)
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-			require.NoError(t, pw.WriteFlush())
+			assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+			assert.NoError(t, pw.WriteFlush())
 			err := server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader([]byte("0000"))),
 				pw, store, server.Options{
 					Agent:             "test-server/0.0",
 					PreferredProtocol: transport.ProtocolV2,
 				})
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		case r.Method == http.MethodPost && r.URL.Path == uploadPackPath:
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			w.Header().Set("Content-Type", commandAcceptType)
 			pr := pktline.NewReader(bytes.NewReader(body))
 			pw := pktline.NewWriter(w)
@@ -99,7 +99,7 @@ func serveHandler(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPath
 				Agent:             "test-server/0.0",
 				PreferredProtocol: transport.ProtocolV2,
 			})
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		default:
 			http.NotFound(w, r)
 		}
@@ -151,7 +151,7 @@ func openSmartTestConn(t *testing.T, srv *httptest.Server, repoPath string, opts
 	t.Helper()
 	tr := New(opts...)
 	u := parseTestURL(t, srv, repoPath)
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c, ok := conn.(*Conn)
@@ -169,7 +169,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 
 	c := openSmartTestConn(t, srv, "/repo.git")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
@@ -215,7 +215,7 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	// well-formed `oid <hex>` argument so the server's parser accepts
 	// the request and emits its `size\n` attrs line.
 	oid := strings.Repeat("a", 40)
-	rdr, err := c.Command(context.Background(), "object-info",
+	rdr, err := c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -250,18 +250,18 @@ func TestConn_Command_Headers(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
 	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, r *http.Request) {
 		captured = r.Header.Clone()
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		w.Header().Set("Content-Type", commandAcceptType)
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader(body)),
 			pktline.NewWriter(w), store,
 			server.Options{PreferredProtocol: transport.ProtocolV2}))
@@ -271,7 +271,7 @@ func TestConn_Command_Headers(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git", WithUserAgent("ua-from-tr/1"))
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
@@ -295,18 +295,18 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
 	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		captured = body
 		w.Header().Set("Content-Type", commandAcceptType)
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader(body)),
 			pktline.NewWriter(w), store,
 			server.Options{PreferredProtocol: transport.ProtocolV2}))
@@ -316,7 +316,7 @@ func TestConn_Command_Body_PktLineShape(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs",
 			[]string{"peel", "symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -363,9 +363,9 @@ func TestConn_Command_404(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -377,10 +377,10 @@ func TestConn_Command_404(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	assert.ErrorIs(t, err, ErrNotFound,
 		"command POST 404 must map to ErrNotFound; got %v", err)
 }
 
@@ -391,9 +391,9 @@ func TestConn_Command_500(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -406,11 +406,11 @@ func TestConn_Command_500(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"command POST 5xx must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
 	assert.Equal(t, http.StatusInternalServerError, pe.Status)
@@ -424,9 +424,9 @@ func TestConn_Command_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -442,10 +442,10 @@ func TestConn_Command_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	// the 401 surfaces as ErrAuthRequired (the caller may now plug in
 	// credentials and retry at the Session layer).
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthRequired),
+	assert.ErrorIs(t, err, ErrAuthRequired,
 		"command 401 with no creds applied maps to ErrAuthRequired; got %v", err)
 }
 
@@ -463,9 +463,9 @@ func TestConn_Command_401_WithCreds_ReturnsErrAuthFailed(t *testing.T) {
 		// resolver's involvement.
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -481,10 +481,10 @@ func TestConn_Command_401_WithCreds_ReturnsErrAuthFailed(t *testing.T) {
 	c := openSmartTestConn(t, srv, "/repo.git",
 		WithCredentials(Static(Basic("alice", "secret"))))
 
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	require.ErrorIs(t, err, ErrAuthFailed,
 		"command 401 with creds applied maps to ErrAuthFailed; got %v", err)
 	assert.Equal(t, want, sawPostAuth,
 		"the command POST must carry the static resolver's credential before failing")
@@ -497,9 +497,9 @@ func TestRedirect_OnPost_Initial_Rejects(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -511,14 +511,14 @@ func TestRedirect_OnPost_Initial_Rejects(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a rejected command-POST redirect must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
-	assert.True(t, errors.Is(pe.Err, errRedirectRejected),
+	assert.ErrorIs(t, pe.Err, errRedirectRejected,
 		"the rejection must wrap errRedirectRejected; got %v", pe.Err)
 }
 
@@ -529,9 +529,9 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -547,17 +547,17 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 	// does not redirect on the probe, so the open succeeds. The 3xx on
 	// the POST is what we exercise here.
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a Never-rejected POST redirect must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
 }
@@ -565,29 +565,29 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 func TestRedirect_OnPost_Always_Follows(t *testing.T) {
 	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
-	var hopRequests int32
+	var hopRequests atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
 	mux.HandleFunc("/repo.git/git-upload-pack", func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hopRequests, 1)
+		hopRequests.Add(1)
 		// Use 307 so net/http preserves the method on the follow-up
 		// request — the canonical "POST through a redirect" shape.
 		http.Redirect(w, r, "/repo2.git/git-upload-pack", http.StatusTemporaryRedirect)
 	})
 	mux.HandleFunc("/repo2.git/git-upload-pack", func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&hopRequests, 1)
+		hopRequests.Add(1)
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		w.Header().Set("Content-Type", commandAcceptType)
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader(body)),
 			pktline.NewWriter(w), store,
 			server.Options{PreferredProtocol: transport.ProtocolV2}))
@@ -599,13 +599,13 @@ func TestRedirect_OnPost_Always_Follows(t *testing.T) {
 	c := openSmartTestConn(t, srv, "/repo.git",
 		WithFollowRedirects(FollowRedirectsAlways))
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err, "FollowRedirectsAlways must let a POST follow a 307 hop")
 	require.NotNil(t, rdr)
 	pkts := readAllPackets(t, rdr)
 	require.NotEmpty(t, pkts)
-	assert.Equal(t, int32(2), atomic.LoadInt32(&hopRequests),
+	assert.Equal(t, int32(2), hopRequests.Load(),
 		"both /repo.git and /repo2.git endpoints must have been hit")
 }
 
@@ -682,11 +682,11 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 				gitProtocolHeader: "version=2",
 			}
 
-			rdr, err := c.Command(context.Background(), tc.cmd,
+			rdr, err := c.Command(t.Context(), tc.cmd,
 				cmdBody(tc.cmd, tc.args, tc.caps))
 			assert.Nil(t, rdr)
 			require.Error(t, err)
-			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
+			assert.ErrorIs(t, err, pktline.ErrPayloadTooLarge,
 				"oversize input must wrap pktline.ErrPayloadTooLarge; got %v", err)
 		})
 	}
@@ -752,9 +752,9 @@ func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -766,15 +766,15 @@ func TestConn_Command_UnexpectedStatus_418(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"unexpected status on the command path maps to *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
 	assert.Equal(t, http.StatusTeapot, pe.Status)
-	require.NotNil(t, pe.Err)
+	require.Error(t, pe.Err)
 	assert.Contains(t, pe.Err.Error(), "unexpected status")
 }
 
@@ -790,9 +790,9 @@ func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -810,10 +810,10 @@ func TestConn_Command_ResolverError_Wrapped(t *testing.T) {
 		return nil, sentinel
 	})
 
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, sentinel),
+	require.ErrorIs(t, err, sentinel,
 		"resolver errors must wrap so callers can match the inner cause via errors.Is; got %v", err)
 	assert.Contains(t, err.Error(), srv.URL,
 		"the wrap message must include the (redacted) POST URL for log triage")
@@ -880,17 +880,17 @@ func TestConn_Command_RedirectRejected_ClosesBody(t *testing.T) {
 
 	u, err := transport.ParseURL("https://example.com/repo.git")
 	require.NoError(t, err)
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, cmdErr := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, cmdErr := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, cmdErr)
 	var pe *ProtocolError
-	require.True(t, errors.As(cmdErr, &pe))
+	require.ErrorAs(t, cmdErr, &pe)
 	assert.Equal(t, "command", pe.Op)
 
 	// The fixture's POST hop returned a 302 response with a wrapped
@@ -1009,7 +1009,7 @@ func TestConn_Command_AccumulatesBodiesUntilClose(t *testing.T) {
 	}
 
 	for range 3 {
-		_, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+		_, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 		require.NoError(t, err)
 	}
 
@@ -1038,9 +1038,9 @@ func TestCommand_NotFound_PropagatesServerExcerpt(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -1052,15 +1052,15 @@ func TestCommand_NotFound_PropagatesServerExcerpt(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"the sentinel must still match errors.Is after the rewrap; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a 404 carrying a body excerpt must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, http.StatusNotFound, pe.Status,
 		"Status must reflect the response code")
@@ -1080,9 +1080,9 @@ func TestCommand_AuthRequired_PropagatesServerExcerpt(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -1097,15 +1097,15 @@ func TestCommand_AuthRequired_PropagatesServerExcerpt(t *testing.T) {
 	// the 401 surfaces as ErrAuthRequired. Symmetry with the 5xx branch
 	// requires the body excerpt to survive on `*ProtocolError.Server`.
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrAuthRequired),
+	require.ErrorIs(t, err, ErrAuthRequired,
 		"with no creds applied the 401 sentinel must be ErrAuthRequired; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, http.StatusUnauthorized, pe.Status)
 	assert.Contains(t, pe.Server, wantExcerpt)
 }
@@ -1122,9 +1122,9 @@ func TestCommand_AuthFailed_PropagatesServerExcerpt(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{PreferredProtocol: transport.ProtocolV2}))
 	})
@@ -1136,15 +1136,15 @@ func TestCommand_AuthFailed_PropagatesServerExcerpt(t *testing.T) {
 	defer srv.Close()
 
 	c := openSmartTestConn(t, srv, "/repo.git")
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	require.ErrorIs(t, err, ErrAuthFailed,
 		"a 403 must reach ErrAuthFailed via errors.Is; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, http.StatusForbidden, pe.Status)
 	assert.Contains(t, pe.Server, wantExcerpt)
 }

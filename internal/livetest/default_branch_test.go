@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	lsremote "github.com/hiddeco/go-ls-remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	lsremote "github.com/hiddeco/go-ls-remote"
 )
 
 // TestDefaultBranch exercises [lsremote.DefaultBranch] against every
@@ -23,6 +24,7 @@ import (
 // omitted because upstream defaults drift over time and a hard-coded
 // expectation would convert a benign rename into a test failure.
 func TestDefaultBranch(t *testing.T) {
+	t.Parallel()
 	forEachProviderMode(t, func(t *testing.T, p Provider, m authMode, ctx context.Context) {
 		branch, err := lsremote.DefaultBranch(ctx, m.url, m.options...)
 		require.NoErrorf(t, err,

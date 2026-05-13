@@ -29,7 +29,7 @@ import "strings"
 // [connect.c::parse_feature_value (lines 614-659)]: https://github.com/git/git/blob/v2.54.0/connect.c#L614-L659
 // [connect.c:629]: https://github.com/git/git/blob/v2.54.0/connect.c#L629
 func ParseCapabilities(s string) RawCapabilities {
-	if len(s) == 0 {
+	if s == "" {
 		return nil
 	}
 	var caps RawCapabilities

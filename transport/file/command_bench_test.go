@@ -1,7 +1,6 @@
 package filet
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -108,7 +107,7 @@ func BenchmarkConn_Command(b *testing.B) {
 		for _, tr := range tracerCases {
 			b.Run(sh.name+"/"+tr.name, func(b *testing.B) {
 				c := openBenchConn(b, "loose-only", tr.opts, tr.tracer)
-				ctx := context.Background()
+				ctx := b.Context()
 
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -140,7 +139,7 @@ func openBenchConn(b *testing.B, fixture string, opts []Option, tracer trace.Tra
 	require.NoError(b, err)
 
 	tr := New(opts...)
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(b.Context(), u, transport.OpenOptions{
 		UserAgent: "bench/0.0",
 		Tracer:    tracer,
 	})

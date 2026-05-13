@@ -8,7 +8,9 @@ import (
 )
 
 func TestIdx_FindOffset_v1(t *testing.T) {
+	t.Parallel()
 	t.Run("returns the recorded offset for every entry", func(t *testing.T) {
+		t.Parallel()
 		oid1, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		oid2, err := ParseSHA1Hex("5555555555555555555555555555555555555555")
@@ -34,6 +36,7 @@ func TestIdx_FindOffset_v1(t *testing.T) {
 	})
 
 	t.Run("returns ok=false for an absent oid", func(t *testing.T) {
+		t.Parallel()
 		oid, err := ParseSHA1Hex("1111111111111111111111111111111111111111")
 		require.NoError(t, err)
 		path := writeV1Idx(t, t.TempDir(), []v1Entry{{offset: 12, oid: oid}})
@@ -50,6 +53,7 @@ func TestIdx_FindOffset_v1(t *testing.T) {
 	})
 
 	t.Run("v1 idx opened as SHA256 always misses", func(t *testing.T) {
+		t.Parallel()
 		// Stage a v1 idx (always SHA-1) but open it claiming SHA-256.
 		// `findOffsetV2` is the only path the open lands on under
 		// SHA-256 and it always misses on a v1 file because the idx

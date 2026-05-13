@@ -166,7 +166,7 @@ func (n *netrcResolver) Resolve(_ context.Context, u *url.URL) (Credentials, err
 		return nil, nil
 	}
 
-	info, err := os.Lstat(n.path)
+	info, err := os.Lstat(n.path) //nolint:gosec // G304: `n.path` is the caller-configured netrc path (Git's documented `GIT_CURL_NETRC_FILE` / `~/.netrc`); the path is library input by design.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -175,7 +175,7 @@ func (n *netrcResolver) Resolve(_ context.Context, u *url.URL) (Credentials, err
 	}
 	n.maybeWarnLoosePermissions(info)
 
-	data, err := os.ReadFile(n.path)
+	data, err := os.ReadFile(n.path) //nolint:gosec // G304: `n.path` is the caller-configured netrc path (Git's documented `GIT_CURL_NETRC_FILE` / `~/.netrc`); the path is library input by design.
 	if err != nil {
 		return nil, fmt.Errorf("httpt: read netrc: %w", err)
 	}

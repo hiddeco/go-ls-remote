@@ -1,7 +1,6 @@
 package filet
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -52,7 +51,7 @@ func BenchmarkTransport_Open(b *testing.B) {
 
 	for _, tr := range tracerCases {
 		b.Run(tr.name, func(b *testing.B) {
-			ctx := context.Background()
+			ctx := b.Context()
 
 			b.ReportAllocs()
 			b.ResetTimer()

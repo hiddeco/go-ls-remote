@@ -142,14 +142,14 @@ func TestRawCapabilities_Get(t *testing.T) {
 		t.Parallel()
 		v, ok := caps.Get("multi_ack")
 		assert.True(t, ok)
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 	})
 
 	t.Run("returns false for missing name", func(t *testing.T) {
 		t.Parallel()
 		v, ok := caps.Get("nope")
 		assert.False(t, ok)
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 	})
 
 	t.Run("nil receiver yields not found", func(t *testing.T) {
@@ -157,7 +157,7 @@ func TestRawCapabilities_Get(t *testing.T) {
 		var caps RawCapabilities
 		v, ok := caps.Get("anything")
 		assert.False(t, ok)
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 	})
 }
 

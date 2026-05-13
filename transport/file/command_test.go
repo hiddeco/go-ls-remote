@@ -2,8 +2,6 @@ package filet
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,7 +101,7 @@ func openTestConn(t *testing.T, fixture string) *Conn[objfmt.SHA1Hash] {
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{UserAgent: "test/0.0"})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{UserAgent: "test/0.0"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -114,9 +112,10 @@ func openTestConn(t *testing.T, fixture string) *Conn[objfmt.SHA1Hash] {
 }
 
 func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
+	t.Parallel()
 	c := openTestConn(t, "loose-only")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
@@ -145,6 +144,7 @@ func TestConn_Command_LSRefs_RoundTrip(t *testing.T) {
 }
 
 func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
+	t.Parallel()
 	c := openTestConn(t, "loose-only")
 
 	// `aaaa...` is loose-only's ref tip. The handler is not asked to
@@ -152,7 +152,7 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 	// `oid <hex>` argument so the server's parser accepts the request
 	// and emits its `size\n` attrs line.
 	oid := strings.Repeat("a", 40)
-	rdr, err := c.Command(context.Background(), "object-info",
+	rdr, err := c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -178,10 +178,11 @@ func TestConn_Command_ObjectInfo_RoundTrip(t *testing.T) {
 }
 
 func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
+	t.Parallel()
 	c := openTestConn(t, "loose-only")
 
 	// First command: ls-refs.
-	rdr1, err := c.Command(context.Background(), "ls-refs",
+	rdr1, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr1)
@@ -190,7 +191,7 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 	// contract requires the previous response be drained before the
 	// next request is dispatched; the helper above does that.
 	oid := strings.Repeat("a", 40)
-	rdr2, err := c.Command(context.Background(), "object-info",
+	rdr2, err := c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -203,6 +204,7 @@ func TestConn_Command_SequentialCommandsReuseReader(t *testing.T) {
 }
 
 func TestConn_Command_RejectsOversizePayload(t *testing.T) {
+	t.Parallel()
 	overlong := strings.Repeat("a", pktline.MaxPayload)
 	tests := []struct {
 		name string
@@ -216,6 +218,7 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Fresh [Conn] per subtest. Once the [pktline.Writer.WritePacket]
 			// cap check trips mid-frame, any partially-emitted bytes have
 			// already crossed the pipe (only the failing packet itself is
@@ -226,23 +229,24 @@ func TestConn_Command_RejectsOversizePayload(t *testing.T) {
 			// mismatch on the next call rather than as the cap-rejection
 			// the test is pinning.
 			c := openTestConn(t, "loose-only")
-			rdr, err := c.Command(context.Background(), tc.cmd,
+			rdr, err := c.Command(t.Context(), tc.cmd,
 				cmdBody(tc.cmd, tc.args, tc.caps))
 			assert.Nil(t, rdr)
 			require.Error(t, err)
-			assert.True(t, errors.Is(err, pktline.ErrPayloadTooLarge),
+			assert.ErrorIs(t, err, pktline.ErrPayloadTooLarge,
 				"oversize input must wrap pktline.ErrPayloadTooLarge; got %v", err)
 		})
 	}
 }
 
 func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
@@ -250,12 +254,12 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 
 	require.NoError(t, conn.Close())
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	assert.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a Command after Close must surface as *ProtocolError; got %T: %v", err, err)
 	if pe != nil {
 		assert.Equal(t, "command", pe.Op)
@@ -263,25 +267,26 @@ func TestConn_Command_AfterCloseReturnsProtocolError(t *testing.T) {
 }
 
 func TestConn_Lifecycle_OpenDrainCommandsClose(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "loose-only")
 	u, err := transport.ParseURL("file://" + gitdir)
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	c, ok := conn.(*Conn[objfmt.SHA1Hash])
 	require.True(t, ok)
 
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
 
 	oid := strings.Repeat("a", 40)
-	rdr, err = c.Command(context.Background(), "object-info",
+	rdr, err = c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)

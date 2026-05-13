@@ -1,7 +1,6 @@
 package httpt
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"testing"
@@ -140,7 +139,7 @@ func BenchmarkConn_Command(b *testing.B) {
 				userAgent:         wire.DefaultUserAgent,
 				gitProtocolHeader: "version=2",
 			}
-			ctx := context.Background()
+			ctx := b.Context()
 
 			body := func(cmd string, args, caps []string) transport.CommandBody {
 				return func(w *pktline.Writer) error {

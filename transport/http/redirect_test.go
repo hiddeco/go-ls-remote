@@ -25,6 +25,7 @@ import (
 // test, not the advertisement contents.
 func smartHandler(t *testing.T) http.HandlerFunc {
 	t.Helper()
+
 	body := smartAdvBody(t)
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
@@ -34,6 +35,7 @@ func smartHandler(t *testing.T) http.HandlerFunc {
 
 func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -46,7 +48,7 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/old.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -59,10 +61,10 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 
 func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 	t.Parallel()
-	var hops int32
+	var hops atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hops, 1)
+		n := hops.Add(1)
 		// Send the client through more hops than maxRedirects allows.
 		next := fmt.Sprintf("/repo.git/info/refs?service=git-upload-pack&hop=%d", n)
 		http.Redirect(w, r, next, http.StatusFound)
@@ -74,19 +76,20 @@ func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 	tr := New(WithMaxRedirects(2))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	_, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"exceeding maxRedirects must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "probe", pe.Op)
-	assert.True(t, errors.Is(pe.Err, errRedirectTooMany),
+	assert.ErrorIs(t, pe.Err, errRedirectTooMany,
 		"a hop-cap exhaustion must wrap errRedirectTooMany so a sentinel "+
 			"swap would fail the test; got %v", pe.Err)
 }
 
 func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 	t.Parallel()
+
 	// A chain of 9 redirects fits inside the package default of 10 hops.
 	const chainLen = 9
 
@@ -106,7 +109,7 @@ func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/hop-0")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "9 hops must fit inside the default cap of 10")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -114,6 +117,7 @@ func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 
 func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusFound)
@@ -126,10 +130,10 @@ func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
 	tr := New(WithFollowRedirects(FollowRedirectsNever))
 	u := parseTestURL(t, srv, "/old.git")
 
-	_, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a rejected redirect surfaces as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, http.StatusFound, pe.Status,
 		"the surfaced status is the 3xx that was rejected")
@@ -137,6 +141,7 @@ func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
 
 func TestRedirect_Always_FollowsLikeInitial(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/old.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/repo.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -149,13 +154,14 @@ func TestRedirect_Always_FollowsLikeInitial(t *testing.T) {
 	tr := New(WithFollowRedirects(FollowRedirectsAlways))
 	u := parseTestURL(t, srv, "/old.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 }
 
 func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 	t.Parallel()
+
 	// The flow tests the strip path: server A demands auth, the retry
 	// carries `Authorization`, and a 302 hops to server B where the
 	// header must NOT survive. The resolver returns nil for B so the
@@ -173,9 +179,9 @@ func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 	bURL, err := url.Parse(srvB.URL)
 	require.NoError(t, err)
 
-	var aCalls int32
+	var aCalls atomic.Int32
 	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch atomic.AddInt32(&aCalls, 1) {
+		switch aCalls.Add(1) {
 		case 1:
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -198,7 +204,7 @@ func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 	tr := New(WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -208,6 +214,7 @@ func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 
 func TestRedirect_CrossOrigin_ReConsultsResolver(t *testing.T) {
 	t.Parallel()
+
 	// The companion test to the strip case. Same flow, except the
 	// resolver returns DIFFERENT credentials for server B so the
 	// re-consult-and-apply step is observable end-to-end.
@@ -222,9 +229,9 @@ func TestRedirect_CrossOrigin_ReConsultsResolver(t *testing.T) {
 	bURL, err := url.Parse(srvB.URL)
 	require.NoError(t, err)
 
-	var aCalls int32
+	var aCalls atomic.Int32
 	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch atomic.AddInt32(&aCalls, 1) {
+		switch aCalls.Add(1) {
 		case 1:
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -244,7 +251,7 @@ func TestRedirect_CrossOrigin_ReConsultsResolver(t *testing.T) {
 	tr := New(WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -293,6 +300,7 @@ func (s *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // both schemes.
 func schemeRedirectStub(t *testing.T, locationURL string) *stubRoundTripper {
 	t.Helper()
+
 	rt := &stubRoundTripper{}
 	rt.respond = func(_ *http.Request, hop int) *http.Response {
 		switch hop {
@@ -319,6 +327,7 @@ func schemeRedirectStub(t *testing.T, locationURL string) *stubRoundTripper {
 
 func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
 	t.Parallel()
+
 	rt := schemeRedirectStub(t, "http://example.com/repo.git/info/refs?service=git-upload-pack")
 
 	// A scheme-aware resolver: returns Basic on the original https
@@ -340,7 +349,7 @@ func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
 	u, err := transport.ParseURL("https://example.com/repo.git")
 	require.NoError(t, err)
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -356,6 +365,7 @@ func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
 
 func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
 	t.Parallel()
+
 	rt := schemeRedirectStub(t, "https://example.com/repo.git/info/refs?service=git-upload-pack")
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 
@@ -367,7 +377,7 @@ func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
 	u, err := transport.ParseURL("http://example.com/repo.git")
 	require.NoError(t, err)
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -381,6 +391,7 @@ func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
 
 func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 	t.Parallel()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/a.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/b.git/info/refs?"+r.URL.RawQuery, http.StatusMovedPermanently)
@@ -393,7 +404,7 @@ func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/a.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -407,6 +418,7 @@ func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 
 func Test_resolveMaxRedirects(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name string
 		in   int
@@ -421,6 +433,7 @@ func Test_resolveMaxRedirects(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			assert.Equal(t, tc.want, resolveMaxRedirects(tc.in))
 		})
 	}
@@ -428,6 +441,7 @@ func Test_resolveMaxRedirects(t *testing.T) {
 
 func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
 	t.Parallel()
+
 	// `WithMaxRedirects(-1)` clamps to zero, meaning the very first
 	// 3xx must be rejected. The integration matters: a typo in
 	// configuration should not let the probe silently fall back to
@@ -440,22 +454,23 @@ func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
 	tr := New(WithMaxRedirects(-1))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	_, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a negative max-redirects must surface as *ProtocolError; got %T: %v", err, err)
 	// A `0` cap is treated as "redirects disabled", not "exceeded 0
 	// hops": the surfaced sentinel is [errRedirectRejected], the same
 	// one [FollowRedirectsNever] uses, so the message reads naturally
 	// regardless of which knob disabled redirects.
-	assert.True(t, errors.Is(pe.Err, errRedirectRejected),
+	assert.ErrorIs(t, pe.Err, errRedirectRejected,
 		"a 0-cap rejection must wrap errRedirectRejected, not "+
 			"errRedirectTooMany; got %v", pe.Err)
 }
 
 func TestRedirect_Auth401Retry_UsesRedirectedURL(t *testing.T) {
 	t.Parallel()
+
 	// Track the requests that hit Server B (the redirect target). The
 	// flow under test:
 	//   1. probe `/old.git/info/refs` on A → 302 to B
@@ -498,7 +513,7 @@ func TestRedirect_Auth401Retry_UsesRedirectedURL(t *testing.T) {
 	tr := New(WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 

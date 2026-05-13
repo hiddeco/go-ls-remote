@@ -412,7 +412,7 @@ func encodeBenchOfsDeltaPack(b *testing.B, depth int) (packBytes, idxBytes []byt
 	deltaBodyTail := zlibCompressB(b, []byte{0x02, 0x02, 0x00})
 
 	pack := new(bytes.Buffer)
-	pack.Write([]byte("PACK"))
+	pack.WriteString("PACK")
 	_ = binary.Write(pack, binary.BigEndian, uint32(2))
 	_ = binary.Write(pack, binary.BigEndian, uint32(depth+1))
 

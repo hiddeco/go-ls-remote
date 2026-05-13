@@ -13,6 +13,7 @@ import (
 // `upload-pack` implementations (canonical Git emits
 // `agent=git/<version>`; this library emits `agent=lsremote/0`).
 func Test_maskAgent_replacesAgentCapValue(t *testing.T) {
+	t.Parallel()
 	// `version 2\n`        = 10 bytes → 0x000e
 	// `agent=git/2.45.0\n` = 17 bytes → 0x0015
 	// `ls-refs=unborn\n`   = 15 bytes → 0x0013
@@ -32,6 +33,7 @@ func Test_maskAgent_replacesAgentCapValue(t *testing.T) {
 // harness does not flag a phantom divergence on the surrounding
 // capability bytes.
 func Test_maskAgent_passesThroughBytesWithNoAgentLine(t *testing.T) {
+	t.Parallel()
 	in := []byte("000eversion 2\n0013ls-refs=unborn\n0000")
 	got := maskAgent(in)
 	if !bytes.Equal(got, in) {
@@ -45,6 +47,7 @@ func Test_maskAgent_passesThroughBytesWithNoAgentLine(t *testing.T) {
 // is harmless, so the harness can mask both sides without tracking
 // whether one of them is already normalised.
 func Test_maskAgent_idempotent(t *testing.T) {
+	t.Parallel()
 	in := []byte("000eversion 2\n0015agent=git/2.45.0\n0013ls-refs=unborn\n0000")
 	once := maskAgent(in)
 	twice := maskAgent(once)
@@ -59,6 +62,7 @@ func Test_maskAgent_idempotent(t *testing.T) {
 // flush around the args section, and an unmasked mask that dropped
 // delim packets would silently collapse the request grammar.
 func Test_maskAgent_preservesControlPackets(t *testing.T) {
+	t.Parallel()
 	// `command=ls-refs\n` = 16 bytes → 0x0014
 	// delim                → 0x0001
 	// `peel\n`            =  5 bytes → 0x0009
@@ -80,6 +84,7 @@ func Test_maskAgent_preservesControlPackets(t *testing.T) {
 // byte-identical so the harness asserts substantive equivalence on
 // the common cap subset.
 func Test_maskV2Advertisement_dropsCapsAndMasksAgent(t *testing.T) {
+	t.Parallel()
 	// Canonical-shape input: `version 2\n` + `agent=git/X\n` +
 	// `ls-refs=unborn\n` + `fetch=shallow\n` + `server-option\n` +
 	// `object-format=sha1\n` + flush.
@@ -123,6 +128,7 @@ func Test_maskV2Advertisement_dropsCapsAndMasksAgent(t *testing.T) {
 // (via the same idempotent mask) lets the harness still pass when
 // either side carries it.
 func Test_maskV2Advertisement_dropsObjectInfo(t *testing.T) {
+	t.Parallel()
 	// `version 2\n`         = 10 → 0x000e
 	// `agent=lsremote/0\n`  = 17 → 0x0015
 	// `ls-refs=unborn\n`    = 15 → 0x0013
@@ -155,6 +161,7 @@ func Test_maskV2Advertisement_dropsObjectInfo(t *testing.T) {
 // one is canonical bytes off-disk and which is freshly-emitted
 // from this package; idempotence makes that order-independent.
 func Test_maskV2Advertisement_idempotent(t *testing.T) {
+	t.Parallel()
 	in := []byte(
 		"000eversion 2\n" +
 			"0010agent=git/X\n" +

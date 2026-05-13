@@ -11,6 +11,7 @@ import (
 )
 
 func TestNew_zeroValue(t *testing.T) {
+	t.Parallel()
 	tr := New()
 	require.NotNil(t, tr)
 
@@ -21,11 +22,13 @@ func TestNew_zeroValue(t *testing.T) {
 }
 
 func TestTransport_Schemes(t *testing.T) {
+	t.Parallel()
 	tr := New()
 	assert.Equal(t, []string{"ssh"}, tr.Schemes())
 }
 
 func TestWithAuth(t *testing.T) {
+	t.Parallel()
 	want := authResolverFunc(func(_ context.Context, _ string) ([]ssh.AuthMethod, func() error, error) {
 		return nil, nil, nil
 	})
@@ -35,18 +38,20 @@ func TestWithAuth(t *testing.T) {
 	require.NotNil(t, tr.auth, "WithAuth stores the AuthResolver")
 	// Compare by invoking — funcs can't be compared with ==, but the
 	// resolver shape is observable through Resolve.
-	methods, cleanup, err := tr.auth.Resolve(context.Background(), "example.com")
+	methods, cleanup, err := tr.auth.Resolve(t.Context(), "example.com")
 	require.NoError(t, err)
 	assert.Nil(t, methods)
 	assert.Nil(t, cleanup)
 }
 
 func TestWithAuth_nilPermitted(t *testing.T) {
+	t.Parallel()
 	tr := New(WithAuth(nil))
 	assert.Nil(t, tr.auth, "WithAuth(nil) means anonymous auth")
 }
 
 func TestWithClientConfig(t *testing.T) {
+	t.Parallel()
 	want := &ssh.ClientConfig{User: "git"}
 	tr := New(WithClientConfig(want))
 
@@ -54,11 +59,13 @@ func TestWithClientConfig(t *testing.T) {
 }
 
 func TestWithClientConfig_nilPermitted(t *testing.T) {
+	t.Parallel()
 	tr := New(WithClientConfig(nil))
 	assert.Nil(t, tr.clientCfg)
 }
 
 func TestWithKnownHosts(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	want := ssh.HostKeyCallback(func(_ string, _ net.Addr, _ ssh.PublicKey) error {
 		calls++
@@ -74,11 +81,13 @@ func TestWithKnownHosts(t *testing.T) {
 }
 
 func TestWithKnownHosts_nilPermitted(t *testing.T) {
+	t.Parallel()
 	tr := New(WithKnownHosts(nil))
 	assert.Nil(t, tr.hostKey)
 }
 
 func TestWithDialer(t *testing.T) {
+	t.Parallel()
 	want := &net.Dialer{}
 	tr := New(WithDialer(want))
 
@@ -86,11 +95,13 @@ func TestWithDialer(t *testing.T) {
 }
 
 func TestWithDialer_nilPermitted(t *testing.T) {
+	t.Parallel()
 	tr := New(WithDialer(nil))
 	assert.Nil(t, tr.dialer)
 }
 
 func TestNew_nilOptionSkipped(t *testing.T) {
+	t.Parallel()
 	resolver := authResolverFunc(func(_ context.Context, _ string) ([]ssh.AuthMethod, func() error, error) {
 		return nil, nil, nil
 	})
@@ -102,6 +113,7 @@ func TestNew_nilOptionSkipped(t *testing.T) {
 }
 
 func TestNew_multipleOptions(t *testing.T) {
+	t.Parallel()
 	resolver := authResolverFunc(func(_ context.Context, _ string) ([]ssh.AuthMethod, func() error, error) {
 		return nil, nil, nil
 	})
@@ -123,6 +135,7 @@ func TestNew_multipleOptions(t *testing.T) {
 }
 
 func TestNew_lastWins(t *testing.T) {
+	t.Parallel()
 	first := &ssh.ClientConfig{User: "first"}
 	second := &ssh.ClientConfig{User: "second"}
 

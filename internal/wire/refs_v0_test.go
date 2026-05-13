@@ -143,7 +143,7 @@ func TestParseAdvertisement_v0v1(t *testing.T) {
 		ad, err := ParseAdvertisement(r, nil)
 		require.NoError(t, err)
 		require.Len(t, ad.Refs, 1)
-		assert.Equal(t, "", ad.Refs[0].Symref)
+		assert.Empty(t, ad.Refs[0].Symref)
 	})
 
 	t.Run("v0 first line missing NUL is malformed", func(t *testing.T) {

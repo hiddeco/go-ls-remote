@@ -21,6 +21,7 @@ import (
 // later integration harness reads against on-disk state; a stale name
 // here would silently break every consumer.
 func TestEntries_namesResolveOnDisk(t *testing.T) {
+	t.Parallel()
 	entries := inttest.Entries()
 	require.NotEmpty(t, entries, "matrix must declare at least one fixture")
 
@@ -44,8 +45,10 @@ func TestEntries_namesResolveOnDisk(t *testing.T) {
 // fixture bytes and a downstream cross-transport test would compare
 // against a stale baseline.
 func TestEntries_expectedRefsMatchStore(t *testing.T) {
+	t.Parallel()
 	for _, e := range inttest.Entries() {
 		t.Run(e.Name, func(t *testing.T) {
+			t.Parallel()
 			got := openAndCollectRefs(t, e)
 
 			want := make(map[string]inttest.ExpectedRef, len(e.ExpectedRefs))
@@ -53,7 +56,7 @@ func TestEntries_expectedRefsMatchStore(t *testing.T) {
 				want[r.Name] = r
 			}
 
-			assert.Equal(t, len(want), len(got),
+			assert.Len(t, got, len(want),
 				"ref-set size mismatch for %q: want %d got %d (%v)",
 				e.Name, len(want), len(got), refNames(got))
 			for name, w := range want {
@@ -76,8 +79,10 @@ func TestEntries_expectedRefsMatchStore(t *testing.T) {
 //   - Symbolic-HEAD entries (including unborn) declare the symref
 //     target verbatim (e.g. `refs/heads/main`).
 func TestEntries_expectedDefaultBranchMatchesHEAD(t *testing.T) {
+	t.Parallel()
 	for _, e := range inttest.Entries() {
 		t.Run(e.Name, func(t *testing.T) {
+			t.Parallel()
 			switch e.ObjectFormat {
 			case lsremote.ObjectFormatSHA1:
 				store := openSHA1Store(t, e)
@@ -113,11 +118,13 @@ func TestEntries_expectedDefaultBranchMatchesHEAD(t *testing.T) {
 // `object-info` v2 command echoes on the wire; declarations that drift
 // from disk would let a transport regression go unnoticed.
 func TestEntries_expectedObjectInfoMatchesStore(t *testing.T) {
+	t.Parallel()
 	for _, e := range inttest.Entries() {
 		if len(e.ExpectedObjectInfo) == 0 {
 			continue
 		}
 		t.Run(e.Name, func(t *testing.T) {
+			t.Parallel()
 			switch e.ObjectFormat {
 			case lsremote.ObjectFormatSHA1:
 				store := openSHA1Store(t, e)

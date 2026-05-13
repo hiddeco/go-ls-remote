@@ -7,9 +7,10 @@ import (
 	"errors"
 	"testing"
 
-	lsremote "github.com/hiddeco/go-ls-remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	lsremote "github.com/hiddeco/go-ls-remote"
 )
 
 // TestObjectInfo exercises [lsremote.ObjectInfos] against every cell
@@ -35,6 +36,7 @@ import (
 // depends on [lsremote.Tags] yielding at least one entry as a
 // precondition.
 func TestObjectInfo(t *testing.T) {
+	t.Parallel()
 	forEachProviderMode(t, func(t *testing.T, p Provider, m authMode, ctx context.Context) {
 		seq, err := lsremote.Tags(ctx, m.url, m.options...)
 		require.NoErrorf(t, err, "%s/%s: Tags failed", p.Name, m.name)

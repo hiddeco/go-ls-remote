@@ -1,7 +1,6 @@
 package inttest_test
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
@@ -46,7 +45,7 @@ func dialHarness(t *testing.T, srv *inttest.SSHServer, clientSigner ssh.Signer) 
 	u, err := transport.ParseURL(srv.URL())
 	require.NoError(t, err)
 	v := transport.ProtocolV2
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		PreferredProtocol: &v,
 	})
 	require.NoError(t, err)
@@ -109,7 +108,7 @@ func TestNewSSHServer_handlesV2Command(t *testing.T) {
 		}
 	}
 
-	resp, err := conn.Command(context.Background(), "ls-refs",
+	resp, err := conn.Command(t.Context(), "ls-refs",
 		func(w *pktline.Writer) error {
 			return wire.EncodeV2CommandRequest(w, "ls-refs",
 				[]string{"peel", "symrefs"},
@@ -192,7 +191,7 @@ func TestNewSSHServer_acceptsAnyPubkey(t *testing.T) {
 		u, err := transport.ParseURL(srv.URL())
 		require.NoError(t, err)
 		v := transport.ProtocolV2
-		conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+		conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 			PreferredProtocol: &v,
 		})
 		require.NoError(t, err, "key #%d", i)
@@ -205,6 +204,7 @@ func TestNewSSHServer_acceptsAnyPubkey(t *testing.T) {
 // address. Tests downstream depend on the shape (`ssh://git@host:port/repo.git`)
 // matching what canonical Git would accept.
 func TestNewSSHServer_URLShape(t *testing.T) {
+	t.Parallel()
 	store := openLooseOnlySHA1Store(t)
 	srv := inttest.NewSSHServer(t, store)
 

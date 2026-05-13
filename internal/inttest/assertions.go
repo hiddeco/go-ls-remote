@@ -39,7 +39,7 @@ func CompareRefs(t *testing.T, got []lsremote.Ref, want []ExpectedRef, fixtureNa
 		wantByName[r.Name] = r
 	}
 
-	assert.Equal(t, len(wantByName), len(gotByName),
+	assert.Len(t, gotByName, len(wantByName),
 		"%s: ref-set size mismatch; want %d got %d",
 		fixtureName, len(wantByName), len(gotByName))
 

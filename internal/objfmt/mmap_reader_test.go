@@ -11,7 +11,9 @@ import (
 )
 
 func TestPack_openPackReader(t *testing.T) {
+	t.Parallel()
 	t.Run("opens a regular file and reads at offset", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		path := filepath.Join(dir, "blob.bin")
 		want := []byte("PACK\x00\x00\x00\x02hello world")
@@ -40,6 +42,7 @@ func TestPack_openPackReader(t *testing.T) {
 	})
 
 	t.Run("returns an error for a missing path", func(t *testing.T) {
+		t.Parallel()
 		_, err := openPackReader(filepath.Join(t.TempDir(), "nope.pack"))
 		assert.Error(t, err)
 	})

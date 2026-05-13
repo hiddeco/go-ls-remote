@@ -1,7 +1,6 @@
 package filet
 
 import (
-	"context"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -57,6 +56,7 @@ import (
 //   - with-reftable-content: reftable ref backend with a real commit.
 //     ls-refs surfaces refs/heads/main from the reftable stack.
 func TestFixtureMatrix(t *testing.T) {
+	t.Parallel()
 	t.Run("empty", testMatrixEmpty)
 	t.Run("loose-only", testMatrixLooseOnly)
 	t.Run("packed-only", testMatrixPackedOnly)
@@ -84,7 +84,7 @@ func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 	require.NoError(t, err)
 
 	tr := New()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		UserAgent: "matrix-test/0.0",
 	})
 	require.NoError(t, err)
@@ -112,6 +112,7 @@ func openMatrixConn(t *testing.T, gitdir string) (transport.Conn, []string) {
 }
 
 func testMatrixEmpty(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "empty")
 	c, caps := openMatrixConn(t, gitdir)
 
@@ -125,7 +126,7 @@ func testMatrixEmpty(t *testing.T) {
 	// response is a flush-only stream with no data packets.
 	//
 	// [ls-refs.c::send_possibly_unborn_head]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L123
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
@@ -139,11 +140,12 @@ func testMatrixEmpty(t *testing.T) {
 }
 
 func testMatrixLooseOnly(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "loose-only")
 	c, caps := openMatrixConn(t, gitdir)
 	assertHasCap(t, caps, "object-format=sha1")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs",
 			[]string{"peel", "symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -159,10 +161,11 @@ func testMatrixLooseOnly(t *testing.T) {
 }
 
 func testMatrixPackedOnly(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "packed-only")
 	c, _ := openMatrixConn(t, gitdir)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
@@ -177,10 +180,11 @@ func testMatrixPackedOnly(t *testing.T) {
 }
 
 func testMatrixMixed(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "mixed")
 	c, _ := openMatrixConn(t, gitdir)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 
@@ -195,6 +199,7 @@ func testMatrixMixed(t *testing.T) {
 }
 
 func testMatrixUnbornHead(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "unborn-head")
 	c, caps := openMatrixConn(t, gitdir)
 	// The server advertises `ls-refs=unborn` so a v2 client knows the
@@ -205,7 +210,7 @@ func testMatrixUnbornHead(t *testing.T) {
 	// [ls-refs.c:185-186]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L185-L186
 	assertHasCap(t, caps, "ls-refs=unborn")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs",
 			[]string{"symrefs", "unborn"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -224,6 +229,7 @@ func testMatrixUnbornHead(t *testing.T) {
 }
 
 func testMatrixSHA256(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "sha256")
 	_, caps := openMatrixConn(t, gitdir)
 	// The fixture flips `extensions.objectFormat` to `sha256`; the
@@ -236,6 +242,7 @@ func testMatrixSHA256(t *testing.T) {
 }
 
 func testMatrixMidxWithSiblings(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "midx-with-siblings")
 	c, _ := openMatrixConn(t, gitdir)
 
@@ -243,7 +250,7 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 	// so a default ls-refs is a flush-only stream. We exercise the
 	// command path so the encoder + dispatcher are fully drained
 	// before the next command on the same Conn.
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -255,7 +262,7 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 	// command loop reaches the pack backend through the in-process
 	// goroutine.
 	const threeCommitOID = "26dae744f51e61913f50bd402cbe63953c7d637b"
-	rdr, err = c.Command(context.Background(), "object-info",
+	rdr, err = c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + threeCommitOID},
 			[]string{"object-format=sha1"}))
@@ -271,6 +278,7 @@ func testMatrixMidxWithSiblings(t *testing.T) {
 }
 
 func testMatrixWithAlternatesChain(t *testing.T) {
+	t.Parallel()
 	// The chain fixture ships three sibling repos (a/, b/, c/) under a
 	// single fixture root with no top-level dotgit/. `MaterializeRepo`
 	// would fail the test on that layout; `MaterializeRepoTree`
@@ -290,7 +298,7 @@ func testMatrixWithAlternatesChain(t *testing.T) {
 	// transitively through B to C without surfacing
 	// `ErrCorruptObject`. A clean ls-refs flush proves the server
 	// goroutine reached its command loop on the chained store.
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	pkts := readAllPackets(t, rdr)
@@ -299,11 +307,12 @@ func testMatrixWithAlternatesChain(t *testing.T) {
 }
 
 func testMatrixWithReftableContent(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeServeableFixture(t, "with-reftable-content")
 	c, caps := openMatrixConn(t, gitdir)
 	assertHasCap(t, caps, "object-format=sha1")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"symrefs"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 

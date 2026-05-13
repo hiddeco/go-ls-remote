@@ -2,7 +2,6 @@ package wire
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -352,7 +351,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "repository disabled")
 		assert.Empty(t, infos)
 	})
@@ -363,7 +362,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(buf))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "something bad")
 		assert.Empty(t, infos)
 	})
@@ -391,7 +390,7 @@ func TestDecodeObjectInfo(t *testing.T) {
 
 		infos, err := DecodeObjectInfo(pktline.NewReader(&buf))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF),
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF,
 			"want io.ErrUnexpectedEOF, got %v", err)
 		assert.Empty(t, infos)
 	})
@@ -469,7 +468,6 @@ func TestDecodeObjectInfo(t *testing.T) {
 			{OID: oid3},
 		}, infos)
 	})
-
 }
 
 // readRequestArgs walks an encoded `object-info` request stream and

@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -13,8 +15,6 @@ import (
 	"github.com/hiddeco/go-ls-remote/internal/wire"
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // pktLine encodes payload as a single pkt-line, prefixing it with a
@@ -42,7 +42,7 @@ func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Op
 	r := pktline.NewReader(src)
 	w := pktline.NewWriter(&sink)
 
-	require.NoError(t, Serve(context.Background(), r, w, store, opts))
+	require.NoError(t, Serve(t.Context(), r, w, store, opts))
 	return sink.Bytes()
 }
 
@@ -56,6 +56,7 @@ func runAdvertise[H objfmt.Hash](t *testing.T, store *objstore.Store[H], opts Op
 // [serve.c::protocol_v2_advertise_capabilities]: https://github.com/git/git/blob/v2.54.0/serve.c#L186
 // [pkt-line.c::packet_write]: https://github.com/git/git/blob/v2.54.0/pkt-line.c#L244
 func TestServe_V2AdvertisementBytes(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -79,6 +80,7 @@ func TestServe_V2AdvertisementBytes(t *testing.T) {
 //
 // [serve.c::agent_advertise lines 25-31]: https://github.com/git/git/blob/v2.54.0/serve.c#L25-L31
 func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	got := runAdvertise(t, store, Options{
@@ -97,6 +99,7 @@ func TestServe_V2AdvertisementDefaultsAgent(t *testing.T) {
 //
 // [serve.c::object_format_advertise lines 53-58]: https://github.com/git/git/blob/v2.54.0/serve.c#L53-L58
 func TestServe_V2AdvertisementSHA256(t *testing.T) {
+	t.Parallel()
 	gitdir := testfixture.MaterializeRepo(t, "sha256")
 	store, err := objstore.Open[objfmt.SHA256Hash](gitdir)
 	require.NoError(t, err)
@@ -129,6 +132,8 @@ func TestServe_V2AdvertisementSHA256(t *testing.T) {
 // The fixture carries 1000 packed refs (with a peel mix on one arm)
 // to amortise the HEAD line and the cap-list assembly so the per-ref
 // average isolates the loop body's allocation cost.
+//
+//nolint:paralleltest // testing.AllocsPerRun panics in parallel tests
 func TestWriteV0Advertisement_AllocsPerRef(t *testing.T) {
 	const refCount = 1000
 	const maxAllocsPerRef = 1.0

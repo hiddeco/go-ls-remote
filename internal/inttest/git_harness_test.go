@@ -1,7 +1,6 @@
 package inttest_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net"
@@ -29,7 +28,7 @@ func dialGitHarness(t *testing.T, rawURL string) transport.Conn {
 	u, err := transport.ParseURL(rawURL)
 	require.NoError(t, err)
 	v := transport.ProtocolV2
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		PreferredProtocol: &v,
 	})
 	require.NoError(t, err)
@@ -83,7 +82,7 @@ func TestNewGitServer_handlesV2Command(t *testing.T) {
 		}
 	}
 
-	resp, err := conn.Command(context.Background(), "ls-refs",
+	resp, err := conn.Command(t.Context(), "ls-refs",
 		func(w *pktline.Writer) error {
 			return wire.EncodeV2CommandRequest(w, "ls-refs",
 				[]string{"peel", "symrefs"},
@@ -134,7 +133,7 @@ func TestNewGitServer_acceptsMultipleConnections(t *testing.T) {
 			u, err := transport.ParseURL(url)
 			require.NoError(t, err, "dialer %d: parse", i)
 			v := transport.ProtocolV2
-			conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+			conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 				PreferredProtocol: &v,
 			})
 			require.NoError(t, err, "dialer %d: open", i)
@@ -167,7 +166,8 @@ func TestNewGitServer_rejectsMalformedHandshake(t *testing.T) {
 		addr = addr[:i]
 	}
 
-	conn, err := net.Dial("tcp", addr)
+	var d net.Dialer
+	conn, err := d.DialContext(t.Context(), "tcp", addr)
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))

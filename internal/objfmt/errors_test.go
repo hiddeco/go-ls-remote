@@ -2,7 +2,6 @@ package objfmt
 
 import (
 	"encoding/binary"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,7 +12,9 @@ import (
 )
 
 func TestSentinelErrors(t *testing.T) {
+	t.Parallel()
 	t.Run("OpenPack on a non-PACK file wraps ErrBadMagic", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		buf := append([]byte("JUNK"), make([]byte, 8)...)
 		buf = append(buf, trailerPad(20)...)
@@ -25,6 +26,7 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenPack on a too-short file wraps ErrShortFile", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		path := writeBytes(t, dir, "tiny.pack", []byte{0x00, 0x01, 0x02})
 
@@ -34,8 +36,9 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenPack on an unsupported version wraps ErrUnsupportedVersion", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
-		hdr := make([]byte, 12)
+		hdr := make([]byte, 12, 12+20)
 		copy(hdr, "PACK")
 		binary.BigEndian.PutUint32(hdr[4:8], 99)
 		path := writeBytes(t, dir, "v99.pack", append(hdr, trailerPad(20)...))
@@ -46,12 +49,14 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenPack with a nil algo wraps ErrUnsupportedAlgo", func(t *testing.T) {
+		t.Parallel()
 		_, err := OpenPack[SHA1Hash](packFixture(t, "empty.pack"), nil)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedAlgo)
 	})
 
 	t.Run("OpenIdx on truncated input wraps ErrTruncated", func(t *testing.T) {
+		t.Parallel()
 		// A two-byte file is short enough to slip past the v2-magic
 		// check (which requires 4 bytes) and lands in the v1
 		// fan-out-truncation branch.
@@ -64,7 +69,9 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenIdx on an unsupported v2 version wraps ErrUnsupportedVersion", func(t *testing.T) {
-		buf := []byte{0xff, 't', 'O', 'c', 0, 0, 0, 99}
+		t.Parallel()
+		buf := make([]byte, 0, 8+256*4+20+20)
+		buf = append(buf, 0xff, 't', 'O', 'c', 0, 0, 0, 99)
 		buf = append(buf, make([]byte, 256*4+20+20)...)
 		path := filepath.Join(t.TempDir(), "v99.idx")
 		require.NoError(t, os.WriteFile(path, buf, 0o600))
@@ -75,6 +82,7 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenMidx on a non-MIDX file wraps ErrBadMagic", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		buf := make([]byte, midxHeaderSize+20)
 		copy(buf, "JUNK")
@@ -86,6 +94,7 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("OpenMidx on a hash-version mismatch wraps ErrAlgoMismatch", func(t *testing.T) {
+		t.Parallel()
 		// Read the SHA-1 fixture and lie about the hash version so the
 		// caller-asserted [SHA256] disagrees with the on-disk byte.
 		data, err := os.ReadFile(idxFixture(t, "multi-pack-index"))
@@ -99,6 +108,7 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("Pack.VerifyChecksum on a flipped byte wraps ErrChecksumMismatch", func(t *testing.T) {
+		t.Parallel()
 		dst := copyFixture(t, "three-objects.pack")
 
 		f, err := os.OpenFile(dst, os.O_RDWR, 0)
@@ -124,6 +134,7 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("Idx.VerifyChecksum on a flipped byte wraps ErrChecksumMismatch", func(t *testing.T) {
+		t.Parallel()
 		dst := filepath.Join(t.TempDir(), "three-objects.idx")
 		src, err := os.Open(idxFixture(t, "three-objects.idx"))
 		require.NoError(t, err)
@@ -157,10 +168,11 @@ func TestSentinelErrors(t *testing.T) {
 	})
 
 	t.Run("sentinels are distinct", func(t *testing.T) {
+		t.Parallel()
 		// Sanity-check that wrapping doesn't accidentally collapse two
 		// sentinels into the same value.
-		assert.False(t, errors.Is(ErrBadMagic, ErrTruncated))
-		assert.False(t, errors.Is(ErrTruncated, ErrCorrupt))
-		assert.False(t, errors.Is(ErrCorrupt, ErrChecksumMismatch))
+		require.NotErrorIs(t, ErrBadMagic, ErrTruncated)
+		require.NotErrorIs(t, ErrTruncated, ErrCorrupt)
+		assert.NotErrorIs(t, ErrCorrupt, ErrChecksumMismatch)
 	})
 }

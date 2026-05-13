@@ -47,11 +47,12 @@ func openLooseOnlySHA1Store(t *testing.T) *objstore.Store[objfmt.SHA1Hash] {
 // that follows — confirming the harness wires `internal/server.Serve`
 // against the supplied store.
 func TestNewHTTPServer_servesAdvertisement(t *testing.T) {
+	t.Parallel()
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
-	req, err := http.NewRequest(http.MethodGet,
-		base+"/repo.git/info/refs?service=git-upload-pack", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		base+"/repo.git/info/refs?service=git-upload-pack", http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Git-Protocol", "version=2")
 
@@ -90,6 +91,7 @@ func TestNewHTTPServer_servesAdvertisement(t *testing.T) {
 // a v2 `ls-refs` command POST through `internal/server.Serve` and
 // returns at least one `refs/heads/` line for the `loose-only` fixture.
 func TestNewHTTPServer_handlesCommandPost(t *testing.T) {
+	t.Parallel()
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
@@ -100,7 +102,7 @@ func TestNewHTTPServer_handlesCommandPost(t *testing.T) {
 			[]string{"peel", "symrefs"},
 			[]string{"object-format=sha1"}))
 
-	req, err := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
 		base+"/repo.git/git-upload-pack", bytes.NewReader(body.Bytes()))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
@@ -152,10 +154,14 @@ func TestNewHTTPServer_handlesCommandPost(t *testing.T) {
 // not mount return 404. The harness mounts the fixed `/repo.git/...`
 // suffix; everything else is `http.NotFound`.
 func TestNewHTTPServer_unsupportedPath(t *testing.T) {
+	t.Parallel()
 	store := openLooseOnlySHA1Store(t)
 	base := inttest.NewHTTPServer(t, store)
 
-	resp, err := http.Get(base + "/elsewhere.git/info/refs?service=git-upload-pack")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		base+"/elsewhere.git/info/refs?service=git-upload-pack", http.NoBody)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode,
@@ -168,6 +174,7 @@ func TestNewHTTPServer_unsupportedPath(t *testing.T) {
 // minimum primitive the cross-transport and error-matrix suites compose
 // to test redirect-policy behaviours.
 func TestNewHTTPRedirectServer_emitsConfiguredStatus(t *testing.T) {
+	t.Parallel()
 	const dest = "https://example.com/repo.git/info/refs?service=git-upload-pack"
 	base := inttest.NewHTTPRedirectServer(t, http.StatusFound, dest)
 
@@ -178,7 +185,10 @@ func TestNewHTTPRedirectServer_emitsConfiguredStatus(t *testing.T) {
 			return http.ErrUseLastResponse
 		},
 	}
-	resp, err := client.Get(base + "/whatever/info/refs?service=git-upload-pack")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		base+"/whatever/info/refs?service=git-upload-pack", http.NoBody)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusFound, resp.StatusCode)

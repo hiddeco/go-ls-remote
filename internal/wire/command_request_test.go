@@ -2,7 +2,6 @@ package wire
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"testing"
 
@@ -98,7 +97,7 @@ func TestEncodeV2CommandRequest_PropagatesWriterError(t *testing.T) {
 	bw := pktline.NewWriter(bad)
 	err := EncodeV2CommandRequest(bw, "ls-refs", nil, nil)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, io.ErrClosedPipe),
+	assert.ErrorIs(t, err, io.ErrClosedPipe,
 		"writer error must propagate; got %v", err)
 }
 
@@ -114,7 +113,7 @@ func TestEncodeV2CommandRequest_PropagatesWriterError_OnCap(t *testing.T) {
 	bw := pktline.NewWriter(bad)
 	err := EncodeV2CommandRequest(bw, "ls-refs", nil, []string{"object-format=sha1"})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, io.ErrShortWrite),
+	assert.ErrorIs(t, err, io.ErrShortWrite,
 		"capability-loop write error must propagate; got %v", err)
 }
 
@@ -129,7 +128,7 @@ func TestEncodeV2CommandRequest_PropagatesWriterError_OnArg(t *testing.T) {
 	err := EncodeV2CommandRequest(bw, "ls-refs",
 		[]string{"peel"}, []string{"object-format=sha1"})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, io.ErrShortWrite),
+	assert.ErrorIs(t, err, io.ErrShortWrite,
 		"argument-loop write error must propagate; got %v", err)
 }
 

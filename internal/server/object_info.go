@@ -83,7 +83,8 @@ import (
 // [protocol-caps.c::send_info lines 37-77]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37-L77
 // [protocol-caps.c:66-67]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L66-L67
 func handleObjectInfo[H objfmt.Hash](r *argsReader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) error {
+	store *objstore.Store[H], opts Options,
+) error {
 	_ = opts
 
 	args, oids, err := parseObjectInfoArgs(r, w)
@@ -187,7 +188,8 @@ func parseObjectInfoArgs(r *argsReader, w *pktline.Writer) (wire.ObjectInfoArgs,
 //
 // [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
-	args wire.ObjectInfoArgs, oids []string) error {
+	args wire.ObjectInfoArgs, oids []string,
+) error {
 	if len(oids) == 0 {
 		// `send_info:44-45`: no OIDs ⇒ no attrs line and no obj-info
 		// lines, even when `size` was set.
@@ -247,7 +249,8 @@ func writeObjectInfoResponse[H objfmt.Hash](w *pktline.Writer, store *objstore.S
 //     [wire.ErrServerRefused] so the dispatcher terminates the
 //     session.
 func emitObjectInfoLine[H objfmt.Hash](w *pktline.Writer, store *objstore.Store[H],
-	line []byte, oidHex string, wantSize bool) ([]byte, error) {
+	line []byte, oidHex string, wantSize bool,
+) ([]byte, error) {
 	hash, err := objfmt.ParseHexAs[H](oidHex)
 	if err != nil {
 		// [protocol-caps.c:55-61]: malformed hex ⇒ inline ERR + continue.

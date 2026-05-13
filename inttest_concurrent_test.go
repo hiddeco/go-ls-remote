@@ -1,7 +1,6 @@
 package lsremote_test
 
 import (
-	"context"
 	"sort"
 	"sync"
 	"testing"
@@ -26,8 +25,10 @@ import (
 // configured [http.Client], and a regression that serialises the
 // transport-level Conn would surface on both paths.
 func TestSession_ConcurrentHTTP(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"http", "https"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			runHTTPConcurrent(t, lookupTransport(t, name))
 		})
 	}
@@ -41,8 +42,10 @@ func TestSession_ConcurrentHTTP(t *testing.T) {
 // every goroutine observes the same wire-derived results — a
 // regression that broke the serial path would surface here.
 func TestSession_SerialisedNonHTTP(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"ssh", "git", "file"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			runSerialisedConcurrent(t, lookupTransport(t, name))
 		})
 	}
@@ -88,7 +91,7 @@ func runHTTPConcurrent(t *testing.T, tp transportSetup) {
 	gitdir := entry.Materialize(t)
 	ep := tp.start(t, entry, gitdir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := []lsremote.Option{
 		lsremote.WithTransports(ep.registry),
 		lsremote.WithProtocol(lsremote.ProtocolV2),
@@ -122,13 +125,13 @@ func runHTTPConcurrent(t *testing.T, tp transportSetup) {
 		wg.Go(func() {
 			for range iterations {
 				gotRefs, err := session.ListRefs(ctx, args)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.Equal(t, wantRefs, gotRefs,
 					"ListRefs result must be stable across concurrent calls")
 
 				gotInfos, err := session.ObjectInfo(ctx, oids,
 					lsremote.ObjectInfoRequest{Size: true})
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.Equal(t, wantInfos, gotInfos,
 					"ObjectInfo result must be stable across concurrent calls")
 			}
@@ -150,7 +153,7 @@ func runSerialisedConcurrent(t *testing.T, tp transportSetup) {
 	gitdir := entry.Materialize(t)
 	ep := tp.start(t, entry, gitdir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := []lsremote.Option{
 		lsremote.WithTransports(ep.registry),
 		lsremote.WithProtocol(lsremote.ProtocolV2),
@@ -187,10 +190,10 @@ func runSerialisedConcurrent(t *testing.T, tp transportSetup) {
 					lsremote.ObjectInfoRequest{Size: true})
 				mu.Unlock()
 
-				assert.NoError(t, refsErr)
+				require.NoError(t, refsErr)
 				assert.Equal(t, wantRefs, gotRefs,
 					"serialised ListRefs must match the baseline")
-				assert.NoError(t, infosErr)
+				require.NoError(t, infosErr)
 				assert.Equal(t, wantInfos, gotInfos,
 					"serialised ObjectInfo must match the baseline")
 			}

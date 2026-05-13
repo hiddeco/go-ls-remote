@@ -2,12 +2,13 @@ package server
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/hiddeco/go-ls-remote/internal/objstore"
@@ -15,8 +16,6 @@ import (
 	"github.com/hiddeco/go-ls-remote/pktline"
 	"github.com/hiddeco/go-ls-remote/trace"
 	"github.com/hiddeco/go-ls-remote/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // recordingTracer captures every event passed through the [trace.Tracer]
@@ -61,7 +60,8 @@ func (r *recordingTracer) commandEvents() []trace.CommandEvent {
 // the same way `runV2Session` does, to keep the assertions focused on
 // the post-advertisement bytes.
 func runV2SessionWithTracer(t *testing.T, store *objstore.Store[objfmt.SHA1Hash],
-	tracer trace.Tracer, request []byte) (response []byte, err error) {
+	tracer trace.Tracer, request []byte,
+) (response []byte, err error) {
 	t.Helper()
 
 	src := bytes.NewReader(request)
@@ -69,7 +69,7 @@ func runV2SessionWithTracer(t *testing.T, store *objstore.Store[objfmt.SHA1Hash]
 	r := pktline.NewReader(src)
 	w := pktline.NewWriter(&sink)
 
-	err = Serve(context.Background(), r, w, store, Options{
+	err = Serve(t.Context(), r, w, store, Options{
 		Agent:             "test-agent/0.0",
 		PreferredProtocol: transport.ProtocolV2,
 		Tracer:            tracer,
@@ -89,6 +89,7 @@ func runV2SessionWithTracer(t *testing.T, store *objstore.Store[objfmt.SHA1Hash]
 // events have an empty `URL` (the in-process emulator has no remote
 // URL) and the canonical command name.
 func TestServe_TracerSingleLSRefs(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 
@@ -114,7 +115,7 @@ func TestServe_TracerSingleLSRefs(t *testing.T) {
 		"in-process emulator has no remote URL; URL must be empty")
 	assert.Equal(t, time.Duration(0), start.Duration,
 		"start event must carry a zero duration")
-	assert.NoError(t, start.Err,
+	require.NoError(t, start.Err,
 		"start event must carry a nil error")
 	assert.False(t, start.Time.IsZero(),
 		"start event must carry a non-zero wall-clock time")
@@ -122,9 +123,9 @@ func TestServe_TracerSingleLSRefs(t *testing.T) {
 	assert.Equal(t, "ls-refs", end.Name)
 	assert.Equal(t, trace.CommandEnd, end.Phase)
 	assert.Empty(t, end.URL)
-	assert.Greater(t, int64(end.Duration), int64(0),
+	assert.Positive(t, int64(end.Duration),
 		"end event must carry a positive duration")
-	assert.NoError(t, end.Err,
+	require.NoError(t, end.Err,
 		"successful handler must surface a nil error on the end event")
 	assert.False(t, end.Time.IsZero())
 	assert.False(t, end.Time.Before(start.Time),
@@ -136,6 +137,7 @@ func TestServe_TracerSingleLSRefs(t *testing.T) {
 // events in the expected order: ls-refs Start, ls-refs End,
 // object-info Start, object-info End.
 func TestServe_TracerSequenceLSRefsObjectInfo(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 
@@ -160,7 +162,7 @@ func TestServe_TracerSequenceLSRefsObjectInfo(t *testing.T) {
 	assert.Equal(t, trace.CommandStart, events[0].Phase)
 	assert.Equal(t, "ls-refs", events[1].Name)
 	assert.Equal(t, trace.CommandEnd, events[1].Phase)
-	assert.NoError(t, events[1].Err)
+	require.NoError(t, events[1].Err)
 
 	assert.Equal(t, "object-info", events[2].Name)
 	assert.Equal(t, trace.CommandStart, events[2].Phase)
@@ -176,6 +178,7 @@ func TestServe_TracerSequenceLSRefsObjectInfo(t *testing.T) {
 // observe the protocol-level refusal without re-decoding the response
 // stream.
 func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := filepath.Join("..", "..", "testdata", "repos", "pack-only")
 	require.NoError(t, copyFixtureTree(src, dir))
@@ -197,7 +200,7 @@ func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 	})
 	_, serveErr := runV2SessionWithTracer(t, store, tr, req)
 	require.Error(t, serveErr)
-	require.True(t, errors.Is(serveErr, wire.ErrServerRefused),
+	require.ErrorIs(t, serveErr, wire.ErrServerRefused,
 		"want errors.Is(err, wire.ErrServerRefused); got %v", serveErr)
 
 	events := tr.commandEvents()
@@ -208,12 +211,12 @@ func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 	end := events[1]
 	assert.Equal(t, "object-info", start.Name)
 	assert.Equal(t, trace.CommandStart, start.Phase)
-	assert.NoError(t, start.Err)
+	require.NoError(t, start.Err)
 
 	assert.Equal(t, "object-info", end.Name)
 	assert.Equal(t, trace.CommandEnd, end.Phase)
 	require.Error(t, end.Err)
-	assert.True(t, errors.Is(end.Err, wire.ErrServerRefused),
+	assert.ErrorIs(t, end.Err, wire.ErrServerRefused,
 		"end-event Err must wrap wire.ErrServerRefused; got %v", end.Err)
 }
 
@@ -222,6 +225,7 @@ func TestServe_TracerObjectInfoCorrupt(t *testing.T) {
 // runs without panic. The [trace.Emit] helper is itself nil-safe; this
 // test exercises the call sites that wrap each handler dispatch.
 func TestServe_TracerNilNoOp(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 
 	var req bytes.Buffer
@@ -243,6 +247,7 @@ func TestServe_TracerNilNoOp(t *testing.T) {
 // keeping the unknown-command path silent on the tracer keeps the
 // emitted events focused on real command dispatches.
 func TestServe_TracerUnknownCommandSilent(t *testing.T) {
+	t.Parallel()
 	store := openEmptyStore(t)
 	tr := &recordingTracer{}
 
@@ -253,7 +258,7 @@ func TestServe_TracerUnknownCommandSilent(t *testing.T) {
 
 	_, err := runV2SessionWithTracer(t, store, tr, req.Bytes())
 	require.Error(t, err)
-	require.True(t, errors.Is(err, wire.ErrServerRefused))
+	require.ErrorIs(t, err, wire.ErrServerRefused)
 
 	events := tr.commandEvents()
 	assert.Empty(t, events,

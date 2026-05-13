@@ -359,7 +359,8 @@ func (s *Session) ListRefs(ctx context.Context, args RefsRequest) ([]Ref, error)
 // iterator: an `ls-refs` response can be arbitrarily large and should
 // be streamed rather than buffered.
 func (s *Session) ObjectInfo(ctx context.Context, oids []string,
-	args ObjectInfoRequest) ([]ObjectInfo, error) {
+	args ObjectInfoRequest,
+) ([]ObjectInfo, error) {
 	if err := s.checkAlive("object-info"); err != nil {
 		return nil, err
 	}

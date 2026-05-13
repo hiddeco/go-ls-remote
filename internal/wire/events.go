@@ -10,8 +10,6 @@ import "time"
 // encoder downgrades silently and emits this event so a tracer can
 // surface the divergence to a caller diagnosing missing data.
 //
-// [gitprotocol-v2.adoc §"command-request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
-//
 // CapabilityDropEvent is owned by the `wire` package rather than the
 // `trace` package because it is specific to encoder downgrades and
 // would not benefit other layers. Adding it to `trace` would extend
@@ -19,6 +17,8 @@ import "time"
 // keeps the cross-package contract minimal — `trace` only needs to
 // expose the [trace.Event] interface for third-party events to flow
 // through any [trace.Tracer].
+//
+// [gitprotocol-v2.adoc §"command-request"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#command-request
 type CapabilityDropEvent struct {
 	// Time is the wall-clock time the event was generated.
 	Time time.Time

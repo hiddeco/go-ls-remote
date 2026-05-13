@@ -18,7 +18,7 @@ func FuzzParseAdvertisement(f *testing.F) {
 		f.Add(seed)
 	}
 
-	f.Fuzz(func(t *testing.T, data []byte) {
+	f.Fuzz(func(_ *testing.T, data []byte) {
 		r := pktline.NewReader(bytes.NewReader(data))
 		_, _ = ParseAdvertisement(r, nil)
 	})

@@ -61,7 +61,8 @@ const gitRepoMount = "/repo.git"
 func NewGitServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) string {
 	t.Helper()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("inttest.NewGitServer: listen: %v", err)
 	}
@@ -210,10 +211,7 @@ func validateGitHandshake(payload []byte) error {
 	// entries are optional and live behind an additional NUL.
 	//
 	// [daemon.c:623]: https://github.com/git/git/blob/v2.54.0/daemon.c#L623
-	hostField := rest
-	if i := bytes.IndexByte(rest, 0); i >= 0 {
-		hostField = rest[:i]
-	}
+	hostField, _, _ := bytes.Cut(rest, []byte{0})
 	if !bytes.HasPrefix(hostField, []byte("host=")) {
 		return fmt.Errorf("missing host= field; got %q", hostField)
 	}

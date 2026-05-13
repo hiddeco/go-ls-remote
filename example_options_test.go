@@ -69,6 +69,6 @@ func ExampleWithTracer() {
 		lsremote.RefsRequest{},
 		lsremote.WithTracer(tracer))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err) //nolint:gocritic // example doc pattern: log.Fatal mirrors typical caller code
 	}
 }

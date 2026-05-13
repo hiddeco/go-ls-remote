@@ -82,11 +82,11 @@ func BenchmarkParseAdvertisement_v0(b *testing.B) {
 // references, so `applySymrefs` exercises its full O(symrefs * refs)
 // fan-out.
 //
-// [gitprotocol-pack.adoc §"Reference Discovery"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#reference-discovery
-//
 // The attribute mix per ref — ~5% symbolic, ~30% peeled, the remainder
 // plain — mirrors a tag-heavy mirror's advertisement output. OIDs are
 // synthesised from the index so the bytes are stable across runs.
+//
+// [gitprotocol-pack.adoc §"Reference Discovery"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#reference-discovery
 func buildBenchV0Advertisement(b *testing.B, n int) *bytes.Buffer {
 	b.Helper()
 

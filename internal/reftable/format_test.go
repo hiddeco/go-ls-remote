@@ -1,14 +1,14 @@
 package reftable
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hiddeco/go-ls-remote/internal/objfmt"
 )
 
 // fixtureRoot resolves the repo-root testdata/reftable directory.
@@ -29,7 +29,9 @@ func readFixture(t *testing.T, rel string) []byte {
 }
 
 func Test_parseHeader(t *testing.T) {
+	t.Parallel()
 	t.Run("v1_sha1_happy", func(t *testing.T) {
+		t.Parallel()
 		buf := readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -41,6 +43,7 @@ func Test_parseHeader(t *testing.T) {
 	})
 
 	t.Run("v2_sha256_happy", func(t *testing.T) {
+		t.Parallel()
 		buf := readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -52,40 +55,46 @@ func Test_parseHeader(t *testing.T) {
 	})
 
 	t.Run("short_input", func(t *testing.T) {
+		t.Parallel()
 		_, err := parseHeader([]byte("REFT"))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrShortFile), "want ErrShortFile, got %v", err)
+		assert.ErrorIs(t, err, ErrShortFile, "want ErrShortFile, got %v", err)
 	})
 
 	t.Run("bad_magic", func(t *testing.T) {
+		t.Parallel()
 		// Start from a valid v1 header and corrupt the magic.
 		buf := append([]byte{}, readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")[:headerSizeV1]...)
 		copy(buf[:4], "XXXX")
 		_, err := parseHeader(buf)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrBadMagic), "want ErrBadMagic, got %v", err)
+		assert.ErrorIs(t, err, ErrBadMagic, "want ErrBadMagic, got %v", err)
 	})
 
 	t.Run("bad_version", func(t *testing.T) {
+		t.Parallel()
 		buf := append([]byte{}, readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")[:headerSizeV1]...)
 		buf[4] = 99
 		_, err := parseHeader(buf)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsupportedVersion), "want ErrUnsupportedVersion, got %v", err)
+		assert.ErrorIs(t, err, ErrUnsupportedVersion, "want ErrUnsupportedVersion, got %v", err)
 	})
 
 	t.Run("v2_bad_hash_id", func(t *testing.T) {
+		t.Parallel()
 		buf := append([]byte{}, readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")[:headerSizeV2]...)
 		// Overwrite the trailing 4-byte hash_id with junk.
 		copy(buf[24:28], []byte{'J', 'U', 'N', 'K'})
 		_, err := parseHeader(buf)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrBadHashID), "want ErrBadHashID, got %v", err)
+		assert.ErrorIs(t, err, ErrBadHashID, "want ErrBadHashID, got %v", err)
 	})
 }
 
 func Test_verifyTrailer(t *testing.T) {
+	t.Parallel()
 	t.Run("single_sha1_passes", func(t *testing.T) {
+		t.Parallel()
 		buf := readFixture(t, "single-sha1/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -93,6 +102,7 @@ func Test_verifyTrailer(t *testing.T) {
 	})
 
 	t.Run("single_sha256_passes", func(t *testing.T) {
+		t.Parallel()
 		buf := readFixture(t, "single-sha256/0001-0001-aaaaaaaa.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
@@ -100,15 +110,17 @@ func Test_verifyTrailer(t *testing.T) {
 	})
 
 	t.Run("corrupt_trailer_fails", func(t *testing.T) {
+		t.Parallel()
 		buf := readFixture(t, "corrupt-trailer-sha1.ref")
 		h, err := parseHeader(buf)
 		require.NoError(t, err)
 		err = verifyTrailer(buf, h)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrTrailerChecksum), "want ErrTrailerChecksum, got %v", err)
+		assert.ErrorIs(t, err, ErrTrailerChecksum, "want ErrTrailerChecksum, got %v", err)
 	})
 
 	t.Run("truncated_fails", func(t *testing.T) {
+		t.Parallel()
 		// truncated-sha1.ref is shorter than headerSizeV1 + footerSizeV1
 		// (24 + 68 = 92), so verifyTrailer's length guard fires.
 		// parseHeader still succeeds because the fixture preserves the
@@ -118,6 +130,6 @@ func Test_verifyTrailer(t *testing.T) {
 		require.NoError(t, err)
 		err = verifyTrailer(buf, h)
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrShortFile), "want ErrShortFile, got %v", err)
+		assert.ErrorIs(t, err, ErrShortFile, "want ErrShortFile, got %v", err)
 	})
 }

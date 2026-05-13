@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/internal/objfmt"
@@ -59,18 +60,18 @@ func serveHandlerV2(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPa
 		case r.Method == http.MethodGet && r.URL.Path == infoRefsPath:
 			w.Header().Set("Content-Type", smartAdvHeader)
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-			require.NoError(t, pw.WriteFlush())
+			assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+			assert.NoError(t, pw.WriteFlush())
 			err := server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader([]byte("0000"))),
 				pw, store, server.Options{
 					Agent:             "test-server/0.0",
 					PreferredProtocol: transport.ProtocolV2,
 				})
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		case r.Method == http.MethodPost && r.URL.Path == uploadPackPath:
 			body, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			w.Header().Set("Content-Type", commandResultHeader)
 			// `server.Serve` always runs the advertise-then-loop flow,
 			// but a real `upload-pack` POST emits the command response
@@ -79,7 +80,7 @@ func serveHandlerV2(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPa
 			// stream the remainder to the HTTP body so the Session-layer
 			// decoder sees the canonical wire shape.
 			var sink bytes.Buffer
-			require.NoError(t, server.Serve(r.Context(),
+			assert.NoError(t, server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader(body)),
 				pktline.NewWriter(&sink), store,
 				server.Options{
@@ -87,7 +88,7 @@ func serveHandlerV2(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPa
 					PreferredProtocol: transport.ProtocolV2,
 				}))
 			_, err = w.Write(stripV2Advertisement(t, sink.Bytes()))
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		default:
 			http.NotFound(w, r)
 		}
@@ -104,9 +105,9 @@ func serveHandlerV0(t *testing.T, store *objstore.Store[objfmt.SHA1Hash], repoPa
 		if r.Method == http.MethodGet && r.URL.Path == infoRefsPath {
 			w.Header().Set("Content-Type", smartAdvHeader)
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-			require.NoError(t, pw.WriteFlush())
-			require.NoError(t, server.Serve(r.Context(),
+			assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+			assert.NoError(t, pw.WriteFlush())
+			assert.NoError(t, server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader([]byte("0000"))),
 				pw, store, server.Options{
 					Agent:             "test-server/0.0",
@@ -168,6 +169,7 @@ func (s *stubConn) Advertisement() *pktline.Reader { return s.adv }
 func (s *stubConn) Command(context.Context, string, transport.CommandBody) (*pktline.Reader, error) {
 	return nil, errors.New("stubConn: Command not implemented")
 }
+
 func (s *stubConn) Close() error {
 	s.closed = true
 	if s.closeFn != nil {
@@ -290,7 +292,8 @@ type commandStubConn struct {
 
 func (c *commandStubConn) Advertisement() *pktline.Reader { return c.adv }
 func (c *commandStubConn) Command(_ context.Context, _ string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	if c.cmdRdr == nil {
 		return nil, errors.New("commandStubConn: no more Command responses")
 	}

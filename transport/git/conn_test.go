@@ -1,7 +1,6 @@
 package gitt
 
 import (
-	"context"
 	"net"
 	"testing"
 
@@ -17,7 +16,8 @@ import (
 // The listener is closed via [testing.T.Cleanup] when the test ends.
 func startEchoListener(t *testing.T, handle func(net.Conn)) (host, port string) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 	go func() {
@@ -36,6 +36,7 @@ func startEchoListener(t *testing.T, handle func(net.Conn)) (host, port string) 
 // contract: a second [Conn.Close] is a no-op returning nil even after
 // the underlying TCP connection has been closed.
 func TestConn_Close_Idempotent(t *testing.T) {
+	t.Parallel()
 	host, port := startEchoListener(t, func(c net.Conn) {
 		// Accept and discard; the client side is what we are testing.
 		defer func() { _ = c.Close() }()
@@ -55,7 +56,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 		Path:   "/repo",
 		Raw:    "git://" + host + ":" + port + "/repo",
 	}
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 
 	assert.NoError(t, conn.Close(), "first Close must return nil")
@@ -67,6 +68,7 @@ func TestConn_Close_Idempotent(t *testing.T) {
 // [Conn.Advertisement] returns the cached pkt-line reader and that it
 // streams a packet written by the server before the client reads.
 func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
+	t.Parallel()
 	const wantPayload = "version 2\n"
 
 	host, port := startEchoListener(t, func(c net.Conn) {
@@ -90,7 +92,7 @@ func TestConn_Advertisement_ReturnsCachedReader(t *testing.T) {
 		Path:   "/repo",
 		Raw:    "git://" + host + ":" + port + "/repo",
 	}
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 

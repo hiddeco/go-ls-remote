@@ -31,7 +31,9 @@ func zlibLoose(t *testing.T, header string, body []byte) []byte {
 }
 
 func TestReadLooseHeader(t *testing.T) {
+	t.Parallel()
 	t.Run("blob with random body round-trips", func(t *testing.T) {
+		t.Parallel()
 		body := make([]byte, 10)
 		_, err := rand.Read(body)
 		require.NoError(t, err)
@@ -49,6 +51,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("commit round-trips", func(t *testing.T) {
+		t.Parallel()
 		body := []byte("tree deadbeef\nauthor x\n\nmsg\n")
 		in := zlibLoose(t, "commit 28", body)
 		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
@@ -63,6 +66,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("tree round-trips", func(t *testing.T) {
+		t.Parallel()
 		body := []byte("100644 file\x00abcdefghij1234567890")
 		in := zlibLoose(t, "tree 32", body)
 		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
@@ -77,6 +81,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("tag round-trips", func(t *testing.T) {
+		t.Parallel()
 		body := []byte("object deadbeef\ntype commit\ntag v1\n")
 		in := zlibLoose(t, "tag 35", body)
 		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
@@ -91,6 +96,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("empty blob has zero size", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob 0", nil)
 		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.NoError(t, err)
@@ -104,6 +110,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("truncated zlib stream errors with nil body", func(t *testing.T) {
+		t.Parallel()
 		// Use an oversized body so we can truncate compressed bytes
 		// well before the header NUL is decompressed; this forces
 		// the header read itself to hit unexpected EOF.
@@ -120,6 +127,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("unknown type name errors", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "garbage 0", nil)
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -128,6 +136,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("non-numeric size errors", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob notanumber", nil)
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -135,6 +144,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("negative size errors", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob -5", nil)
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -142,6 +152,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("rejects leading-zero size", func(t *testing.T) {
+		t.Parallel()
 		// Canonical decimal: `010` is not valid. See
 		// [object-file.c:369-380] (`parse_loose_header`).
 		//
@@ -150,11 +161,12 @@ func TestReadLooseHeader(t *testing.T) {
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
 		assert.Nil(t, rc)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "010")
 	})
 
 	t.Run("rejects leading-plus size", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob +10", make([]byte, 10))
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -163,6 +175,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("rejects leading-space size", func(t *testing.T) {
+		t.Parallel()
 		// Two spaces between type and size means the size field begins
 		// with a space; canonical Git's manual digit loop rejects it.
 		in := zlibLoose(t, "blob  10", make([]byte, 10))
@@ -173,6 +186,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("rejects trailing-space size", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob 10 ", make([]byte, 10))
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -181,6 +195,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("accepts single zero size", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob 0", nil)
 		typ, size, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.NoError(t, err)
@@ -190,6 +205,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("rejects empty size field", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob ", nil)
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.Error(t, err)
@@ -198,12 +214,14 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("invalid zlib header errors", func(t *testing.T) {
+		t.Parallel()
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader([]byte("not zlib")))
 		require.Error(t, err)
 		assert.Nil(t, rc)
 	})
 
 	t.Run("body Close is idempotent and non-panicking", func(t *testing.T) {
+		t.Parallel()
 		body := []byte("hello")
 		in := zlibLoose(t, "blob 5", body)
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
@@ -215,6 +233,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("closing body without reading does not panic", func(t *testing.T) {
+		t.Parallel()
 		in := zlibLoose(t, "blob 10", make([]byte, 10))
 		_, _, rc, err := ReadLooseHeader(bytes.NewReader(in))
 		require.NoError(t, err)
@@ -222,6 +241,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("rejects trailing garbage after declared body", func(t *testing.T) {
+		t.Parallel()
 		// Build a deflate stream whose inflated payload is
 		// `blob 5\x00helloEXTRA` — the header declares 5 body bytes but
 		// the stream produces 10. Canonical Git surfaces "garbage at
@@ -242,11 +262,12 @@ func TestReadLooseHeader(t *testing.T) {
 
 		err = rc.Close()
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "garbage")
 	})
 
 	t.Run("rejects trailing garbage drained via ReadAll", func(t *testing.T) {
+		t.Parallel()
 		// Same corruption shape, but the caller reads with
 		// [io.ReadAll] (one large read returning all inflated bytes).
 		// The over-read must be observed during `Read` and surfaced
@@ -260,11 +281,12 @@ func TestReadLooseHeader(t *testing.T) {
 
 		err = rc.Close()
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrCorrupt)
+		require.ErrorIs(t, err, ErrCorrupt)
 		assert.Contains(t, err.Error(), "garbage")
 	})
 
 	t.Run("valid object has no trailer error", func(t *testing.T) {
+		t.Parallel()
 		// Sanity: a well-formed loose object, fully drained and closed,
 		// must not surface a trailing-garbage error.
 		body := []byte("hello world")
@@ -278,6 +300,7 @@ func TestReadLooseHeader(t *testing.T) {
 	})
 
 	t.Run("header-only read does not validate trailer", func(t *testing.T) {
+		t.Parallel()
 		// Even with extra inflated bytes past the declared size, a
 		// caller that reads only the header and closes without
 		// draining the body must not see a corruption error. The

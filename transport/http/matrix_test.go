@@ -3,7 +3,6 @@ package httpt
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -66,7 +65,7 @@ func testMatrixSmartV2Happy(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -76,7 +75,7 @@ func testMatrixSmartV2Happy(t *testing.T) {
 	assert.False(t, c.dumb, "smart-v2 must not flag the Conn dumb")
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
@@ -108,9 +107,9 @@ func testMatrixSmartV0Fallback(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{
 				Agent:             "test-server/0.0",
@@ -121,7 +120,7 @@ func testMatrixSmartV0Fallback(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "a v0 smart advertisement must still open")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -162,7 +161,7 @@ func testMatrixDumbHTTP(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -183,10 +182,10 @@ func testMatrixDumbHTTP(t *testing.T) {
 	}
 	assert.True(t, sawMain, "the synthesised v0 stream must surface refs/heads/main")
 
-	cmdRdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	cmdRdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, cmdRdr)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, ErrUnsupportedProtocol,
 		"dumb-HTTP Conn.Command must return ErrUnsupportedProtocol; got %v", err)
 }
 
@@ -194,18 +193,18 @@ func testMatrixAuth401Then200(t *testing.T) {
 	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch atomic.AddInt32(&calls, 1) {
+		switch calls.Add(1) {
 		case 1:
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 			w.WriteHeader(http.StatusUnauthorized)
 		default:
 			w.Header().Set("Content-Type", smartAdvHeader)
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-			require.NoError(t, pw.WriteFlush())
-			require.NoError(t, server.Serve(r.Context(),
+			assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+			assert.NoError(t, pw.WriteFlush())
+			assert.NoError(t, server.Serve(r.Context(),
 				pktline.NewReader(bytes.NewReader([]byte("0000"))),
 				pw, store, server.Options{
 					PreferredProtocol: transport.ProtocolV2,
@@ -216,14 +215,14 @@ func testMatrixAuth401Then200(t *testing.T) {
 
 	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "401 followed by an authenticated 200 must open cleanly")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
-	assert.Equal(t, int32(2), atomic.LoadInt32(&calls),
+	assert.Equal(t, int32(2), calls.Load(),
 		"exactly two probe round-trips: anonymous then authenticated")
 }
 
@@ -237,10 +236,10 @@ func testMatrixAuth401Then401(t *testing.T) {
 
 	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	assert.ErrorIs(t, err, ErrAuthFailed,
 		"401-after-retry must surface as ErrAuthFailed; got %v", err)
 }
 
@@ -253,10 +252,10 @@ func testMatrixStatus404(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	assert.ErrorIs(t, err, ErrNotFound,
 		"404 must map to ErrNotFound; got %v", err)
 }
 
@@ -271,11 +270,11 @@ func testMatrixStatus5xx(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"5xx must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, http.StatusServiceUnavailable, pe.Status)
 	assert.Equal(t, "probe", pe.Op)
@@ -296,9 +295,9 @@ func testMatrixRedirectChainInitial(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{
 				PreferredProtocol: transport.ProtocolV2,
@@ -310,7 +309,7 @@ func testMatrixRedirectChainInitial(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/hop-0")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "two same-origin hops must follow under the default policy")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -330,9 +329,9 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(bytes.NewReader([]byte("0000"))),
 			pw, store, server.Options{
 				PreferredProtocol: transport.ProtocolV2,
@@ -347,7 +346,7 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "the probe GET must succeed under the default Initial policy")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -355,14 +354,14 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 	c := conn.(*Conn)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs", cmdBody("ls-refs", nil, nil))
+	rdr, err := c.Command(t.Context(), "ls-refs", cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"a default-rejected POST redirect must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
-	assert.True(t, errors.Is(pe.Err, errRedirectRejected),
+	assert.ErrorIs(t, pe.Err, errRedirectRejected,
 		"the rejection cause must wrap errRedirectRejected")
 }
 
@@ -379,9 +378,9 @@ func testMatrixRedirectCrossOriginAuthStripped(t *testing.T) {
 	bURL, err := url.Parse(srvB.URL)
 	require.NoError(t, err)
 
-	var aCalls int32
+	var aCalls atomic.Int32
 	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch atomic.AddInt32(&aCalls, 1) {
+		switch aCalls.Add(1) {
 		case 1:
 			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 			w.WriteHeader(http.StatusUnauthorized)
@@ -405,7 +404,7 @@ func testMatrixRedirectCrossOriginAuthStripped(t *testing.T) {
 
 	tr := New(WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 

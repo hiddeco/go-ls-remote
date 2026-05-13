@@ -2,7 +2,6 @@ package ssht
 
 import (
 	"bytes"
-	"context"
 	"sync"
 	"testing"
 
@@ -85,7 +84,7 @@ func openBridgedConnTraced(t *testing.T, tracer trace.Tracer) (*Conn, string) {
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
 	u := srv.URL()
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{
 		UserAgent: "test/0.0",
 		Tracer:    tracer,
 	})
@@ -109,10 +108,11 @@ func openBridgedConnTraced(t *testing.T, tracer trace.Tracer) (*Conn, string) {
 // than counting exact events: pkt-line framing can shift across
 // refactors, but the wiring contract is invariant.
 func TestTracer_PacketEvents_BothDirections(t *testing.T) {
+	t.Parallel()
 	tracer := &capturingTracer{}
 	c, wantURL := openBridgedConnTraced(t, tracer)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)
@@ -136,9 +136,9 @@ func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 		assert.Equal(t, wantURL, p.URL,
 			"every PacketEvent must carry the redacted ssh:// URL")
 	}
-	assert.Greater(t, inbound, 0,
+	assert.Positive(t, inbound,
 		"the reader must observe inbound PacketEvents (server writes)")
-	assert.Greater(t, outbound, 0,
+	assert.Positive(t, outbound,
 		"the writer must observe outbound PacketEvents (client writes)")
 }
 
@@ -151,6 +151,7 @@ func TestTracer_PacketEvents_BothDirections(t *testing.T) {
 // confirms the SSH transport doesn't accidentally bypass the
 // short-circuit.
 func TestTracer_NilTracer_NoEvents(t *testing.T) {
+	t.Parallel()
 	bridge := bridgeSHA1Store(t, "loose-only")
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv: true,
@@ -163,7 +164,7 @@ func TestTracer_NilTracer_NoEvents(t *testing.T) {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), transport.OpenOptions{
+	conn, err := tr.Open(t.Context(), srv.URL(), transport.OpenOptions{
 		UserAgent: "test/0.0",
 		// Tracer left nil.
 	})
@@ -174,7 +175,7 @@ func TestTracer_NilTracer_NoEvents(t *testing.T) {
 	require.True(t, ok)
 	drainAdvertisement(t, c)
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	_ = readAllPackets(t, rdr)

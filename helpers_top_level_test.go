@@ -3,7 +3,6 @@ package lsremote
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -41,7 +40,8 @@ func newCloseRecordingRegistry(t *testing.T) (*transport.Registry, *closeRecordi
 func (r *closeRecordingTransport) Schemes() []string { return r.inner.Schemes() }
 
 func (r *closeRecordingTransport) Open(ctx context.Context, u *transport.URL,
-	opts transport.OpenOptions) (transport.Conn, error) {
+	opts transport.OpenOptions,
+) (transport.Conn, error) {
 	conn, err := r.inner.Open(ctx, u, opts)
 	if err != nil {
 		return nil, err
@@ -63,9 +63,11 @@ type closeRecordingConn struct {
 
 func (c *closeRecordingConn) Advertisement() *pktline.Reader { return c.inner.Advertisement() }
 func (c *closeRecordingConn) Command(ctx context.Context, name string,
-	body transport.CommandBody) (*pktline.Reader, error) {
+	body transport.CommandBody,
+) (*pktline.Reader, error) {
 	return c.inner.Command(ctx, name, body)
 }
+
 func (c *closeRecordingConn) Close() error {
 	c.count.Add(1)
 	return c.inner.Close()
@@ -76,11 +78,12 @@ func (c *closeRecordingConn) Close() error {
 // advertised refs, and yields at least HEAD and `refs/heads/main` with
 // no error.
 func TestRefs_topLevel(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
+	seq, err := Refs(t.Context(), srv.URL+"/repo.git", RefsRequest{})
 	require.NoError(t, err)
 
 	var got []Ref
@@ -109,13 +112,14 @@ func TestRefs_topLevel(t *testing.T) {
 // test plugs a `closeRecordingTransport` into the registry so it can
 // observe the `Close` count without reaching into Session internals.
 func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
 	reg, rec := newCloseRecordingRegistry(t)
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git",
+	seq, err := Refs(t.Context(), srv.URL+"/repo.git",
 		RefsRequest{}, WithTransports(reg))
 	require.NoError(t, err)
 
@@ -124,7 +128,7 @@ func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
 		require.NoError(t, err)
 		n++
 	}
-	assert.Greater(t, n, 0, "the iterator must yield at least one ref")
+	assert.Positive(t, n, "the iterator must yield at least one ref")
 	assert.Equal(t, 1, rec.closeCount(),
 		"the underlying Conn must be closed exactly once when the iter drains")
 }
@@ -133,13 +137,14 @@ func TestRefs_topLevel_closesSessionOnDrain(t *testing.T) {
 // from the caller's `for range` still closes the Session: the wrapper's
 // `defer Close` must fire when `yield` returns false.
 func TestRefs_topLevel_closesSessionOnEarlyStop(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
 	reg, rec := newCloseRecordingRegistry(t)
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git",
+	seq, err := Refs(t.Context(), srv.URL+"/repo.git",
 		RefsRequest{}, WithTransports(reg))
 	require.NoError(t, err)
 
@@ -158,6 +163,7 @@ func TestRefs_topLevel_closesSessionOnEarlyStop(t *testing.T) {
 // the helper returns `(nil, err)` and does not open or close any
 // Session.
 func TestRefs_topLevel_dialError(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -165,10 +171,10 @@ func TestRefs_topLevel_dialError(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	seq, err := Refs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
+	seq, err := Refs(t.Context(), srv.URL+"/repo.git", RefsRequest{})
 	assert.Nil(t, seq)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	assert.ErrorIs(t, err, ErrNotFound,
 		"a 404 on the discovery probe must reach ErrNotFound via errors.Is")
 }
 
@@ -176,15 +182,16 @@ func TestRefs_topLevel_dialError(t *testing.T) {
 // every advertised ref in a single slice, and the in-process server's
 // HEAD and main both appear.
 func TestListRefs_topLevel(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	refs, err := ListRefs(context.Background(), srv.URL+"/repo.git", RefsRequest{})
+	refs, err := ListRefs(t.Context(), srv.URL+"/repo.git", RefsRequest{})
 	require.NoError(t, err)
 	require.NotEmpty(t, refs)
 
-	var names []string
+	names := make([]string, 0, len(refs))
 	for _, r := range refs {
 		names = append(names, r.Name)
 	}
@@ -196,26 +203,28 @@ func TestListRefs_topLevel(t *testing.T) {
 // against a v2 server, a query for a packed commit OID with `Size:
 // true` returns one row whose Hash matches and whose Size is positive.
 func TestObjectInfos_topLevel(t *testing.T) {
+	t.Parallel()
 	store, commitOID := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	got, err := ObjectInfos(context.Background(), srv.URL+"/repo.git",
+	got, err := ObjectInfos(t.Context(), srv.URL+"/repo.git",
 		[]string{commitOID}, ObjectInfoRequest{Size: true})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, commitOID, got[0].Hash)
-	assert.Greater(t, got[0].Size, int64(0))
+	assert.Positive(t, got[0].Size)
 }
 
 // TestExists_success pins the success branch: a reachable repository
 // produces `(true, nil)`.
 func TestExists_success(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	ok, err := Exists(context.Background(), srv.URL+"/repo.git")
+	ok, err := Exists(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	assert.True(t, ok, "a reachable v2 repo must produce Exists=true")
 }
@@ -224,6 +233,7 @@ func TestExists_success(t *testing.T) {
 // discovery probe collapses to `(false, nil)` without surfacing the
 // underlying error.
 func TestExists_notFound(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -231,7 +241,7 @@ func TestExists_notFound(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	ok, err := Exists(context.Background(), srv.URL+"/repo.git")
+	ok, err := Exists(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err, "ErrNotFound must collapse to (false, nil), not propagate")
 	assert.False(t, ok)
 }
@@ -241,10 +251,11 @@ func TestExists_notFound(t *testing.T) {
 // malformed URL — empty rawURL — triggers `transport.ParseURL` to
 // return `transport.ErrEmptyURL`, which is not an `ErrNotFound`.
 func TestExists_otherError(t *testing.T) {
-	ok, err := Exists(context.Background(), "")
+	t.Parallel()
+	ok, err := Exists(t.Context(), "")
 	require.Error(t, err)
 	assert.False(t, ok)
-	assert.False(t, errors.Is(err, ErrNotFound),
+	assert.NotErrorIs(t, err, ErrNotFound,
 		"the empty-URL error must not collapse to ErrNotFound")
 }
 
@@ -252,11 +263,12 @@ func TestExists_otherError(t *testing.T) {
 // with `ref-prefix HEAD` and `symrefs`, finds HEAD's symref target, and
 // returns `refs/heads/main`.
 func TestDefaultBranch_v2(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	got, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
+	got, err := DefaultBranch(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", got)
 }
@@ -265,11 +277,12 @@ func TestDefaultBranch_v2(t *testing.T) {
 // `symref=HEAD:refs/heads/main` on its capability list, and the helper
 // resolves the target without issuing any command.
 func TestDefaultBranch_v0(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV0(t, store, "/repo.git"))
 	defer srv.Close()
 
-	got, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
+	got, err := DefaultBranch(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", got)
 }
@@ -287,11 +300,12 @@ func TestDefaultBranch_v0(t *testing.T) {
 // [connect.c:591-592]: https://github.com/git/git/blob/v2.54.0/connect.c#L591-L592
 // [ls-refs.c:135-136]: https://github.com/git/git/blob/v2.54.0/ls-refs.c#L135-L136
 func TestDefaultBranch_v2_unborn(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "unborn-head")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	got, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
+	got, err := DefaultBranch(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err,
 		"unborn HEAD must surface its symref target, not ErrNoDefaultBranch")
 	assert.Equal(t, "refs/heads/main", got,
@@ -307,24 +321,25 @@ func TestDefaultBranch_v2_unborn(t *testing.T) {
 // The [*ProtocolError.Op] must be `"ls-refs"` because the failure is
 // detected after the `ls-refs` command exchange.
 func TestDefaultBranch_v2_noSymref(t *testing.T) {
+	t.Parallel()
 	conn := &commandStubConn{
 		adv:    pktline.NewReader(bytes.NewReader(buildV2Advertisement(t))),
 		cmdRdr: pktline.NewReader(bytes.NewReader(buildV2LSRefsNoSymrefResponse(t))),
 	}
-	cap := &captureTransport{schemes: []string{"https"}, conn: conn}
-	reg := transport.NewRegistry(cap)
+	capt := &captureTransport{schemes: []string{"https"}, conn: conn}
+	reg := transport.NewRegistry(capt)
 
-	_, err := DefaultBranch(context.Background(), "https://example.com/repo.git",
+	_, err := DefaultBranch(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg))
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNoDefaultBranch),
+	require.ErrorIs(t, err, ErrNoDefaultBranch,
 		"v2 headless must match ErrNoDefaultBranch via errors.Is; got %v", err)
-	assert.False(t, errors.Is(err, ErrNotFound),
+	require.NotErrorIs(t, err, ErrNotFound,
 		"v2 headless must NOT match ErrNotFound; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"v2 headless must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "ls-refs", pe.Op,
 		"v2 failure is detected after the ls-refs exchange; Op must be \"ls-refs\"")
@@ -336,23 +351,24 @@ func TestDefaultBranch_v2_noSymref(t *testing.T) {
 // `"advertisement"` because the failure is detected at capability-scan
 // time, not via a command.
 func TestDefaultBranch_v0_noSymref(t *testing.T) {
+	t.Parallel()
 	conn := &stubConn{
 		adv: pktline.NewReader(bytes.NewReader(buildV0NoSymrefAdvertisement(t))),
 	}
-	cap := &captureTransport{schemes: []string{"https"}, conn: conn}
-	reg := transport.NewRegistry(cap)
+	capt := &captureTransport{schemes: []string{"https"}, conn: conn}
+	reg := transport.NewRegistry(capt)
 
-	_, err := DefaultBranch(context.Background(), "https://example.com/repo.git",
+	_, err := DefaultBranch(t.Context(), "https://example.com/repo.git",
 		WithTransports(reg))
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNoDefaultBranch),
+	require.ErrorIs(t, err, ErrNoDefaultBranch,
 		"v0 headless must match ErrNoDefaultBranch via errors.Is; got %v", err)
-	assert.False(t, errors.Is(err, ErrNotFound),
+	require.NotErrorIs(t, err, ErrNotFound,
 		"v0 headless must NOT match ErrNotFound; got %v", err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"v0 headless must surface as *ProtocolError; got %T", err)
 	assert.Equal(t, "advertisement", pe.Op,
 		"v0 failure is detected at advertisement time; Op must be \"advertisement\"")
@@ -365,6 +381,7 @@ func TestDefaultBranch_v0_noSymref(t *testing.T) {
 // absent, while [ErrNoDefaultBranch] means the repository is present
 // but HEAD has no symbolic target.
 func TestDefaultBranch_repoNotFound(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repo.git/info/refs", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -372,12 +389,12 @@ func TestDefaultBranch_repoNotFound(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	_, err := DefaultBranch(context.Background(), srv.URL+"/repo.git")
+	_, err := DefaultBranch(t.Context(), srv.URL+"/repo.git")
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, ErrNotFound),
+	require.ErrorIs(t, err, ErrNotFound,
 		"a 404 on discovery must reach ErrNotFound via errors.Is; got %v", err)
-	assert.False(t, errors.Is(err, ErrNoDefaultBranch),
+	assert.NotErrorIs(t, err, ErrNoDefaultBranch,
 		"a 404 on discovery must NOT match ErrNoDefaultBranch; got %v", err)
 }
 
@@ -386,11 +403,12 @@ func TestDefaultBranch_repoNotFound(t *testing.T) {
 // `packed-only` fixture has an annotated `refs/tags/v1` with a peel
 // recorded in `packed-refs`, so the response carries `Peeled` populated.
 func TestTags_topLevel(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "packed-only")
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	seq, err := Tags(context.Background(), srv.URL+"/repo.git")
+	seq, err := Tags(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 
 	var got []Ref
@@ -416,11 +434,12 @@ func TestTags_topLevel(t *testing.T) {
 // TestHeads_topLevel pins the `Heads` shorthand: it restricts the
 // response to `refs/heads/` so neither HEAD nor any tag survives.
 func TestHeads_topLevel(t *testing.T) {
+	t.Parallel()
 	store, _ := openObjectInfoFixture(t)
 	srv := httptest.NewServer(serveHandlerV2(t, store, "/repo.git"))
 	defer srv.Close()
 
-	seq, err := Heads(context.Background(), srv.URL+"/repo.git")
+	seq, err := Heads(t.Context(), srv.URL+"/repo.git")
 	require.NoError(t, err)
 
 	var got []Ref

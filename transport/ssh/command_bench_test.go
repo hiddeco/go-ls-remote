@@ -1,7 +1,6 @@
 package ssht
 
 import (
-	"context"
 	"testing"
 
 	"github.com/hiddeco/go-ls-remote/pktline"
@@ -97,7 +96,7 @@ func BenchmarkConn_Command(b *testing.B) {
 		for _, tr := range tracerCases {
 			b.Run(sh.name+"/"+tr.name, func(b *testing.B) {
 				c := openBenchBridgedConn(b, "loose-only", tr.tracer)
-				ctx := context.Background()
+				ctx := b.Context()
 				body := cmdBody(sh.cmd, sh.args, sh.caps)
 
 				b.ReportAllocs()
@@ -134,7 +133,7 @@ func openBenchBridgedConn(b *testing.B, fixture string, tracer trace.Tracer) *Co
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), transport.OpenOptions{
+	conn, err := tr.Open(b.Context(), srv.URL(), transport.OpenOptions{
 		UserAgent: "bench/0.0",
 		Tracer:    tracer,
 	})

@@ -2,7 +2,6 @@ package wire
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"iter"
 	"strings"
@@ -38,6 +37,7 @@ func (c *captureTracer) OnEvent(e trace.Event) {
 // what the production encoder emits.
 func pkt(t *testing.T, payload string) []byte {
 	t.Helper()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	require.NoError(t, w.WritePacket([]byte(payload)))
@@ -46,6 +46,7 @@ func pkt(t *testing.T, payload string) []byte {
 
 func TestEncodeLSRefs(t *testing.T) {
 	t.Parallel()
+
 	cases := []struct {
 		name       string
 		args       RefsArgs
@@ -267,6 +268,7 @@ func TestEncodeLSRefs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			var buf bytes.Buffer
 			w := pktline.NewWriter(&buf)
 			tracer := &captureTracer{}
@@ -291,6 +293,7 @@ func TestEncodeLSRefs(t *testing.T) {
 
 func TestEncodeLSRefsNilTracer(t *testing.T) {
 	t.Parallel()
+
 	// Verify a nil tracer is safe — the unborn-drop site must not panic
 	// when no tracer is wired up.
 	var buf bytes.Buffer
@@ -309,6 +312,7 @@ func TestEncodeLSRefsNilTracer(t *testing.T) {
 
 func TestCapabilityDropEventWhen(t *testing.T) {
 	t.Parallel()
+
 	now := time.Unix(1700000000, 0)
 	e := CapabilityDropEvent{Time: now}
 	assert.Equal(t, now, e.When())
@@ -321,11 +325,11 @@ func collectLSRefs(seq iter.Seq2[RawRef, error]) (refs []RawRef, lastErr error) 
 	for ref, err := range seq {
 		if err != nil {
 			lastErr = err
-			return
+			return refs, lastErr
 		}
 		refs = append(refs, ref)
 	}
-	return
+	return refs, lastErr
 }
 
 // buildLSRefsStream encodes payloads as data packets followed by a
@@ -336,6 +340,7 @@ func collectLSRefs(seq iter.Seq2[RawRef, error]) (refs []RawRef, lastErr error) 
 // [gitprotocol-v2.adoc §"ls-refs"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#ls-refs
 func buildLSRefsStream(t *testing.T, payloads ...string) *bytes.Buffer {
 	t.Helper()
+
 	var buf bytes.Buffer
 	w := pktline.NewWriter(&buf)
 	for _, p := range payloads {
@@ -347,6 +352,7 @@ func buildLSRefsStream(t *testing.T, payloads ...string) *bytes.Buffer {
 
 func TestDecodeLSRefs(t *testing.T) {
 	t.Parallel()
+
 	const (
 		oidMain = "1111111111111111111111111111111111111111"
 		oidTag  = "2222222222222222222222222222222222222222"
@@ -356,6 +362,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("empty (just flush)", func(t *testing.T) {
 		t.Parallel()
+
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WriteFlush())
@@ -367,6 +374,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("simple ref", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, oidMain+" refs/heads/main\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -376,6 +384,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("peeled tag", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, oidTag+" refs/tags/v1 peeled:"+oidPeel+"\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -389,6 +398,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("symref-target", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, oidHEAD+" HEAD symref-target:refs/heads/main\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -402,6 +412,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("peeled and symref both", func(t *testing.T) {
 		t.Parallel()
+
 		// Either order is legal: `process_ref_v2` matches by prefix on
 		// each token. Verify both arrangements parse to the same value.
 		cases := []string{
@@ -411,6 +422,7 @@ func TestDecodeLSRefs(t *testing.T) {
 		for _, line := range cases {
 			t.Run(line, func(t *testing.T) {
 				t.Parallel()
+
 				buf := buildLSRefsStream(t, line)
 
 				refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -427,6 +439,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("unborn HEAD with symref-target", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, "unborn HEAD symref-target:refs/heads/main\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -440,6 +453,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("unborn HEAD without symref", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, "unborn HEAD\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -449,6 +463,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("unknown attribute ignored", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t,
 			oidMain+" refs/heads/main symref-target:refs/heads/main weird-attr:value\n")
 
@@ -463,7 +478,8 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("multiple refs in stream order", func(t *testing.T) {
 		t.Parallel()
-		buf := buildLSRefsStream(t,
+		buf := buildLSRefsStream(
+			t,
 			oidHEAD+" HEAD symref-target:refs/heads/main\n",
 			oidMain+" refs/heads/main\n",
 			oidTag+" refs/tags/v1 peeled:"+oidPeel+"\n",
@@ -480,6 +496,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("malformed: one token only", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, oidMain+"\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
@@ -490,6 +507,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("unexpected control packet (delim)", func(t *testing.T) {
 		t.Parallel()
+
 		var buf bytes.Buffer
 		w := pktline.NewWriter(&buf)
 		require.NoError(t, w.WriteDelim())
@@ -503,31 +521,34 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("server ERR mid-stream", func(t *testing.T) {
 		t.Parallel()
+
 		buf := buildLSRefsStream(t, "ERR access denied\n")
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "access denied")
 		assert.Empty(t, refs)
 	})
 
 	t.Run("ERR after a successful ref still surfaces error", func(t *testing.T) {
 		t.Parallel()
-		buf := buildLSRefsStream(t,
+		buf := buildLSRefsStream(
+			t,
 			oidMain+" refs/heads/main\n",
 			"ERR boom\n",
 		)
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrServerRefused)
+		require.ErrorIs(t, err, ErrServerRefused)
 		assert.Contains(t, err.Error(), "boom")
 		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
 	})
 
 	t.Run("truncated stream (EOF before flush)", func(t *testing.T) {
 		t.Parallel()
+
 		// One data packet, no flush, and no further bytes — the reader
 		// returns `io.EOF` on the next packet read.
 		var buf bytes.Buffer
@@ -536,14 +557,15 @@ func TestDecodeLSRefs(t *testing.T) {
 
 		refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(&buf)))
 		require.Error(t, err)
-		assert.True(t, errors.Is(err, io.ErrUnexpectedEOF),
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF,
 			"want io.ErrUnexpectedEOF, got %v", err)
 		assert.Equal(t, []RawRef{{OID: oidMain, Name: "refs/heads/main"}}, refs)
 	})
 
 	t.Run("early break: yield false stops iteration", func(t *testing.T) {
 		t.Parallel()
-		buf := buildLSRefsStream(t,
+		buf := buildLSRefsStream(
+			t,
 			oidHEAD+" HEAD symref-target:refs/heads/main\n",
 			oidMain+" refs/heads/main\n",
 			oidTag+" refs/tags/v1\n",
@@ -566,6 +588,7 @@ func TestDecodeLSRefs(t *testing.T) {
 
 	t.Run("error message starts with wire prefix", func(t *testing.T) {
 		t.Parallel()
+
 		// Spot-check that errors carry a `wire:` prefix per package
 		// convention — not a load-bearing assertion, just a guard.
 		buf := buildLSRefsStream(t, "ERR nope\n")
@@ -595,6 +618,7 @@ func TestDecodeLSRefs(t *testing.T) {
 // [connect.c::get_remote_refs lines 564-597]: https://github.com/git/git/blob/v2.54.0/connect.c#L564-L597
 func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
 	t.Helper()
+
 	r := pktline.NewReader(bytes.NewReader(raw))
 
 	first, err := r.ReadPacket()
@@ -664,6 +688,7 @@ func readLSRefsRequest(t *testing.T, raw []byte) (args RefsArgs) {
 // [connect.c::process_ref_v2 lines 395-470]: https://github.com/git/git/blob/v2.54.0/connect.c#L395-L470
 func TestLSRefs_attrSemantics(t *testing.T) {
 	t.Parallel()
+
 	const (
 		oidTag   = "1111111111111111111111111111111111111111"
 		oidPeel1 = "2222222222222222222222222222222222222222"
@@ -672,6 +697,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 
 	t.Run("attribute order independence", func(t *testing.T) {
 		t.Parallel()
+
 		// `process_ref_v2` walks tokens left-to-right with no position
 		// dependency, so swapping the two attrs must not affect the
 		// parsed value. This is the structural form of the existing
@@ -691,6 +717,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 		for _, line := range orderings {
 			t.Run(line, func(t *testing.T) {
 				t.Parallel()
+
 				buf := buildLSRefsStream(t, line)
 				refs, err := collectLSRefs(DecodeLSRefs(pktline.NewReader(buf)))
 				require.NoError(t, err)
@@ -701,6 +728,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 
 	t.Run("repeated peeled attribute: last wins", func(t *testing.T) {
 		t.Parallel()
+
 		// Two `peeled:` tokens on a single line. Canonical Git appends
 		// each as its own peeled ref entry; our decoder collapses to a
 		// single scalar `Peeled` field whose value is the rightmost
@@ -722,6 +750,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 
 	t.Run("repeated symref-target attribute: last wins", func(t *testing.T) {
 		t.Parallel()
+
 		// `process_ref_v2` calls `ref->symref = xstrdup(arg)` without
 		// `break`, so a second `symref-target:` clobbers the first.
 		// The Go decoder follows the same rule via overwrite assignment.
@@ -739,6 +768,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 
 	t.Run("unknown attribute forward compat", func(t *testing.T) {
 		t.Parallel()
+
 		// A future Git version may emit an attribute the decoder does
 		// not recognise. `process_ref_v2`'s loop runs `skip_prefix` for
 		// each known prefix and silently falls through when none match;
@@ -779,6 +809,7 @@ func TestLSRefs_attrSemantics(t *testing.T) {
 // [protocol-caps.c::send_info]: https://github.com/git/git/blob/v2.54.0/protocol-caps.c#L37
 func TestLSRefs_roundTrip(t *testing.T) {
 	t.Parallel()
+
 	unbornCaps := RawCapabilities{{Name: "ls-refs", Value: "unborn"}}
 
 	cases := []struct {
@@ -836,6 +867,7 @@ func TestLSRefs_roundTrip(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			var buf bytes.Buffer
 			w := pktline.NewWriter(&buf)
 			require.NoError(t, EncodeLSRefs(w, tc.args, tc.caps, "", nil))

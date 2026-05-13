@@ -3,7 +3,6 @@ package ssht
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -40,6 +39,7 @@ func flushAdvertisement() []byte { return []byte("0000") }
 // [connect.c:1476]: https://github.com/git/git/blob/v2.54.0/connect.c#L1476
 // [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
 func TestOpen_v2_envAccepted(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -49,7 +49,7 @@ func TestOpen_v2_envAccepted(t *testing.T) {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -85,6 +85,7 @@ func TestOpen_v2_envAccepted(t *testing.T) {
 // still succeeds, with the in-band initial pkt-line carrying the
 // version trailer as the fallback negotiation route.
 func TestOpen_v2_envRejected(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     false,
 		advertisement: flushAdvertisement(),
@@ -94,7 +95,7 @@ func TestOpen_v2_envRejected(t *testing.T) {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -131,6 +132,7 @@ func TestOpen_v2_envRejected(t *testing.T) {
 // pkt-line carries NO version trailer (per
 // `wire.WriteStreamRequest`'s v0 branch).
 func TestOpen_v0Pinned(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -141,7 +143,7 @@ func TestOpen_v0Pinned(t *testing.T) {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), transport.OpenOptions{PreferredProtocol: &v0})
+	conn, err := tr.Open(t.Context(), srv.URL(), transport.OpenOptions{PreferredProtocol: &v0})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -172,6 +174,7 @@ func TestOpen_v0Pinned(t *testing.T) {
 // handshake, distinct from TCP-level dial failures (`"dial"`) and
 // session-channel setup (`"session"`).
 func TestOpen_authFailure(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{
 		acceptEnv:     true,
 		advertisement: flushAdvertisement(),
@@ -182,15 +185,15 @@ func TestOpen_authFailure(t *testing.T) {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	_, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	_, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.Error(t, err)
 
 	var pe *ProtocolError
 	require.ErrorAs(t, err, &pe, "auth failure must surface as *ProtocolError")
 	assert.Equal(t, "handshake", pe.Op)
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	require.ErrorIs(t, err, ErrAuthFailed,
 		"auth failure must be detectable via errors.Is(err, ssht.ErrAuthFailed)")
-	assert.True(t, errors.Is(err, transport.ErrAuthFailed),
+	assert.ErrorIs(t, err, transport.ErrAuthFailed,
 		"auth failure must bridge to transport.ErrAuthFailed")
 }
 
@@ -198,9 +201,11 @@ func TestOpen_authFailure(t *testing.T) {
 // `*ProtocolError` wrapping the raw network error — without mapping to
 // a sentinel.
 func TestOpen_dialFailure(t *testing.T) {
+	t.Parallel()
 	// Reserve a port, close it, then dial: the address is well-formed
 	// but the listener is gone, so the kernel refuses the connection.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().(*net.TCPAddr)
 	require.NoError(t, ln.Close())
@@ -215,24 +220,25 @@ func TestOpen_dialFailure(t *testing.T) {
 	}
 
 	tr := New(WithKnownHosts(ssh.InsecureIgnoreHostKey()))
-	_, err = tr.Open(context.Background(), u, defaultOpenOptions())
+	_, err = tr.Open(t.Context(), u, defaultOpenOptions())
 	require.Error(t, err)
 
 	var pe *ProtocolError
 	require.ErrorAs(t, err, &pe, "dial failure must surface as *ProtocolError")
 	assert.Equal(t, "dial", pe.Op)
-	assert.False(t, errors.Is(err, transport.ErrAuthFailed),
+	require.NotErrorIs(t, err, transport.ErrAuthFailed,
 		"TCP dial failures must not masquerade as auth failures")
-	assert.False(t, errors.Is(err, transport.ErrAuthRequired),
+	assert.NotErrorIs(t, err, transport.ErrAuthRequired,
 		"TCP dial failures must not masquerade as auth-required")
 }
 
 // TestOpen_contextCancelled verifies that a context cancelled before
 // Open is invoked surfaces the cancellation error directly.
 func TestOpen_contextCancelled(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: flushAdvertisement()})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	tr := New(
@@ -241,7 +247,7 @@ func TestOpen_contextCancelled(t *testing.T) {
 	)
 	_, err := tr.Open(ctx, srv.URL(), defaultOpenOptions())
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled),
+	assert.ErrorIs(t, err, context.Canceled,
 		"a cancelled context must surface ctx.Err() through Open")
 }
 
@@ -253,10 +259,11 @@ func TestOpen_contextCancelled(t *testing.T) {
 // [ErrMissingHostKey] is exported so callers can branch on
 // [errors.Is].
 func TestOpen_missingHostKey(t *testing.T) {
+	t.Parallel()
 	srv := newTestServer(t, testServerOpts{acceptEnv: true, advertisement: flushAdvertisement()})
 
 	tr := New(WithAuth(Signer(srv.clientSigner)))
-	_, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	_, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.Error(t, err)
 
 	var pe *ProtocolError
@@ -264,7 +271,7 @@ func TestOpen_missingHostKey(t *testing.T) {
 		"missing-host-key configuration must surface as *ProtocolError")
 	assert.Equal(t, "dial", pe.Op,
 		"config errors observed during pre-dial validation carry Op=\"dial\"")
-	assert.True(t, errors.Is(err, ErrMissingHostKey),
+	require.ErrorIs(t, err, ErrMissingHostKey,
 		"missing-host-key must be detectable via errors.Is(err, ssht.ErrMissingHostKey)")
 	assert.Contains(t, err.Error(), "HostKeyCallback",
 		"diagnostic must name HostKeyCallback for grep-friendly logs")
@@ -279,7 +286,9 @@ func TestOpen_missingHostKey(t *testing.T) {
 // from underneath `ssh.NewClientConn` and the caller sees
 // `context.Canceled`.
 func TestOpen_handshakeContextCancelled(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	t.Parallel()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 
@@ -323,7 +332,7 @@ func TestOpen_handshakeContextCancelled(t *testing.T) {
 		Raw:    fmt.Sprintf("ssh://git@%s:%d/repo.git", addr.IP, addr.Port),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	// Cancel shortly after Open enters the SSH handshake. The exact
 	// delay is not load-bearing — any value short of the test timeout
 	// works because the handshake never completes against a silent
@@ -336,7 +345,7 @@ func TestOpen_handshakeContextCancelled(t *testing.T) {
 	tr := New(WithKnownHosts(ssh.InsecureIgnoreHostKey()))
 	_, err = tr.Open(ctx, u, defaultOpenOptions())
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled),
+	assert.ErrorIs(t, err, context.Canceled,
 		"cancelling mid-handshake must surface ctx.Err() rather than the net-closed error the watchdog synthesised; got %v", err)
 }
 
@@ -347,6 +356,7 @@ func TestOpen_handshakeContextCancelled(t *testing.T) {
 // The test asserts the wire bytes the server captures on the `exec`
 // request, which is the only observable artefact for this contract.
 func TestOpen_pathQuoting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		path     string
@@ -381,6 +391,7 @@ func TestOpen_pathQuoting(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			srv := newTestServer(t, testServerOpts{
 				acceptEnv:     true,
 				advertisement: flushAdvertisement(),
@@ -394,7 +405,7 @@ func TestOpen_pathQuoting(t *testing.T) {
 				WithAuth(Signer(srv.clientSigner)),
 				WithKnownHosts(srv.hostKeyCallback()),
 			)
-			conn, err := tr.Open(context.Background(), u, defaultOpenOptions())
+			conn, err := tr.Open(t.Context(), u, defaultOpenOptions())
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = conn.Close() })
 

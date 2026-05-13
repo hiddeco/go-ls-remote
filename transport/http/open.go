@@ -350,7 +350,7 @@ func stripSmartPreamble(r *pktline.Reader) error {
 // either a custom round-tripper or a tracer-aware `CheckRedirect`,
 // neither of which the current design takes on.
 func doProbe(ctx context.Context, client *http.Client, probeURL, ua, gitProto string, creds Credentials, tracer trace.Tracer) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -436,13 +436,13 @@ func readServerExcerpt(body io.ReadCloser) string {
 	if body == nil {
 		return ""
 	}
-	const max = 1024
-	buf, err := io.ReadAll(io.LimitReader(body, max+1))
+	const maxLen = 1024
+	buf, err := io.ReadAll(io.LimitReader(body, maxLen+1))
 	if err != nil && len(buf) == 0 {
 		return ""
 	}
-	if len(buf) > max {
-		return string(buf[:max]) + "..."
+	if len(buf) > maxLen {
+		return string(buf[:maxLen]) + "..."
 	}
 	return string(buf)
 }

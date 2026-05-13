@@ -81,7 +81,7 @@ func TestOpen_Smart200_Success(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -100,7 +100,7 @@ func TestOpen_Smart200_ContentTypeWithCharset(t *testing.T) {
 	t.Parallel()
 	body := smartAdvBody(t)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader+"; charset=utf-8")
 		_, _ = w.Write(body)
 	}))
@@ -109,7 +109,7 @@ func TestOpen_Smart200_ContentTypeWithCharset(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "trailing parameters on the content type must not break detection")
 	t.Cleanup(func() { _ = conn.Close() })
 }
@@ -130,7 +130,7 @@ func TestOpen_Smart200_PreferredProtocolPinned(t *testing.T) {
 	u := parseTestURL(t, srv, "/repo.git")
 
 	v := transport.ProtocolV0
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{PreferredProtocol: &v})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{PreferredProtocol: &v})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 }
@@ -150,7 +150,7 @@ func TestOpen_Smart200_UserAgent_OpenOptionsWins(t *testing.T) {
 	tr := New(WithUserAgent("ua-from-transport/1"))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{UserAgent: "ua-from-opts/1"})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{UserAgent: "ua-from-opts/1"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 }
@@ -170,7 +170,7 @@ func TestOpen_Smart200_UserAgent_TransportFallsBackToPackageDefault(t *testing.T
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 }
@@ -182,7 +182,7 @@ func TestOpen_Smart200_BadPreambleService(t *testing.T) {
 	require.NoError(t, w.WritePacket([]byte("# service=git-receive-pack\n")))
 	require.NoError(t, w.WriteFlush())
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		_, _ = w.Write(buf.Bytes())
 	}))
@@ -191,11 +191,11 @@ func TestOpen_Smart200_BadPreambleService(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe), "want *ProtocolError, got %T: %v", err, err)
+	require.ErrorAs(t, err, &pe, "want *ProtocolError, got %T: %v", err, err)
 	assert.Equal(t, 200, pe.Status)
 	assert.Equal(t, "probe", pe.Op)
 }
@@ -209,7 +209,7 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 	// the smart-HTTP framing.
 	require.NoError(t, w.WritePacket([]byte("garbage\n")))
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", smartAdvHeader)
 		_, _ = w.Write(buf.Bytes())
 	}))
@@ -218,11 +218,11 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.Equal(t, 200, pe.Status)
 }
 
@@ -250,11 +250,11 @@ func TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe), "want *ProtocolError, got %T: %v", err, err)
+	require.ErrorAs(t, err, &pe, "want *ProtocolError, got %T: %v", err, err)
 	assert.Equal(t, http.StatusOK, pe.Status)
 	assert.Equal(t, "probe", pe.Op)
 	require.NotEmpty(t, pe.Server,
@@ -281,7 +281,7 @@ func TestOpen_Dumb200_AdapterWired(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "the dumb-HTTP adapter must wrap a 200 + non-smart body")
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -302,7 +302,7 @@ func TestOpen_Dumb200_AdapterWired(t *testing.T) {
 
 func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -311,10 +311,10 @@ func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthRequired),
+	assert.ErrorIs(t, err, ErrAuthRequired,
 		"401 with no resolver must return ErrAuthRequired; got %v", err)
 }
 
@@ -346,7 +346,7 @@ func TestOpen_401_StaticResolver_AcceptsOnRetry(t *testing.T) {
 	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 	t.Cleanup(func() { _ = conn.Close() })
@@ -357,7 +357,7 @@ func TestOpen_401_StaticResolver_AcceptsOnRetry(t *testing.T) {
 func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
 	t.Parallel()
 	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -367,10 +367,10 @@ func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
 	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	require.ErrorIs(t, err, ErrAuthFailed,
 		"401-after-retry must return ErrAuthFailed; got %v", err)
 	assert.Equal(t, 2, calls,
 		"the retry runs at most once: two requests total, no third probe")
@@ -378,7 +378,7 @@ func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
 
 func TestOpen_401_StaticResolver_NilCred_ReturnsErrAuthRequired(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -391,10 +391,10 @@ func TestOpen_401_StaticResolver_NilCred_ReturnsErrAuthRequired(t *testing.T) {
 	tr := New(WithCredentials(Static(nil)))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthRequired),
+	assert.ErrorIs(t, err, ErrAuthRequired,
 		"a (nil, nil) resolver outcome must mean ErrAuthRequired; got %v", err)
 }
 
@@ -408,7 +408,7 @@ func (r errResolver) Resolve(_ context.Context, _ *url.URL) (Credentials, error)
 
 func TestOpen_401_ResolverError_Propagated(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -418,16 +418,16 @@ func TestOpen_401_ResolverError_Propagated(t *testing.T) {
 	tr := New(WithCredentials(errResolver{err: want}))
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, want),
+	assert.ErrorIs(t, err, want,
 		"a resolver error must propagate via errors.Is; got %v", err)
 }
 
 func TestOpen_403_ReturnsErrAuthFailed(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
@@ -435,16 +435,16 @@ func TestOpen_403_ReturnsErrAuthFailed(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrAuthFailed),
+	assert.ErrorIs(t, err, ErrAuthFailed,
 		"403 maps to ErrAuthFailed; got %v", err)
 }
 
 func TestOpen_404_ReturnsErrNotFound(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
@@ -452,16 +452,16 @@ func TestOpen_404_ReturnsErrNotFound(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNotFound),
+	assert.ErrorIs(t, err, ErrNotFound,
 		"404 maps to ErrNotFound; got %v", err)
 }
 
 func TestOpen_500_ReturnsProtocolError(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("the server is on fire"))
 	}))
@@ -470,11 +470,11 @@ func TestOpen_500_ReturnsProtocolError(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"5xx must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, 500, pe.Status)
 	assert.Equal(t, "probe", pe.Op)
@@ -485,7 +485,7 @@ func TestOpen_500_ReturnsProtocolError(t *testing.T) {
 func TestOpen_500_TruncatesServerBody(t *testing.T) {
 	t.Parallel()
 	long := strings.Repeat("x", 4096)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(long))
 	}))
@@ -494,10 +494,10 @@ func TestOpen_500_TruncatesServerBody(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	_, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.LessOrEqual(t, len(pe.Server), 1024+len("..."),
 		"Server is bounded to 1 KiB plus a possible ellipsis marker")
 	assert.Contains(t, pe.Server, "...",
@@ -506,7 +506,7 @@ func TestOpen_500_TruncatesServerBody(t *testing.T) {
 
 func TestOpen_UnexpectedStatus_418(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	defer srv.Close()
@@ -514,11 +514,11 @@ func TestOpen_UnexpectedStatus_418(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"unexpected status maps to *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, http.StatusTeapot, pe.Status)
 }
@@ -571,14 +571,14 @@ func TestOpen_URL_StripsTrailingSlash(t *testing.T) {
 	tr := New()
 	u := parseTestURL(t, srv, "/repo.git/")
 
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 }
 
 func TestOpen_URL_RedactsCredentialsInProtocolError(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -593,10 +593,10 @@ func TestOpen_URL_RedactsCredentialsInProtocolError(t *testing.T) {
 	require.NoError(t, err)
 
 	tr := New()
-	_, err = tr.Open(context.Background(), u, transport.OpenOptions{})
+	_, err = tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe))
+	require.ErrorAs(t, err, &pe)
 	assert.NotContains(t, pe.URL, "secret",
 		"the password must never travel in *ProtocolError.URL")
 }

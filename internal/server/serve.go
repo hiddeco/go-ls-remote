@@ -64,7 +64,8 @@ var ErrUnsupportedProtocol = errors.New("server: unsupported preferred protocol"
 // [gitprotocol-v2.adoc §"Capability Advertisement"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-v2.adoc#capability-advertisement
 // [upload-pack.c:1422-1428]: https://github.com/git/git/blob/v2.54.0/upload-pack.c#L1422-L1428
 func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) error {
+	store *objstore.Store[H], opts Options,
+) error {
 	switch opts.PreferredProtocol {
 	case transport.ProtocolV2:
 		if err := writeV2Advertisement(w, store, opts); err != nil {
@@ -96,6 +97,7 @@ func Serve[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Wri
 //
 // [http-backend.c::service_rpc]: https://github.com/git/git/blob/v2.54.0/http-backend.c#L654
 func ServeCommandLoop[H objfmt.Hash](ctx context.Context, r *pktline.Reader, w *pktline.Writer,
-	store *objstore.Store[H], opts Options) error {
+	store *objstore.Store[H], opts Options,
+) error {
 	return runV2CommandLoop(ctx, r, w, store, opts)
 }

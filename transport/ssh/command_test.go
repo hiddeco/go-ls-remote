@@ -3,7 +3,6 @@ package ssht
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,7 +117,7 @@ func openBridgedConn(t *testing.T, fixture string) *Conn {
 		WithAuth(Signer(srv.clientSigner)),
 		WithKnownHosts(srv.hostKeyCallback()),
 	)
-	conn, err := tr.Open(context.Background(), srv.URL(), defaultOpenOptions())
+	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -129,9 +128,10 @@ func openBridgedConn(t *testing.T, fixture string) *Conn {
 }
 
 func TestCommand_lsRefs(t *testing.T) {
+	t.Parallel()
 	c := openBridgedConn(t, "loose-only")
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel"}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
 	require.NotNil(t, rdr)
@@ -157,6 +157,7 @@ func TestCommand_lsRefs(t *testing.T) {
 }
 
 func TestCommand_objectInfo(t *testing.T) {
+	t.Parallel()
 	c := openBridgedConn(t, "loose-only")
 
 	// The `aaaa...` OID is loose-only's ref tip. The handler is not
@@ -164,7 +165,7 @@ func TestCommand_objectInfo(t *testing.T) {
 	// `oid <hex>` argument so the server's parser accepts the request
 	// and emits its `size\n` attrs line.
 	oid := strings.Repeat("a", 40)
-	rdr, err := c.Command(context.Background(), "object-info",
+	rdr, err := c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid}, []string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -186,9 +187,10 @@ func TestCommand_objectInfo(t *testing.T) {
 }
 
 func TestCommand_contextCancelled(t *testing.T) {
+	t.Parallel()
 	c := openBridgedConn(t, "loose-only")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	rdr, err := c.Command(ctx, "ls-refs",
@@ -200,16 +202,17 @@ func TestCommand_contextCancelled(t *testing.T) {
 	require.ErrorAs(t, err, &pe,
 		"a pre-cancelled context must surface as *ProtocolError")
 	assert.Equal(t, "command", pe.Op)
-	assert.True(t, errors.Is(err, context.Canceled),
+	assert.ErrorIs(t, err, context.Canceled,
 		"the cancellation must remain matchable through the wrapper")
 }
 
 func TestCommand_closedPipe(t *testing.T) {
+	t.Parallel()
 	c := openBridgedConn(t, "loose-only")
 
 	require.NoError(t, c.Close())
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, []string{"object-format=sha1"}))
 	assert.Nil(t, rdr)
 	require.Error(t, err)

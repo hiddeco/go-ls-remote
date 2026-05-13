@@ -89,20 +89,22 @@ func errFindLSRemoteSentinel(err error) error {
 // up as a `*net.OpError`; no library sentinel should match because the
 // failure happened before any wire byte was seen.
 func TestErr_DNSFailure(t *testing.T) {
+	t.Parallel()
 	// Bind-then-close yields a port the kernel guarantees is refused
 	// (RST on connect). Using port 0 directly would race with whatever
 	// the OS assigns at dial time.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = lsremote.Dial(ctx, "http://"+addr+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
 
 	var opErr *net.OpError
-	assert.True(t, errors.As(err, &opErr),
+	require.ErrorAs(t, err, &opErr,
 		"want wrapped *net.OpError reachable via errors.As; got %T: %v", err, err)
 
 	if s := errFindLSRemoteSentinel(err); s != nil {
@@ -119,16 +121,17 @@ func TestErr_DNSFailure(t *testing.T) {
 // header to confirm the transport relies on status alone, not the
 // challenge header, for the dispatch.
 func TestErr_HTTP401NoCreds(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, lsremote.ErrAuthRequired),
+	require.ErrorIs(t, err, lsremote.ErrAuthRequired,
 		"401 with no resolver must match ErrAuthRequired; got %v", err)
-	assert.False(t, errors.Is(err, lsremote.ErrAuthFailed))
+	assert.NotErrorIs(t, err, lsremote.ErrAuthFailed)
 }
 
 // ----------------------------------------------------------------------
@@ -139,6 +142,7 @@ func TestErr_HTTP401NoCreds(t *testing.T) {
 // the HTTP transport; the server still emits 401 on the retry, which
 // must surface as `ErrAuthFailed`.
 func TestErr_HTTP401RejectedCreds(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
 		w.WriteHeader(http.StatusUnauthorized)
@@ -148,11 +152,11 @@ func TestErr_HTTP401RejectedCreds(t *testing.T) {
 	tr := httpt.New(httpt.WithCredentials(httpt.Static(httpt.Basic("alice", "secret"))))
 	opts := []lsremote.Option{lsremote.WithTransports(transport.NewRegistry(tr))}
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", opts...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", opts...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, lsremote.ErrAuthFailed),
+	require.ErrorIs(t, err, lsremote.ErrAuthFailed,
 		"401-after-retry must match ErrAuthFailed; got %v", err)
-	assert.False(t, errors.Is(err, lsremote.ErrAuthRequired))
+	assert.NotErrorIs(t, err, lsremote.ErrAuthRequired)
 }
 
 // ----------------------------------------------------------------------
@@ -164,6 +168,7 @@ func TestErr_HTTP401RejectedCreds(t *testing.T) {
 // two round-trips happen: the anonymous probe and the authenticated
 // retry. The retry uses a static resolver attached to the transport.
 func TestErr_HTTP401ResolverNewCreds(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
 
@@ -183,7 +188,7 @@ func TestErr_HTTP401ResolverNewCreds(t *testing.T) {
 	tr := httpt.New(httpt.WithCredentials(httpt.Static(httpt.Basic("alice", "secret"))))
 	opts := []lsremote.Option{lsremote.WithTransports(transport.NewRegistry(tr))}
 
-	s, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", opts...)
+	s, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", opts...)
 	require.NoError(t, err, "401 + retry-200 must open cleanly")
 	t.Cleanup(func() { _ = s.Close() })
 	assert.Equal(t, 2, calls, "exactly two probe round-trips: anonymous, then authenticated")
@@ -198,14 +203,15 @@ func TestErr_HTTP401ResolverNewCreds(t *testing.T) {
 // is treated as a hard auth rejection — there is no retry path, since
 // no challenge was offered.
 func TestErr_HTTP403(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, lsremote.ErrAuthFailed),
+	assert.ErrorIs(t, err, lsremote.ErrAuthFailed,
 		"403 must match ErrAuthFailed; got %v", err)
 }
 
@@ -215,14 +221,15 @@ func TestErr_HTTP403(t *testing.T) {
 
 // TestErr_HTTP404 covers the missing-repository branch.
 func TestErr_HTTP404(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, lsremote.ErrNotFound),
+	assert.ErrorIs(t, err, lsremote.ErrNotFound,
 		"404 must match ErrNotFound; got %v", err)
 }
 
@@ -235,6 +242,7 @@ func TestErr_HTTP404(t *testing.T) {
 // match any library sentinel. The 5xx body is short and so survives
 // the 1-KiB excerpt cap unchanged.
 func TestErr_HTTP5xx(t *testing.T) {
+	t.Parallel()
 	const body = "upload-pack on fire"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -242,11 +250,11 @@ func TestErr_HTTP5xx(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
 
 	var pe *lsremote.ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"5xx must surface as *lsremote.ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "dial", pe.Op,
 		"5xx classification happens before the advertisement parse, so Op=dial")
@@ -255,7 +263,7 @@ func TestErr_HTTP5xx(t *testing.T) {
 	// and the body excerpt; the root layer surfaces the status through
 	// the wrapped chain rather than copying it onto its own field.
 	var httpPE *httpt.ProtocolError
-	require.True(t, errors.As(err, &httpPE),
+	require.ErrorAs(t, err, &httpPE,
 		"the chain must reveal the transport's *ProtocolError; got %v", err)
 	assert.Equal(t, http.StatusInternalServerError, httpPE.Status)
 	assert.Contains(t, httpPE.Server, body)
@@ -283,6 +291,7 @@ func TestErr_HTTP5xx(t *testing.T) {
 // — the wire was already past the status-code dispatch when the bytes
 // dropped, so `ErrNotFound` etc. cannot fire here.
 func TestErr_ConnectionDropMidStream(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -312,7 +321,7 @@ func TestErr_ConnectionDropMidStream(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
 
 	// Accept either an io.ErrUnexpectedEOF (the content-length-bounded
@@ -343,6 +352,7 @@ func TestErr_ConnectionDropMidStream(t *testing.T) {
 // the GET probe, then on the POST returns an ERR pkt-line + flush
 // before any ref payload.
 func TestErr_ServerERRPacket(t *testing.T) {
+	t.Parallel()
 	const errMsg = "ls-refs: handler is offline"
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
@@ -354,27 +364,27 @@ func TestErr_ServerERRPacket(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
 			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 			pw := pktline.NewWriter(w)
-			require.NoError(t, pw.WritePacket([]byte("ERR "+errMsg+"\n")))
-			require.NoError(t, pw.WriteFlush())
+			assert.NoError(t, pw.WritePacket([]byte("ERR "+errMsg+"\n")))
+			assert.NoError(t, pw.WriteFlush())
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(srv.Close)
 
-	s, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	s, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, err = s.ListRefs(context.Background(), lsremote.RefsRequest{})
+	_, err = s.ListRefs(t.Context(), lsremote.RefsRequest{})
 	require.Error(t, err)
 
 	var pe *lsremote.ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"want *lsremote.ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "ls-refs", pe.Op)
 
-	assert.True(t, errors.Is(err, lsremote.ErrServerRefused),
+	require.ErrorIs(t, err, lsremote.ErrServerRefused,
 		"server `ERR` packet must match ErrServerRefused; got %v", err)
 
 	// The contract requires the server's message text to be retained.
@@ -394,6 +404,7 @@ func TestErr_ServerERRPacket(t *testing.T) {
 // version mismatch surfaces as `wire.ErrUnsupportedProtocol`, bridged
 // to the public `ErrUnsupportedProtocol` via `dial.go`'s `errors.Join`.
 func TestErr_DemandedV2GotV0(t *testing.T) {
+	t.Parallel()
 	gitdir := materializeLoose(t)
 	store := openSHA1Store(t, gitdir)
 
@@ -404,12 +415,12 @@ func TestErr_DemandedV2GotV0(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", httpAdvContentType)
 		pw := pktline.NewWriter(w)
-		require.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
-		require.NoError(t, pw.WriteFlush())
+		assert.NoError(t, pw.WritePacket([]byte("# service=git-upload-pack\n")))
+		assert.NoError(t, pw.WriteFlush())
 		// Drive the in-process server with PreferredProtocol=v0 so the
 		// emitted advertisement is the canonical v0 ref list, NOT the
 		// v2 capability stream.
-		require.NoError(t, server.Serve(r.Context(),
+		assert.NoError(t, server.Serve(r.Context(),
 			pktline.NewReader(strings.NewReader("0000")),
 			pw, store, server.Options{
 				PreferredProtocol: transport.ProtocolV0,
@@ -418,10 +429,10 @@ func TestErr_DemandedV2GotV0(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	opts := append(errOptsHTTP(), lsremote.WithProtocol(lsremote.ProtocolV2))
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", opts...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", opts...)
 	require.Error(t, err)
 
-	assert.True(t, errors.Is(err, lsremote.ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, lsremote.ErrUnsupportedProtocol,
 		"v2-pinned client against a v0 server must match ErrUnsupportedProtocol; got %v", err)
 }
 
@@ -436,6 +447,7 @@ func TestErr_DemandedV2GotV0(t *testing.T) {
 // the library does not implement v1 (v1 has no command loop and so no
 // `object-info` shape to test against).
 func TestErr_ObjectInfoOnDumbHTTP(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(
@@ -444,15 +456,15 @@ func TestErr_ObjectInfoOnDumbHTTP(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	s, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	s, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.NoError(t, err, "dumb-HTTP probe must open the Session; the v2-gate fires on ObjectInfo")
 	t.Cleanup(func() { _ = s.Close() })
 
-	_, err = s.ObjectInfo(context.Background(),
+	_, err = s.ObjectInfo(t.Context(),
 		[]string{"3333333333333333333333333333333333333333"},
 		lsremote.ObjectInfoRequest{Size: true})
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, lsremote.ErrUnsupportedProtocol),
+	assert.ErrorIs(t, err, lsremote.ErrUnsupportedProtocol,
 		"object-info on a non-v2 Session must match ErrUnsupportedProtocol; got %v", err)
 }
 
@@ -465,6 +477,7 @@ func TestErr_ObjectInfoOnDumbHTTP(t *testing.T) {
 // for the miss (`<oid> \n`), which the wire decoder drops, so the
 // returned slice carries only the valid OID and no error.
 func TestErr_ObjectInfoMissingOID(t *testing.T) {
+	t.Parallel()
 	entry := entryByName(t, "loose-objects")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -479,7 +492,7 @@ func TestErr_ObjectInfoMissingOID(t *testing.T) {
 	// such object exists in the loose store.
 	const missingOID = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
-	got, err := lsremote.ObjectInfos(context.Background(), srv.URL+"/repo.git",
+	got, err := lsremote.ObjectInfos(t.Context(), srv.URL+"/repo.git",
 		[]string{validOID, missingOID}, lsremote.ObjectInfoRequest{Size: true},
 		errOptsHTTP()...)
 	require.NoError(t, err)
@@ -498,6 +511,7 @@ func TestErr_ObjectInfoMissingOID(t *testing.T) {
 // caller asks for it. Without the unborn flag, the result is the
 // empty slice.
 func TestErr_EmptyRepo(t *testing.T) {
+	t.Parallel()
 	entry := entryByName(t, "empty")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -507,7 +521,7 @@ func TestErr_EmptyRepo(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	got, err := lsremote.ListRefs(context.Background(), srv.URL+"/repo.git",
+	got, err := lsremote.ListRefs(t.Context(), srv.URL+"/repo.git",
 		lsremote.RefsRequest{}, errOptsHTTP()...)
 	require.NoError(t, err)
 	assert.Empty(t, got, "empty fixture must yield zero refs without Unborn")
@@ -522,6 +536,7 @@ func TestErr_EmptyRepo(t *testing.T) {
 // entry whose Hash is empty (the public encoding for the unborn case)
 // and whose Symref names the unborn target branch.
 func TestErr_UnbornHEADRefs(t *testing.T) {
+	t.Parallel()
 	entry := entryByName(t, "unborn-head")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -531,7 +546,7 @@ func TestErr_UnbornHEADRefs(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	got, err := lsremote.ListRefs(context.Background(), srv.URL+"/repo.git",
+	got, err := lsremote.ListRefs(t.Context(), srv.URL+"/repo.git",
 		lsremote.RefsRequest{Symrefs: true, Unborn: true}, errOptsHTTP()...)
 	require.NoError(t, err)
 
@@ -555,6 +570,7 @@ func TestErr_UnbornHEADRefs(t *testing.T) {
 // `symref-target:` attribute on the unborn HEAD entry only when the
 // `unborn` argument was on the request — see `helpers.DefaultBranch`).
 func TestErr_UnbornHEADDefaultBranch(t *testing.T) {
+	t.Parallel()
 	entry := entryByName(t, "unborn-head")
 	gitdir := entry.Materialize(t)
 	store := openSHA1Store(t, gitdir)
@@ -564,7 +580,7 @@ func TestErr_UnbornHEADDefaultBranch(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	got, err := lsremote.DefaultBranch(context.Background(), srv.URL+"/repo.git",
+	got, err := lsremote.DefaultBranch(t.Context(), srv.URL+"/repo.git",
 		errOptsHTTP()...)
 	require.NoError(t, err)
 	assert.Equal(t, "refs/heads/main", got)
@@ -578,6 +594,7 @@ func TestErr_UnbornHEADDefaultBranch(t *testing.T) {
 // returned error must surface `context.Canceled` directly through the
 // chain — no library sentinel wrapping that would shadow the cause.
 func TestErr_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// The handler should never be reached; cancellation happens
 		// before the dial. Emit a 500 if we ever land here so the test
@@ -586,13 +603,13 @@ func TestErr_ContextCanceled(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	_, err := lsremote.Refs(ctx, srv.URL+"/repo.git", lsremote.RefsRequest{},
 		errOptsHTTP()...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled),
+	require.ErrorIs(t, err, context.Canceled,
 		"want errors.Is(err, context.Canceled); got %v", err)
 
 	if s := errFindLSRemoteSentinel(err); s != nil {
@@ -608,6 +625,7 @@ func TestErr_ContextCanceled(t *testing.T) {
 // dial fires after the deadline has already passed. The returned
 // error must surface `context.DeadlineExceeded` directly.
 func TestErr_ContextDeadlineExceeded(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Same shape as TestErr_ContextCanceled: never expected to run.
 		w.WriteHeader(http.StatusInternalServerError)
@@ -616,7 +634,7 @@ func TestErr_ContextDeadlineExceeded(t *testing.T) {
 
 	// 1µs is short enough to elapse before the dial starts. The HTTP
 	// client returns context.DeadlineExceeded through `client.Do`.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Microsecond)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Microsecond)
 	t.Cleanup(cancel)
 	// Sleep a hair longer than the timeout so the deadline is firmly
 	// in the past by the time we issue the call.
@@ -625,7 +643,7 @@ func TestErr_ContextDeadlineExceeded(t *testing.T) {
 	_, err := lsremote.Refs(ctx, srv.URL+"/repo.git", lsremote.RefsRequest{},
 		errOptsHTTP()...)
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.DeadlineExceeded),
+	assert.ErrorIs(t, err, context.DeadlineExceeded,
 		"want errors.Is(err, context.DeadlineExceeded); got %v", err)
 }
 
@@ -640,6 +658,7 @@ func TestErr_ContextDeadlineExceeded(t *testing.T) {
 // of the server-supplied bytes, per the contract documented on
 // `ProtocolError.Server`.
 func TestErr_MalformedPktLineAdvertisement(t *testing.T) {
+	t.Parallel()
 	const garbage = "this is definitely not a pkt-line stream\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", httpAdvContentType)
@@ -648,11 +667,11 @@ func TestErr_MalformedPktLineAdvertisement(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := lsremote.Dial(context.Background(), srv.URL+"/repo.git", errOptsHTTP()...)
+	_, err := lsremote.Dial(t.Context(), srv.URL+"/repo.git", errOptsHTTP()...)
 	require.Error(t, err)
 
 	var pe *lsremote.ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"want *lsremote.ProtocolError; got %T: %v", err, err)
 	require.NotEmpty(t, pe.Server,
 		"ProtocolError.Server must carry an excerpt of the malformed bytes")
@@ -680,16 +699,17 @@ func TestErr_MalformedPktLineAdvertisement(t *testing.T) {
 // `*lsremote.ProtocolError` whose Op is `"dial"` and whose chain
 // surfaces the corrupt-idx path.
 func TestErr_CorruptedPackObjectInfo(t *testing.T) {
+	t.Parallel()
 	gitdir := inttest.Entry{Name: "idx-corrupt", ObjectFormat: lsremote.ObjectFormatSHA1}.Materialize(t)
 
 	opts := []lsremote.Option{
 		lsremote.WithTransports(transport.NewRegistry(filet.New())),
 	}
-	_, err := lsremote.Dial(context.Background(), "file://"+gitdir, opts...)
+	_, err := lsremote.Dial(t.Context(), "file://"+gitdir, opts...)
 	require.Error(t, err)
 
 	var pe *lsremote.ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"want *lsremote.ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "dial", pe.Op)
 	assert.Contains(t, err.Error(), "bogus.idx",
@@ -707,7 +727,8 @@ func TestErr_CorruptedPackObjectInfo(t *testing.T) {
 // sentinels exposing the parse failure are part of the documented
 // contract on `Dial`.
 func TestErr_URLParseFailure(t *testing.T) {
-	_, err := lsremote.Refs(context.Background(), "://malformed",
+	t.Parallel()
+	_, err := lsremote.Refs(t.Context(), "://malformed",
 		lsremote.RefsRequest{}, errOptsHTTP()...)
 	require.Error(t, err)
 
@@ -774,7 +795,8 @@ func openSHA1Store(t *testing.T, gitdir string) *objstore.Store[objfmt.SHA1Hash]
 // directly (Row 4, Row 9) when the harness's full
 // `inttest.NewHTTPServer` plumbing is more than the row needs.
 func writeSmartAdvertisement(t *testing.T, r *http.Request, w http.ResponseWriter,
-	store *objstore.Store[objfmt.SHA1Hash]) {
+	store *objstore.Store[objfmt.SHA1Hash],
+) {
 	t.Helper()
 	w.Header().Set("Content-Type", httpAdvContentType)
 	pw := pktline.NewWriter(w)
@@ -792,7 +814,8 @@ func writeSmartAdvertisement(t *testing.T, r *http.Request, w http.ResponseWrite
 // `inttest.NewHTTPServer` but inline so each row can keep its setup
 // in one function.
 func writeSmartServer(t *testing.T, r *http.Request, w http.ResponseWriter,
-	store *objstore.Store[objfmt.SHA1Hash]) {
+	store *objstore.Store[objfmt.SHA1Hash],
+) {
 	t.Helper()
 	switch {
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs"):

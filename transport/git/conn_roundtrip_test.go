@@ -3,7 +3,6 @@ package gitt
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -31,7 +30,8 @@ import (
 // [daemon.c::execute line 749]: https://github.com/git/git/blob/v2.54.0/daemon.c#L749
 func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, port string) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	serverDone := make(chan struct{})
 	t.Cleanup(func() { <-serverDone })
@@ -57,7 +57,7 @@ func startServer[H objfmt.Hash](t *testing.T, store *objstore.Store[H]) (host, p
 			return
 		}
 
-		_ = server.Serve(context.Background(), r, w, store, server.Options{
+		_ = server.Serve(t.Context(), r, w, store, server.Options{
 			PreferredProtocol: transport.ProtocolV2,
 		})
 	}()
@@ -94,7 +94,7 @@ func openRoundtripConn(t *testing.T, host, port string) *Conn {
 		Path:   "/repo",
 		Raw:    "git://" + host + ":" + port + "/repo",
 	}
-	conn, err := tr.Open(context.Background(), u, transport.OpenOptions{})
+	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
 	c, ok := conn.(*Conn)
 	require.True(t, ok)
@@ -158,6 +158,7 @@ func cmdBody(name string, args, caps []string) transport.CommandBody {
 // TestConn_Roundtrip_Advertisement_V2 verifies that after dialling the
 // in-process server the first advertisement packet is `version 2\n`.
 func TestConn_Roundtrip_Advertisement_V2(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -177,13 +178,14 @@ func TestConn_Roundtrip_Advertisement_V2(t *testing.T) {
 // refs/heads/main and refs/heads/feature/x and refs/tags/v1, so the
 // response is non-empty.
 func TestConn_Roundtrip_LSRefs(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
 
 	drainV2Advertisement(t, c.Advertisement())
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", []string{"peel", "symrefs"},
 			[]string{"object-format=sha1"}))
 	require.NoError(t, err)
@@ -212,6 +214,7 @@ func TestConn_Roundtrip_LSRefs(t *testing.T) {
 // its sole ref tip; the server emits the `size\n` attrs line for any
 // `size` request, so the response is at least one data packet plus flush.
 func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "loose-only")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -219,7 +222,7 @@ func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
 	drainV2Advertisement(t, c.Advertisement())
 
 	oid := strings.Repeat("a", 40)
-	rdr, err := c.Command(context.Background(), "object-info",
+	rdr, err := c.Command(t.Context(), "object-info",
 		cmdBody("object-info",
 			[]string{"size", "oid " + oid},
 			[]string{"object-format=sha1"}))
@@ -250,6 +253,7 @@ func TestConn_Roundtrip_ObjectInfo(t *testing.T) {
 // after [Conn.Close] surfaces a `*ProtocolError{Op: "command"}` whose
 // cause is a net-closed shape.
 func TestConn_Command_AfterCloseFails(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
@@ -257,16 +261,16 @@ func TestConn_Command_AfterCloseFails(t *testing.T) {
 	drainV2Advertisement(t, c.Advertisement())
 	require.NoError(t, c.Close())
 
-	rdr, err := c.Command(context.Background(), "ls-refs",
+	rdr, err := c.Command(t.Context(), "ls-refs",
 		cmdBody("ls-refs", nil, nil))
 	assert.Nil(t, rdr)
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"Command after Close must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
-	assert.True(t, errors.Is(err, net.ErrClosed),
+	assert.ErrorIs(t, err, net.ErrClosed,
 		"cause must be a net-closed shape; got %v", err)
 }
 
@@ -274,13 +278,14 @@ func TestConn_Command_AfterCloseFails(t *testing.T) {
 // surfaces a `*ProtocolError{Op: "command"}` wrapping [context.Canceled]
 // before any I/O is attempted.
 func TestConn_Command_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	store := openFixtureStore(t, "empty")
 	host, port := startServer(t, store)
 	c := openRoundtripConn(t, host, port)
 
 	drainV2Advertisement(t, c.Advertisement())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	rdr, err := c.Command(ctx, "ls-refs",
@@ -289,9 +294,9 @@ func TestConn_Command_ContextCanceled(t *testing.T) {
 	require.Error(t, err)
 
 	var pe *ProtocolError
-	require.True(t, errors.As(err, &pe),
+	require.ErrorAs(t, err, &pe,
 		"cancelled context must surface as *ProtocolError; got %T: %v", err, err)
 	assert.Equal(t, "command", pe.Op)
-	assert.True(t, errors.Is(err, context.Canceled),
+	assert.ErrorIs(t, err, context.Canceled,
 		"cause must be context.Canceled; got %v", err)
 }

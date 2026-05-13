@@ -14,6 +14,7 @@ import (
 // The prefix is always `transport/git` (no trailing colon); a colon
 // before the cause is added only when cause is non-empty.
 func TestProtocolError_Error(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  *ProtocolError
@@ -47,6 +48,7 @@ func TestProtocolError_Error(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}
@@ -56,12 +58,15 @@ func TestProtocolError_Error(t *testing.T) {
 // wrapper to the sentinel and through [transport.SchemeError] to the
 // generic parent.
 func TestProtocolError_Unwrap(t *testing.T) {
+	t.Parallel()
 	err := &ProtocolError{Op: "dial", Err: ErrUnsupportedProtocol}
 
 	t.Run("matches package sentinel", func(t *testing.T) {
-		assert.True(t, errors.Is(err, ErrUnsupportedProtocol))
+		t.Parallel()
+		assert.ErrorIs(t, err, ErrUnsupportedProtocol)
 	})
 	t.Run("bridges to transport.ErrUnsupportedProtocol", func(t *testing.T) {
-		assert.True(t, errors.Is(err, transport.ErrUnsupportedProtocol))
+		t.Parallel()
+		assert.ErrorIs(t, err, transport.ErrUnsupportedProtocol)
 	})
 }

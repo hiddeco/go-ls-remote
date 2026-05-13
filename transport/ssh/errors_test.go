@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/hiddeco/go-ls-remote/transport"
 )
@@ -13,20 +14,25 @@ import (
 // declared as [*transport.SchemeError] match their generic parent via
 // [errors.Is], mirroring the bridge contract of the other transports.
 func TestSentinels_BridgeToTransport(t *testing.T) {
+	t.Parallel()
 	t.Run("ErrAuthRequired bridges to transport.ErrAuthRequired", func(t *testing.T) {
-		assert.True(t, errors.Is(ErrAuthRequired, transport.ErrAuthRequired))
+		t.Parallel()
+		assert.ErrorIs(t, ErrAuthRequired, transport.ErrAuthRequired)
 	})
 	t.Run("ErrAuthFailed bridges to transport.ErrAuthFailed", func(t *testing.T) {
-		assert.True(t, errors.Is(ErrAuthFailed, transport.ErrAuthFailed))
+		t.Parallel()
+		assert.ErrorIs(t, ErrAuthFailed, transport.ErrAuthFailed)
 	})
 	t.Run("ErrNotFound bridges to transport.ErrNotFound", func(t *testing.T) {
-		assert.True(t, errors.Is(ErrNotFound, transport.ErrNotFound))
+		t.Parallel()
+		assert.ErrorIs(t, ErrNotFound, transport.ErrNotFound)
 	})
 }
 
 // TestProtocolError_Error verifies the rendered form is
 // `transport/ssh: <op> <URL>: <cause>` with zero-valued fields elided.
 func TestProtocolError_Error(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  *ProtocolError
@@ -50,6 +56,7 @@ func TestProtocolError_Error(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, tc.err.Error())
 		})
 	}
@@ -58,7 +65,8 @@ func TestProtocolError_Error(t *testing.T) {
 // TestProtocolError_Unwrap verifies the wrapped cause is exposed via
 // [errors.Unwrap] / [errors.Is].
 func TestProtocolError_Unwrap(t *testing.T) {
+	t.Parallel()
 	err := &ProtocolError{Op: "dial", Err: ErrAuthFailed}
-	assert.True(t, errors.Is(err, ErrAuthFailed))
-	assert.True(t, errors.Is(err, transport.ErrAuthFailed))
+	require.ErrorIs(t, err, ErrAuthFailed)
+	assert.ErrorIs(t, err, transport.ErrAuthFailed)
 }

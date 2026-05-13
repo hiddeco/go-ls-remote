@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	lsremote "github.com/hiddeco/go-ls-remote"
 	"github.com/hiddeco/go-ls-remote/transport"
 	httpt "github.com/hiddeco/go-ls-remote/transport/http"
 	ssht "github.com/hiddeco/go-ls-remote/transport/ssh"
-	"golang.org/x/crypto/ssh"
 )
 
 // authMode is one row of the per-provider auth-mode matrix the live
