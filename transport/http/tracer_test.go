@@ -97,8 +97,15 @@ func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 	assert.Equal(t, http.MethodGet, got[0].Method)
 	assert.Equal(t, http.StatusOK, got[0].Status)
 	require.NoError(t, got[0].Err, "a 200 must emit Err == nil")
-	assert.Greater(t, got[0].Duration, time.Duration(0),
-		"Duration must be measured wall-clock time")
+	// `Duration` must be a measured wall-clock interval, but the
+	// assertion stops at non-negative: on `windows-latest` an
+	// in-process `httptest` round-trip can complete inside a single
+	// monotonic-clock tick (QPC on Hyper-V reports microsecond-coarse
+	// increments) and `time.Since(start)` collapses to `0`. Mirrors
+	// the same relaxation in
+	// `internal/server/tracer_test.go::TestServe_TracerSingleLSRefs`.
+	assert.GreaterOrEqual(t, int64(got[0].Duration), int64(0),
+		"Duration must be a non-negative wall-clock interval")
 	assert.False(t, got[0].Time.IsZero(), "Time must be set")
 	assert.Contains(t, got[0].URL, "/repo.git/info/refs",
 		"URL must point at the discovery endpoint")
