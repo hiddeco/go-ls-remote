@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -312,4 +313,32 @@ func writeMidx(t testing.TB, dir string, fix midxFixture) string {
 	path := filepath.Join(dir, "multi-pack-index")
 	require.NoError(t, os.WriteFile(path, out.Bytes(), 0o600))
 	return path
+}
+
+// TestMidxFind_LOFFSignBitRejected covers the gosec G115 cast
+// guard. A corrupt midx whose LOFF entry has the sign bit set
+// would, without the guard, produce `int64(0xFFF...) == -1` and
+// hand a negative offset to the pack reader. With the guard the
+// lookup reports a miss. Canonical Git keeps the 64-bit offset
+// as `off_t` (`midx.c::nth_midxed_offset`, `midx.c:578`); the Go
+// conversion is the narrowing point.
+//
+// [midx.c:578]: https://github.com/git/git/blob/v2.54.0/midx.c#L578
+func TestMidxFind_LOFFSignBitRejected(t *testing.T) {
+	t.Parallel()
+
+	var h SHA1Hash // all-zero OID; fanout row 0
+	fx := midxFixture{
+		algo:  SHA1,
+		packs: []string{"pack-fake.pack"},
+		objs:  []midxObj{{oid: h, packIdx: 0, offset: math.MaxUint64}},
+	}
+	dir := t.TempDir()
+	_ = writeMidx(t, dir, fx)
+	m, err := OpenMidx[SHA1Hash](filepath.Join(dir, "multi-pack-index"), SHA1)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Close() })
+
+	_, _, ok := m.Find(h)
+	require.False(t, ok, "sign-bit LOFF offset must be rejected")
 }

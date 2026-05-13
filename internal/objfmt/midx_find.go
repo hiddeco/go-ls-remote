@@ -3,6 +3,7 @@ package objfmt
 import (
 	"bytes"
 	"encoding/binary"
+	"math"
 )
 
 // midxLargeOffsetMSB marks an offset slot in OOFF whose lower 31 bits
@@ -61,6 +62,13 @@ func (m *Midx[H]) Find(h H) (packIndex uint32, offset int64, ok bool) {
 		return 0, 0, false
 	}
 	off := binary.BigEndian.Uint64(m.data[loff.off+int64(loffIdx)*8 : loff.off+want])
+	if off > math.MaxInt64 {
+		// A LOFF offset with the sign bit set cannot be represented
+		// as a non-negative `int64`. Canonical Git carries the value
+		// as `off_t` (`midx.c:578`); in Go the cast is the
+		// narrowing point, so the guard lives here.
+		return 0, 0, false
+	}
 	return packIndex, int64(off), true
 }
 
