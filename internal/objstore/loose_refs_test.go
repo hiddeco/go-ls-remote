@@ -613,3 +613,72 @@ func TestLooseRefs_PeeledTrait_NonTagDoesNotInferPeelKnown(t *testing.T) {
 		"`peeled` trait does not apply to non-tag refs")
 	assert.Equal(t, objfmt.SHA1Hash{}, entry.Peeled)
 }
+
+// TestLooseRefs_Head_SymrefTargetRejectsPathTraversal locks in the
+// path-traversal guard: a symref content of the form
+// `ref: ../<...>` must be rejected before the walker turns the target
+// into a filesystem path. Canonical Git applies
+// `check_refname_format` at every symref hop in
+// `refs.c::resolve_ref_unsafe` ([refs.c:2152]).
+//
+// Pre-fix, the chain walker would `filepath.Join(commonDir, target)`
+// and `os.ReadFile` the resulting path — a real-file read followed
+// by a corruption error whose message embeds the absolute path of
+// the file it just read. The validator closes the read window
+// before the join.
+//
+// Asserting on the message substring is necessary because the
+// pre-fix error also wraps `ErrCorruptObject`; the substring is the
+// discriminator.
+//
+// [refs.c:2152]: https://github.com/git/git/blob/v2.54.0/refs.c#L2152
+func TestLooseRefs_Head_SymrefTargetRejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "HEAD"),
+		[]byte("ref: ../../../etc/passwd\n"),
+		0o644))
+
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrCorruptObject)
+	require.ErrorContains(t, err, "malformed symref target")
+}
+
+// TestLooseRefs_Head_SymrefTargetRejectsBackslash covers the
+// Windows-style separator that `check_refname_format` lists in its
+// forbidden set (`refs.c:80` disposition table).
+func TestLooseRefs_Head_SymrefTargetRejectsBackslash(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "HEAD"),
+		[]byte(`ref: refs\heads\main`+"\n"),
+		0o644))
+
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrCorruptObject)
+	require.ErrorContains(t, err, "malformed symref target")
+}
+
+// TestLooseRefs_Head_SymrefTargetRejectsControlBytes covers a NUL
+// byte in the target; the disposition table rejects every byte in
+// 0x00–0x1F.
+func TestLooseRefs_Head_SymrefTargetRejectsControlBytes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "HEAD"),
+		[]byte("ref: refs/heads/ma\x01in\n"),
+		0o644))
+
+	_, err := openLooseRefs[objfmt.SHA1Hash](dir, dir, objfmt.SHA1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrCorruptObject)
+	require.ErrorContains(t, err, "malformed symref target")
+}

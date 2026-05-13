@@ -339,6 +339,18 @@ func parseSymrefTarget(content string) (string, bool, error) {
 	if target == "" {
 		return "", false, fmt.Errorf("empty symref target: %w", ErrCorruptObject)
 	}
+	// Validate the target before any caller turns it into a
+	// filesystem path. Canonical Git runs `check_refname_format`
+	// on every symref hop inside `resolve_ref_unsafe`
+	// (`refs.c:2152`); without that check a payload like
+	// `ref: ../../../etc/passwd` would escape the refs directory
+	// at the next loose-ref read.
+	//
+	// [refs.c:2152]: https://github.com/git/git/blob/v2.54.0/refs.c#L2152
+	if !checkRefnameFormat(target) {
+		return "", false, fmt.Errorf(
+			"malformed symref target %q: %w", target, ErrCorruptObject)
+	}
 	return target, true, nil
 }
 
