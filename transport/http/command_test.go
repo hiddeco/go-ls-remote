@@ -154,7 +154,7 @@ func drainAdvertisement(t *testing.T, c *Conn) {
 func openSmartTestConn(t *testing.T, srv *httptest.Server, repoPath string, opts ...Option) *Conn {
 	t.Helper()
 
-	tr := New(opts...)
+	tr := newTestTransport(t, opts...)
 	u := parseTestURL(t, srv, repoPath)
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
@@ -557,7 +557,7 @@ func TestRedirect_OnPost_Never_Rejects(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New(WithFollowRedirects(FollowRedirectsNever))
+	tr := newTestTransport(t, WithFollowRedirects(FollowRedirectsNever))
 	// `Never` rejects redirects on the probe GET too; the test fixture
 	// does not redirect on the probe, so the open succeeds. The 3xx on
 	// the POST is what we exercise here.
@@ -895,7 +895,7 @@ func TestConn_Command_RedirectRejected_ClosesBody(t *testing.T) {
 		}
 	}}
 
-	tr := New(
+	tr := newTestTransport(t, 
 		WithClient(&http.Client{Transport: rt}),
 		// `Initial` follows redirects on the probe GET but rejects them
 		// on the command POST — exactly the case where `client.Do`

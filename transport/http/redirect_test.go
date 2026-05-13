@@ -45,7 +45,7 @@ func TestRedirect_Initial_FollowsToFinal(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/old.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -74,7 +74,7 @@ func TestRedirect_Initial_RespectsMaxRedirects(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New(WithMaxRedirects(2))
+	tr := newTestTransport(t, WithMaxRedirects(2))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -107,7 +107,7 @@ func TestRedirect_Initial_DefaultMaxIsTen(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/hop-0")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -128,7 +128,7 @@ func TestRedirect_Never_RejectsFirst3xx(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New(WithFollowRedirects(FollowRedirectsNever))
+	tr := newTestTransport(t, WithFollowRedirects(FollowRedirectsNever))
 	u := parseTestURL(t, srv, "/old.git")
 
 	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -152,7 +152,7 @@ func TestRedirect_Always_FollowsLikeInitial(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New(WithFollowRedirects(FollowRedirectsAlways))
+	tr := newTestTransport(t, WithFollowRedirects(FollowRedirectsAlways))
 	u := parseTestURL(t, srv, "/old.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -202,7 +202,7 @@ func TestRedirect_CrossOrigin_StripsAuthorization(t *testing.T) {
 		return Basic("alice", "secret"), nil
 	})
 
-	tr := New(WithCredentials(resolver))
+	tr := newTestTransport(t, WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -249,7 +249,7 @@ func TestRedirect_CrossOrigin_ReConsultsResolver(t *testing.T) {
 		return Basic("alice", "secret"), nil
 	})
 
-	tr := New(WithCredentials(resolver))
+	tr := newTestTransport(t, WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -343,7 +343,7 @@ func TestRedirect_SchemeDowngrade_IsCrossOrigin(t *testing.T) {
 	})
 
 	client := &http.Client{Transport: rt}
-	tr := New(
+	tr := newTestTransport(t, 
 		WithClient(client),
 		WithCredentials(resolver),
 	)
@@ -371,7 +371,7 @@ func TestRedirect_SchemeUpgrade_IsSameOrigin(t *testing.T) {
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 
 	client := &http.Client{Transport: rt}
-	tr := New(
+	tr := newTestTransport(t, 
 		WithClient(client),
 		WithCredentials(Static(Basic("alice", "secret"))),
 	)
@@ -402,7 +402,7 @@ func TestRedirect_FinalURL_RecordedOnConn(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/a.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -452,7 +452,7 @@ func TestRedirect_NegativeMaxRedirectsRejectsFirstHop(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithMaxRedirects(-1))
+	tr := newTestTransport(t, WithMaxRedirects(-1))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -511,7 +511,7 @@ func TestRedirect_Auth401Retry_UsesRedirectedURL(t *testing.T) {
 		return Basic("alice", "secret"), nil
 	})
 
-	tr := New(WithCredentials(resolver))
+	tr := newTestTransport(t, WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})

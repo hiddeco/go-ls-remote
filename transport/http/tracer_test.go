@@ -84,7 +84,7 @@ func TestTracer_HTTPEvent_OnSmart200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -122,7 +122,7 @@ func TestTracer_HTTPEvent_OnDumb200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -145,7 +145,7 @@ func TestTracer_HTTPEvent_On500(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -169,7 +169,7 @@ func TestTracer_HTTPEvent_OnDialError(t *testing.T) {
 	require.NoError(t, err)
 
 	tracer := &capturingTracer{}
-	tr := New()
+	tr := newTestTransport(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
@@ -205,7 +205,7 @@ func TestTracer_HTTPEvent_RedactsCredentials(t *testing.T) {
 	require.NoError(t, err)
 
 	tracer := &capturingTracer{}
-	conn, err := New().Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
+	conn, err := newTestTransport(t).Open(t.Context(), u, transport.OpenOptions{Tracer: tracer})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
@@ -224,7 +224,7 @@ func TestTracer_HTTPEvent_OnPost(t *testing.T) {
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -266,7 +266,7 @@ func TestTracer_PacketEvent_OnAdvertisement(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -307,7 +307,7 @@ func TestTracer_PacketEvent_OnCommandRequest(t *testing.T) {
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -363,7 +363,7 @@ func TestTracer_PacketEvent_OnDumbAdvertisement(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -412,7 +412,7 @@ func TestTracer_NoEmissions_WhenNil(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	// A nil Tracer must never panic on the no-emission path: every
@@ -455,7 +455,7 @@ func TestTracer_HTTPEvent_OnAuthRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
+	tr := newTestTransport(t, WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -483,7 +483,7 @@ func TestTracer_PacketEvent_BytesAreCopySafe(t *testing.T) {
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	tracer := &capturingTracer{}
 
@@ -544,7 +544,7 @@ func TestTracer_HTTPEvent_OnRedirect(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/old.git")
 	tracer := &capturingTracer{}
 
@@ -630,7 +630,7 @@ func TestTracer_PacketEvent_OutboundURLIsPreRedirect(t *testing.T) {
 	}
 
 	tracer := &capturingTracer{}
-	tr := New(
+	tr := newTestTransport(t, 
 		WithClient(&http.Client{Transport: rt}),
 		WithFollowRedirects(FollowRedirectsAlways),
 	)
@@ -690,7 +690,7 @@ func TestTracer_PacketEvent_NoEmissionsWhenNoTracer(t *testing.T) {
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	// No tracer: open, drain, command, drain — must complete cleanly.

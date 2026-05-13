@@ -1,6 +1,7 @@
 package httpt
 
 import (
+	"net/http"
 	"testing"
 
 	"go.uber.org/goleak"
@@ -25,4 +26,32 @@ func TestMain(m *testing.M) {
 		goleak.IgnoreTopFunction("net/http.(*persistConn).writeLoop"),
 		goleak.IgnoreAnyFunction("internal/poll.runtime_pollWait"),
 	)
+}
+
+// newTestTransport returns a [*Transport] configured exactly like
+// [New], but with an [http.Client] backed by a private
+// [http.Transport] pinned to t. Sharing `http.DefaultClient` across
+// parallel tests in this package is unsafe: `httptest.Server.Close`
+// documentedly calls `http.DefaultTransport.CloseIdleConnections` as
+// a courtesy (`net/http/httptest/server.go`, the "help them out and
+// close any idle connections" block), which closes persistConns
+// belonging to siblings that share the default transport. The
+// victim's in-flight request surfaces as `net/http: HTTP/1.x
+// transport connection broken: http: CloseIdleConnections called` —
+// the `errCloseIdleConns` sentinel only escapes `Transport.RoundTrip`
+// via that helper, so the diagnosis is unambiguous.
+//
+// The private transport is closed via `t.Cleanup` so the goroutine
+// guard above sees no orphaned idle conns at process exit. Caller
+// options are appended after the injected `WithClient` so a test
+// that explicitly passes its own client (e.g. for option-ordering
+// assertions) still wins.
+func newTestTransport(t *testing.T, opts ...Option) *Transport {
+	t.Helper()
+	rt := &http.Transport{}
+	t.Cleanup(rt.CloseIdleConnections)
+	full := make([]Option, 0, len(opts)+1)
+	full = append(full, WithClient(&http.Client{Transport: rt}))
+	full = append(full, opts...)
+	return New(full...)
 }

@@ -65,7 +65,7 @@ func testMatrixSmartV2Happy(t *testing.T) {
 	srv := httptest.NewServer(serveHandler(t, store, "/repo.git"))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func testMatrixSmartV0Fallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "a v0 smart advertisement must still open")
@@ -163,7 +163,7 @@ func testMatrixDumbHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)
@@ -218,7 +218,7 @@ func testMatrixAuth401Then200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
+	tr := newTestTransport(t, WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "401 followed by an authenticated 200 must open cleanly")
@@ -240,7 +240,7 @@ func testMatrixAuth401Then401(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
+	tr := newTestTransport(t, WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
@@ -257,7 +257,7 @@ func testMatrixStatus404(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
@@ -276,7 +276,7 @@ func testMatrixStatus5xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	assert.Nil(t, conn)
@@ -316,7 +316,7 @@ func testMatrixRedirectChainInitial(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/hop-0")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "two same-origin hops must follow under the default policy")
@@ -354,7 +354,7 @@ func testMatrixRedirectOnPostRejected(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err, "the probe GET must succeed under the default Initial policy")
@@ -413,7 +413,7 @@ func testMatrixRedirectCrossOriginAuthStripped(t *testing.T) {
 		return Basic("alice", "secret"), nil
 	})
 
-	tr := New(WithCredentials(resolver))
+	tr := newTestTransport(t, WithCredentials(resolver))
 	u := parseTestURL(t, srvA, "/repo.git")
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.NoError(t, err)

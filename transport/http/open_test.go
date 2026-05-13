@@ -81,7 +81,7 @@ func TestOpen_Smart200_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -110,7 +110,7 @@ func TestOpen_Smart200_ContentTypeWithCharset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -131,7 +131,7 @@ func TestOpen_Smart200_PreferredProtocolPinned(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	v := transport.ProtocolV0
@@ -153,7 +153,7 @@ func TestOpen_Smart200_UserAgent_OpenOptionsWins(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithUserAgent("ua-from-transport/1"))
+	tr := newTestTransport(t, WithUserAgent("ua-from-transport/1"))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{UserAgent: "ua-from-opts/1"})
@@ -174,7 +174,7 @@ func TestOpen_Smart200_UserAgent_TransportFallsBackToPackageDefault(t *testing.T
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -196,7 +196,7 @@ func TestOpen_Smart200_BadPreambleService(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -224,7 +224,7 @@ func TestOpen_Smart200_MissingFlush(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -257,7 +257,7 @@ func TestOpen_Smart200_MalformedPreamble_PopulatesServerExcerpt(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -289,7 +289,7 @@ func TestOpen_Dumb200_AdapterWired(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -320,7 +320,7 @@ func TestOpen_401_NoCreds_ReturnsErrAuthRequired(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -356,7 +356,7 @@ func TestOpen_401_StaticResolver_AcceptsOnRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
+	tr := newTestTransport(t, WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -378,7 +378,7 @@ func TestOpen_401_StaticResolver_RejectsOnRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New(WithCredentials(Static(Basic("alice", "secret"))))
+	tr := newTestTransport(t, WithCredentials(Static(Basic("alice", "secret"))))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -403,7 +403,7 @@ func TestOpen_401_StaticResolver_NilCred_ReturnsErrAuthRequired(t *testing.T) {
 	// credential available" signal; the probe must surface
 	// ErrAuthRequired rather than retrying with no Authorization
 	// header set.
-	tr := New(WithCredentials(Static(nil)))
+	tr := newTestTransport(t, WithCredentials(Static(nil)))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -431,7 +431,7 @@ func TestOpen_401_ResolverError_Propagated(t *testing.T) {
 	defer srv.Close()
 
 	want := errors.New("resolver kaboom")
-	tr := New(WithCredentials(errResolver{err: want}))
+	tr := newTestTransport(t, WithCredentials(errResolver{err: want}))
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -449,7 +449,7 @@ func TestOpen_403_ReturnsErrAuthFailed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -467,7 +467,7 @@ func TestOpen_404_ReturnsErrNotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -486,7 +486,7 @@ func TestOpen_500_ReturnsProtocolError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -511,7 +511,7 @@ func TestOpen_500_TruncatesServerBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	_, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -532,7 +532,7 @@ func TestOpen_UnexpectedStatus_418(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -592,7 +592,7 @@ func TestOpen_URL_StripsTrailingSlash(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := New()
+	tr := newTestTransport(t)
 	u := parseTestURL(t, srv, "/repo.git/")
 
 	conn, err := tr.Open(t.Context(), u, transport.OpenOptions{})
@@ -617,7 +617,7 @@ func TestOpen_URL_RedactsCredentialsInProtocolError(t *testing.T) {
 	u, err := transport.ParseURL(raw)
 	require.NoError(t, err)
 
-	tr := New()
+	tr := newTestTransport(t)
 	_, err = tr.Open(t.Context(), u, transport.OpenOptions{})
 	require.Error(t, err)
 	var pe *ProtocolError
