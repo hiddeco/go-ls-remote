@@ -27,25 +27,34 @@ var ErrMissingHostKey = errors.New(
 	"ssht: HostKeyCallback required (use WithKnownHosts or set HostKeyCallback on WithClientConfig)")
 
 // Open performs the dial and SSH handshake, exec's `git-upload-pack`
-// against the remote path, and writes the initial pkt-line on the
-// session's stdin. On return the [Conn]'s advertisement reader is
-// ready for the caller to consume.
+// against the remote path, and returns a [Conn] whose advertisement
+// reader is positioned at the first server byte. Nothing is written
+// to the session's stdin before the caller issues a [Conn.Command].
 //
-// # Two-channel version negotiation
+// # Version negotiation
 //
-// Two independent channels carry the requested protocol version, in
-// order:
+// The requested protocol version is signalled to the remote via the
+// SSH `env` channel alone — `GIT_PROTOCOL=version=<N>`, the same
+// shape canonical Git emits at [connect.c:1311-1321]
+// (`push_ssh_options` adds `SendEnv=GIT_PROTOCOL` to the `ssh`
+// command line). The env channel is best-effort: a server whose
+// `AcceptEnv` directive does not list `GIT_PROTOCOL` returns failure
+// on the request and `Setenv` errors silently. `upload-pack` then
+// runs without the hint and falls back to a v0 advertisement, which
+// the wire layer parses transparently.
 //
-//  1. The SSH `env` channel — `GIT_PROTOCOL=version=<N>` — is the path
-//     canonical Git takes in [connect.c:1311-1321] (`push_ssh_options`
-//     adds `SendEnv=GIT_PROTOCOL` to the `ssh` command line). It is
-//     best-effort: a server with a restrictive `AcceptEnv` directive
-//     rejects the request silently and the [Conn] is otherwise
-//     usable.
-//  2. The initial pkt-line on stdin — `git-upload-pack <path>\0host=<h>\0\0version=<N>\0`
-//     — is the universal fallback documented in
-//     [gitprotocol-pack.adoc §"Extra Parameters"]. Every server speaks
-//     it; restrictive `AcceptEnv` servers rely on it exclusively.
+// The "extra parameters" pkt-line — `git-upload-pack <path>\0host=…\0\0version=<N>\0`
+// — is NOT sent on the SSH transport. That mechanism is scoped to
+// the git-daemon transport: canonical Git's SSH branch at
+// [connect.c:1484-1508] never routes through `git_connect_git` (the
+// only function that emits the pkt-line, via `packet_write` at
+// [connect.c:1300]). [gitprotocol-pack.adoc §"SSH Transport"] mirrors
+// that scoping; it documents env-channel negotiation only and makes
+// no mention of an in-band fallback. Empirically, every forge that
+// interposes a shim between sshd and `upload-pack` (Gitea's
+// `gitea serv`, GitLab Shell, Gerrit) reads only argv and proxies
+// stdin raw, so writing the pkt-line closes the channel before the
+// first command frame.
 //
 // # ClientConfig merge rule
 //
@@ -64,8 +73,8 @@ var ErrMissingHostKey = errors.New(
 // `<-ctx.Done()`; that closure causes the in-progress handshake to
 // return a net-closed error and the function returns `ctx.Err()` in
 // preference. Once the handshake commits, cancellation no longer
-// applies — subsequent session setup and the initial pkt-line write
-// run synchronously without further context plumbing.
+// applies — subsequent session setup runs synchronously without
+// further context plumbing.
 //
 // # Error mapping
 //
@@ -78,10 +87,12 @@ var ErrMissingHostKey = errors.New(
 // `ProtocolError.Op` discriminates the stage that failed: `"dial"`
 // for the TCP dial and pre-dial config validation, `"handshake"` for
 // the SSH transport-and-auth handshake, and `"session"` for session
-// channel setup (env, pipe opens, exec, initial pkt-line write).
+// channel setup (env, pipe opens, exec).
 //
+// [connect.c:1300]: https://github.com/git/git/blob/v2.54.0/connect.c#L1300
 // [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
-// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [connect.c:1484-1508]: https://github.com/git/git/blob/v2.54.0/connect.c#L1484-L1508
+// [gitprotocol-pack.adoc §"SSH Transport"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#ssh-transport
 func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.OpenOptions) (_ transport.Conn, retErr error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -154,11 +165,10 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 
 	// Best-effort env channel. A server whose `AcceptEnv` does not list
 	// `GIT_PROTOCOL` rejects the request and `Setenv` returns
-	// non-nil. The transport swallows it silently — the in-band channel
-	// below is the safety net. The swallow is intentional and does not
-	// surface on the tracer either: env rejection is normal on
-	// restrictive servers and the [trace.PacketEvent] stream from the
-	// fallback pkt-line is the canonical signal.
+	// non-nil. The transport swallows it silently because env
+	// rejection is normal on restrictive servers, and the wire layer
+	// transparently parses whichever advertisement shape (v0 or v2)
+	// the unaffected `upload-pack` then emits.
 	//
 	// Canonical Git's analog is `push_ssh_options` at
 	// [connect.c:1311-1321], which appends `SendEnv=GIT_PROTOCOL` to the
@@ -190,16 +200,11 @@ func (t *Transport) Open(ctx context.Context, u *transport.URL, opts transport.O
 		return nil, &ProtocolError{URL: redacted, Op: "session", Err: fmt.Errorf("ssht: exec: %w", err)}
 	}
 
-	writer := pktline.NewWriter(stdin, outboundWriterOpts(opts.Tracer, redacted)...)
-	if err := wire.WriteStreamRequest(writer, u, opts.PreferredProtocol); err != nil {
-		return nil, &ProtocolError{URL: redacted, Op: "session", Err: fmt.Errorf("ssht: write initial pkt-line: %w", err)}
-	}
-
 	c := &Conn{
 		client:      client,
 		session:     session,
 		reader:      pktline.NewReader(stdout, inboundReaderOpts(opts.Tracer, redacted)...),
-		writer:      writer,
+		writer:      pktline.NewWriter(stdin, outboundWriterOpts(opts.Tracer, redacted)...),
 		redactedURL: redacted,
 		done:        make(chan struct{}),
 	}

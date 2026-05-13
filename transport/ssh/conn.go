@@ -43,11 +43,12 @@ type Conn struct {
 	reader *pktline.Reader
 
 	// writer encodes pkt-lines onto the session's stdin. Constructed
-	// in [Transport.Open] to emit the initial pkt-line and reused by
-	// [Conn.Command] for every subsequent v2 command request. The
-	// underlying [io.WriteCloser] is owned by the wrapped
-	// [pktline.Writer]; the [Conn] does not retain a separate reference
-	// because `session.Close` already closes the channel that backs it.
+	// in [Transport.Open]; the first bytes it writes are the
+	// [Conn.Command] body for the first v2 command — nothing is
+	// pre-loaded. The underlying [io.WriteCloser] is owned by the
+	// wrapped [pktline.Writer]; the [Conn] does not retain a separate
+	// reference because `session.Close` already closes the channel
+	// that backs it.
 	writer *pktline.Writer
 
 	// redactedURL is the dial URL with credentials redacted via

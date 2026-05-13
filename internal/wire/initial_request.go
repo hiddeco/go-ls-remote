@@ -29,9 +29,9 @@ func HTTPProtocolHeader(v *transport.ProtocolVersion) string {
 }
 
 // WriteStreamRequest emits the single pkt-line that initiates a Git
-// session over a stream transport (git-daemon and SSH). The encoding
-// matches [connect.c::git_connect_git lines 1288-1298] in canonical
-// Git, and the on-wire grammar is documented in [gitprotocol-pack.adoc
+// session over the git-daemon transport. The encoding matches
+// [connect.c::git_connect_git lines 1288-1298] in canonical Git, and
+// the on-wire grammar is documented in [gitprotocol-pack.adoc
 // §"Extra Parameters"]:
 //
 //	git-proto-request = request-command SP pathname NUL
@@ -44,6 +44,12 @@ func HTTPProtocolHeader(v *transport.ProtocolVersion) string {
 //
 // The payload carries no trailing LF; canonical Git strips one if
 // present (see [daemon.c:752-754]), so omitting it is the safe shape.
+//
+// The SSH transport does NOT use this function: canonical Git's SSH
+// branch at [connect.c:1484-1508] never routes through
+// `git_connect_git`. Version negotiation over SSH happens on the
+// `GIT_PROTOCOL` env channel instead (see `transport/ssh.Transport.Open`
+// and `push_ssh_options` at [connect.c:1311-1321]).
 //
 // The version trailer is conditional on the requested protocol being
 // strictly greater than zero: canonical Git's `version > 0` guard at
@@ -65,6 +71,8 @@ func HTTPProtocolHeader(v *transport.ProtocolVersion) string {
 // [connect.c:1294]: https://github.com/git/git/blob/v2.54.0/connect.c#L1294
 // [connect.c:1117]: https://github.com/git/git/blob/v2.54.0/connect.c#L1117
 // [connect.c:1267]: https://github.com/git/git/blob/v2.54.0/connect.c#L1267
+// [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
+// [connect.c:1484-1508]: https://github.com/git/git/blob/v2.54.0/connect.c#L1484-L1508
 func WriteStreamRequest(w *pktline.Writer, u *transport.URL, v *transport.ProtocolVersion) error {
 	var b strings.Builder
 	b.WriteString("git-upload-pack ")

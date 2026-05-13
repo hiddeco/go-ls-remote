@@ -1,7 +1,6 @@
 package ssht
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -33,11 +32,18 @@ func flushAdvertisement() []byte { return []byte("0000") }
 //   - emit `git-upload-pack '<path>'` via the SSH exec request, with
 //     single-quoting per canonical Git's [connect.c:1476];
 //   - send a `GIT_PROTOCOL=version=2` env request before the exec;
-//   - write the initial pkt-line on stdin carrying the version=2
-//     trailer per [gitprotocol-pack.adoc §"Extra Parameters"].
+//   - write NOTHING to the session's stdin before the caller issues
+//     a `Conn.Command`. Canonical Git's SSH branch at
+//     [connect.c:1484-1508] never calls `git_connect_git` (whose
+//     `packet_write` at [connect.c:1300] is the only place the
+//     extra-parameters pkt-line is emitted), so SSH negotiation runs
+//     exclusively over the env channel set up by `push_ssh_options`
+//     at [connect.c:1311-1321].
 //
 // [connect.c:1476]: https://github.com/git/git/blob/v2.54.0/connect.c#L1476
-// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [connect.c:1484-1508]: https://github.com/git/git/blob/v2.54.0/connect.c#L1484-L1508
+// [connect.c:1300]: https://github.com/git/git/blob/v2.54.0/connect.c#L1300
+// [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
 func TestOpen_v2_envAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -52,10 +58,7 @@ func TestOpen_v2_envAccepted(t *testing.T) {
 	)
 	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
 
-	// Drain the advertisement so the server's writer drains and the
-	// client-side handle for stdin's first frame has surely flushed.
 	r := conn.Advertisement()
 	require.NotNil(t, r)
 	pkt, err := r.ReadPacket()
@@ -70,21 +73,32 @@ func TestOpen_v2_envAccepted(t *testing.T) {
 	cmd, ok := srv.lastExec()
 	require.True(t, ok, "server should have received an exec request")
 	assert.Equal(t, "git-upload-pack '/repo.git'", cmd,
-		"exec command must single-quote the repository path per canonical Git's connect.c:1313")
+		"exec command must single-quote the repository path per canonical Git's connect.c:1476")
 
-	expectedPayload := fmt.Sprintf("git-upload-pack /repo.git\x00host=%s\x00\x00version=2\x00", srv.hostParam())
-	stdin := srv.awaitStdin(t, 4+len(expectedPayload))
-
-	stdinReader := pktline.NewReader(bytes.NewReader(stdin))
-	first, err := stdinReader.ReadPacket()
-	require.NoError(t, err)
-	assert.Equal(t, expectedPayload, string(first.Data))
+	// Close before reading stdin: the fixture's drain goroutine reads
+	// asynchronously, so the final `stdinBuf` snapshot is only stable
+	// after the goroutine has hit EOF (which `Close` provokes).
+	require.NoError(t, conn.Close())
+	srv.waitStdinDrained(t)
+	assert.Empty(t, srv.stdin(),
+		"SSH transport must not write the extra-parameters pkt-line on stdin; "+
+			"canonical Git restricts that mechanism to the git-daemon transport "+
+			"(connect.c:1462 → git_connect_git → connect.c:1300)")
 }
 
-// TestOpen_v2_envRejected verifies the env channel is best-effort: a
-// server with restrictive `AcceptEnv` rejects the request and Open
-// still succeeds, with the in-band initial pkt-line carrying the
-// version trailer as the fallback negotiation route.
+// TestOpen_v2_envRejected verifies env-channel rejection is benign:
+// a server with restrictive `AcceptEnv` returns failure on the env
+// request, Open still succeeds, and the transport writes nothing to
+// stdin. The caller is left reading whatever advertisement the
+// server emits — typically a v0 ref list when GIT_PROTOCOL did not
+// reach `upload-pack`, which the wire layer parses transparently.
+//
+// This matches canonical Git's behaviour: `push_ssh_options` at
+// [connect.c:1311-1321] sets `SendEnv=GIT_PROTOCOL` unconditionally,
+// and a server that ignores the variable simply yields a v0
+// advertisement. No stdin pkt-line fallback exists on the SSH path.
+//
+// [connect.c:1311-1321]: https://github.com/git/git/blob/v2.54.0/connect.c#L1311-L1321
 func TestOpen_v2_envRejected(t *testing.T) {
 	t.Parallel()
 
@@ -99,7 +113,6 @@ func TestOpen_v2_envRejected(t *testing.T) {
 	)
 	conn, err := tr.Open(t.Context(), srv.URL(), defaultOpenOptions())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
 
 	r := conn.Advertisement()
 	require.NotNil(t, r)
@@ -118,21 +131,20 @@ func TestOpen_v2_envRejected(t *testing.T) {
 	_, _, recorded := srv.lastEnv()
 	assert.False(t, recorded, "rejected env requests must never invoke the user callback")
 
-	// At minimum a 4-byte pkt-line header + payload; the v2 in-band
-	// trailer makes the payload exceed 30 bytes, so wait for a
-	// conservative threshold before reading.
-	stdin := srv.awaitStdin(t, 20)
-	stdinReader := pktline.NewReader(bytes.NewReader(stdin))
-	first, err := stdinReader.ReadPacket()
-	require.NoError(t, err)
-	assert.Contains(t, string(first.Data), "version=2",
-		"in-band channel must carry the version trailer; env rejection is the fallback's trigger")
+	require.NoError(t, conn.Close())
+	srv.waitStdinDrained(t)
+	assert.Empty(t, srv.stdin(),
+		"env rejection must not trigger an in-band pkt-line fallback: forge "+
+			"shims (Gitea, GitLab Shell, Gerrit) that interpose between sshd "+
+			"and `git-upload-pack` close the channel on any unexpected stdin")
 }
 
-// TestOpen_v0Pinned verifies that pinning v0 propagates to both
-// negotiation channels: the env value is `version=0` and the initial
-// pkt-line carries NO version trailer (per
-// `wire.WriteStreamRequest`'s v0 branch).
+// TestOpen_v0Pinned verifies that pinning v0 propagates through the
+// env channel as `GIT_PROTOCOL=version=0`. The SSH transport carries
+// the requested version on the env channel only; no stdin pkt-line is
+// written, so v0 vs v2 is signalled to the server exclusively via the
+// env variable (or, when the server ignores it, by the server's own
+// default — which for a stock `git-upload-pack` is v0).
 func TestOpen_v0Pinned(t *testing.T) {
 	t.Parallel()
 
@@ -148,10 +160,7 @@ func TestOpen_v0Pinned(t *testing.T) {
 	)
 	conn, err := tr.Open(t.Context(), srv.URL(), transport.OpenOptions{PreferredProtocol: &v0})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = conn.Close() })
 
-	// Drain the advertisement so any pending writes flush before we
-	// poke at the captured stdin slice.
 	r := conn.Advertisement()
 	_, _ = r.ReadPacket()
 
@@ -160,15 +169,11 @@ func TestOpen_v0Pinned(t *testing.T) {
 	assert.Equal(t, "GIT_PROTOCOL", name)
 	assert.Equal(t, "version=0", value, "v0 pin must propagate to the env channel")
 
-	// The v0 initial pkt-line is short ("git-upload-pack /repo.git\x00host=<h>\x00")
-	// — 4 + ~30 bytes. Wait for at least 20 to make sure the pkt-line
-	// has been captured.
-	stdin := srv.awaitStdin(t, 20)
-	stdinReader := pktline.NewReader(bytes.NewReader(stdin))
-	first, err := stdinReader.ReadPacket()
-	require.NoError(t, err)
-	assert.NotContains(t, string(first.Data), "version=",
-		"v0 is signalled by absence of the version trailer; see connect.c:1294")
+	require.NoError(t, conn.Close())
+	srv.waitStdinDrained(t)
+	assert.Empty(t, srv.stdin(),
+		"v0 pin must not write to stdin; the env channel is the only "+
+			"version-signal route for the SSH transport")
 }
 
 // TestOpen_authFailure verifies an SSH publickey rejection surfaces as
@@ -367,10 +372,9 @@ func TestOpen_pathQuoting(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name     string
-		path     string
-		wantCmd  string
-		wantHost string // host= parameter equals the captured path verbatim
+		name    string
+		path    string
+		wantCmd string
 	}{
 		{
 			name:    "plain path",

@@ -70,8 +70,7 @@ type SSHServer struct {
 
 // NewSSHServer returns an [*SSHServer] listening on a loopback ephemeral
 // port. The server services exactly the `git-upload-pack '<path>'`
-// command the production SSH transport issues, peels the
-// extra-parameters pkt-line off the session stream, and runs
+// command the production SSH transport issues and runs
 // [internal/server.Serve] against store for the remainder of the
 // channel. The listener is registered for [testing.TB.Cleanup]; callers
 // neither defer nor close anything themselves.
@@ -97,29 +96,29 @@ type SSHServer struct {
 // production transport sends `GIT_PROTOCOL=version=<N>` to signal the
 // preferred version, and rejecting that request would emit a stray
 // error on the client side without affecting the round trip. The
-// server does not act on the env value; the equivalent signal arrives
-// in-band on the initial pkt-line, which `internal/server.Serve`
-// already understands.
+// server does not act on the env value: `internal/server.Serve`
+// auto-detects the protocol version from the first inbound frame
+// (a v2 command request) and proceeds from there.
 //
 // # Wire shape
 //
 // The session handler accepts one `exec` request whose command parses
 // to `git-upload-pack` followed by a single-quoted POSIX-shell-escaped
 // path (the form `transport/ssh` emits via `shellQuote`). After
-// replying success, it peels the leading extra-parameters pkt-line
-// the production client writes to stdin (see canonical Git's
-// [connect.c:1288-1298] and [gitprotocol-pack.adoc §"Extra Parameters"])
-// and then invokes [internal/server.Serve] with [transport.ProtocolV2]
-// for `Options.PreferredProtocol`. SSH is not split like HTTP — one
-// channel carries the full advertise-then-loop sequence — so
-// `Serve` is the correct entry point rather than `ServeCommandLoop`.
+// replying success, it invokes [internal/server.Serve] with
+// [transport.ProtocolV2] for `Options.PreferredProtocol` directly
+// against the channel — no preamble is peeled because the SSH
+// transport mirrors canonical Git's SSH branch at
+// [connect.c:1484-1508] and writes nothing on stdin before the first
+// command frame. SSH is not split like HTTP — one channel carries
+// the full advertise-then-loop sequence — so `Serve` is the correct
+// entry point rather than `ServeCommandLoop`.
 //
 // The generic parameter H is inferred from store; cross-fixture
 // callers that iterate [Entries] type-switch on [Entry.ObjectFormat]
 // once and call this function with the matching concrete store.
 //
-// [connect.c:1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
-// [gitprotocol-pack.adoc §"Extra Parameters"]: https://github.com/git/git/blob/v2.54.0/Documentation/gitprotocol-pack.adoc#extra-parameters
+// [connect.c:1484-1508]: https://github.com/git/git/blob/v2.54.0/connect.c#L1484-L1508
 func NewSSHServer[H objfmt.Hash](t testing.TB, store *objstore.Store[H]) *SSHServer {
 	t.Helper()
 
@@ -314,20 +313,19 @@ func (s *SSHServer) handleSession(t testing.TB, ch ssh.Channel, reqs <-chan *ssh
 	s.runUploadPack(t, ch, execCmd)
 }
 
-// runUploadPack parses execCmd as `git-upload-pack '<path>'`, peels the
-// extra-parameters pkt-line off the channel reader, and invokes the
-// stored `server.Serve` closure with [transport.ProtocolV2] for the
-// preferred protocol. Stdin/stdout are the SSH channel; stderr is
-// unused for this iteration.
+// runUploadPack parses execCmd as `git-upload-pack '<path>'` and
+// invokes the stored `server.Serve` closure with [transport.ProtocolV2]
+// for the preferred protocol. Stdin/stdout are the SSH channel; stderr
+// is unused for this iteration.
 //
-// The peel mirrors canonical Git's `upload-pack` entry point: the
-// client writes `git-upload-pack <path>\0host=<h>\0\0version=<N>\0` as
-// the very first pkt-line on stdin (see [connect.c:1288-1298]), then
-// switches into the v2 capability-advertise loop. Stripping that frame
-// here lets `Serve` read a clean v2 stream from the next byte without
-// having to know about the SSH/git-daemon entry shape.
+// No preamble is peeled from the inbound stream. Canonical Git's SSH
+// branch at [connect.c:1484-1508] never emits the extra-parameters
+// pkt-line on stdin (that mechanism is scoped to the git-daemon
+// transport, where `git_connect_git` calls `packet_write` at
+// `connect.c:1300`), and `transport/ssh` mirrors that shape — the
+// first inbound byte is already the first command-request frame.
 //
-// [connect.c:1288-1298]: https://github.com/git/git/blob/v2.54.0/connect.c#L1288-L1298
+// [connect.c:1484-1508]: https://github.com/git/git/blob/v2.54.0/connect.c#L1484-L1508
 func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) {
 	defer func() { _ = ch.Close() }()
 
@@ -339,15 +337,7 @@ func (s *SSHServer) runUploadPack(t testing.TB, ch ssh.Channel, execCmd string) 
 		return
 	}
 
-	pr := pktline.NewReader(ch)
-	if _, err := pr.ReadPacket(); err != nil {
-		// The client closed before sending the initial frame; nothing
-		// to serve. This shape arises during dial-time teardown and is
-		// not actionable, so it stays silent.
-		return
-	}
-
-	if err := s.serve(t.Context(), pr, pktline.NewWriter(ch)); err != nil {
+	if err := s.serve(t.Context(), pktline.NewReader(ch), pktline.NewWriter(ch)); err != nil {
 		if !isClientHangupError(err) {
 			t.Errorf("inttest.SSHServer: server.Serve returned %v", err)
 		}

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"testing"
 
@@ -113,11 +112,19 @@ type testServer struct {
 	wg sync.WaitGroup
 
 	// stdinNotify is a buffered channel (capacity 1) the stdin-drain
-	// goroutine sends to after each successful read. `awaitStdin`
-	// selects on it to wake when fresh bytes arrive without polling.
-	// A buffer of 1 makes the send non-blocking even when no waiter
-	// is parked, so the drain goroutine never stalls.
+	// goroutine sends to after each successful read. A buffer of 1
+	// makes the send non-blocking even when no waiter is parked, so
+	// the drain goroutine never stalls.
 	stdinNotify chan struct{}
+
+	// stdinDrained is closed by the stdin-drain goroutine when its
+	// `ch.Read` loop returns (EOF, channel close, or error). A `<-`
+	// receive on it is the synchronisation point a test uses to read
+	// the final `stdinBuf` snapshot after `Conn.Close`. `sync.Once`
+	// guards the close so the channel is safe for a fixture that
+	// accepts more than one connection in its lifetime.
+	stdinDrained     chan struct{}
+	stdinDrainedOnce sync.Once
 
 	// mu guards every field below.
 	mu       sync.Mutex
@@ -162,6 +169,7 @@ func newTestServer(tb testing.TB, opts testServerOpts) *testServer {
 		clientSigner: clientSigner,
 		opts:         opts,
 		stdinNotify:  make(chan struct{}, 1),
+		stdinDrained: make(chan struct{}),
 	}
 
 	s.wg.Add(1)
@@ -191,19 +199,6 @@ func (s *testServer) URL() *transport.URL {
 		Path:   "/repo.git",
 		Raw:    fmt.Sprintf("ssh://git@%s:%s/repo.git", host, port),
 	}
-}
-
-// hostParam returns the value the `host=` parameter takes in the
-// fixture's initial pkt-line. It mirrors `wire.WriteStreamRequest`'s
-// `hostParameter` helper so tests can assemble the expected payload
-// without a second source of truth.
-func (s *testServer) hostParam() string {
-	u := s.URL()
-	host := u.Host
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	return host + ":" + u.Port
 }
 
 // hostKeyCallback returns an [ssh.HostKeyCallback] that pins the
@@ -247,30 +242,22 @@ func (s *testServer) stdin() []byte {
 	return out
 }
 
-// awaitStdin waits until at least `want` bytes have been captured on
-// the session's stdin and then returns a copy of those bytes. The
-// stdin-drain goroutine in [testServer.handleSession] signals
-// `s.stdinNotify` after each read; this method selects on the channel
-// to wake without polling. The deadline is the test's own deadline
-// (via `t.Context()`) plus a generous local cap so a hung fixture
-// fails with a clear diagnostic rather than the test runner's timeout.
-func (s *testServer) awaitStdin(t *testing.T, want int) []byte {
+// waitStdinDrained blocks until the per-connection stdin-drain
+// goroutine has returned, signalling that any bytes the client wrote
+// before tearing down its session have been captured in `stdinBuf`.
+// Callers invoke it AFTER `conn.Close()` to take the final snapshot
+// of `stdin()` — without it, a `len(stdin()) == 0` assertion races
+// the drain goroutine and passes even when bytes are in flight on
+// the SSH channel.
+//
+// The deadline is the test's own context, so a fixture that never
+// drains fails the test rather than hanging the runner.
+func (s *testServer) waitStdinDrained(t *testing.T) {
 	t.Helper()
-
-	deadline := t.Context().Done()
-	for {
-		got := s.stdin()
-		if len(got) >= want {
-			return got
-		}
-		select {
-		case <-s.stdinNotify:
-			// Loop and re-check; a notification means at least one
-			// byte was appended since the last check.
-		case <-deadline:
-			t.Fatalf("testServer.awaitStdin: test context cancelled while waiting for %d stdin bytes (got %d)", want, len(s.stdin()))
-			return nil
-		}
+	select {
+	case <-s.stdinDrained:
+	case <-t.Context().Done():
+		t.Fatalf("testServer.waitStdinDrained: test context cancelled before drain completed (captured %d bytes)", len(s.stdin()))
 	}
 }
 
@@ -430,14 +417,16 @@ func (s *testServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
 		_, _ = ch.Write(s.opts.advertisement)
 	}
 
-	// Drain stdin in a goroutine; the io.Copy returns when the
-	// channel reader hits EOF (client closed its write half) or the
-	// channel itself is closed by `ch.Close()` from this handler.
-	// After each successful read, signal `stdinNotify` so any
-	// `awaitStdin` caller wakes. The non-blocking send (channel
-	// capacity 1) means the drain never stalls when no waiter is
-	// parked.
+	// Drain stdin in a goroutine; `ch.Read` returns when the channel
+	// reader hits EOF (client closed its write half) or the channel
+	// itself is closed by `ch.Close()` from this handler. After each
+	// successful read, signal `stdinNotify` so any waiter wakes; the
+	// non-blocking send (channel capacity 1) means the drain never
+	// stalls when no waiter is parked. On exit, close `stdinDrained`
+	// so a test that has called `conn.Close` can synchronise with the
+	// drain and read the final `stdinBuf` snapshot.
 	s.wg.Go(func() {
+		defer s.stdinDrainedOnce.Do(func() { close(s.stdinDrained) })
 		buf := make([]byte, 4096)
 		for {
 			n, err := ch.Read(buf)
@@ -462,10 +451,12 @@ func (s *testServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
 }
 
 // runBridge wires the SSH channel's stdin/stdout into an in-process
-// `internal/server.Serve` invocation. Canonical Git's `upload-pack`
-// peels the initial extra-parameters pkt-line off the stream before
-// entering the v2 capability-advertise loop; this fixture mirrors that
-// peel so the bridge's `server.Serve` reads a clean v2 command stream.
+// `internal/server.Serve` invocation. No frame is peeled off the
+// inbound stream first: canonical Git's SSH branch (`connect.c:1484-1508`)
+// never emits the extra-parameters pkt-line on stdin, and the
+// transport mirrors that — version negotiation happens on the env
+// channel only — so the bridge reads a v2 command stream from the
+// first byte.
 //
 // The bridge is the round-trip-test counterpart to the fixed-byte
 // `advertisement` path: it lets the client see real advertisement and
@@ -474,19 +465,8 @@ func (s *testServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) {
 func (s *testServer) runBridge(ch ssh.Channel) {
 	bridge := s.opts.serveStore()
 
-	// Wrap the channel reader in a pkt-line decoder and peel the
-	// extra-parameters frame. The frame's contents are not inspected
-	// here — `open_test.go` already covers its on-wire shape — but the
-	// peel is mandatory so the bridge's `server.Serve` reads a clean
-	// v2 stream from the next byte.
-	chReader := pktline.NewReader(ch)
-	if _, err := chReader.ReadPacket(); err != nil {
-		_ = ch.Close()
-		return
-	}
-
 	srvErr := bridge.serve(context.Background(),
-		chReader,
+		pktline.NewReader(ch),
 		pktline.NewWriter(ch),
 	)
 	if srvErr != nil && bridge.tb != nil {

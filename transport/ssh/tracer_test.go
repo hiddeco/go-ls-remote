@@ -100,9 +100,8 @@ func openBridgedConnTraced(t *testing.T, tracer trace.Tracer) (*Conn, string) {
 // TestTracer_PacketEvents_BothDirections pins the contract: a tracer
 // wired through `transport.OpenOptions.Tracer` observes
 // [trace.PacketEvent] values on both directions across a full
-// round-trip. Outbound covers the initial extra-parameter pkt-line
-// plus the v2 command-request frames; inbound covers the
-// advertisement plus the command response.
+// round-trip. Outbound covers the v2 command-request frames; inbound
+// covers the advertisement plus the command response.
 //
 // The assertion is structural ("at least one of each direction") rather
 // than counting exact events: pkt-line framing can shift across

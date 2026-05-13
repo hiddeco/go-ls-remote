@@ -76,10 +76,9 @@ func readAllPackets(t *testing.T, rdr *pktline.Reader) []pktline.Packet {
 // callback that runs `server.Serve` against a freshly opened
 // [objstore.Store] over [objfmt.SHA1Hash]. The store is closed when
 // the test ends; the bridge handler is what
-// [testServerOpts.serveStore] invokes after the fixture has peeled
-// the initial extra-parameter pkt-line. The signature is
-// `testing.TB` rather than `*testing.T` so benchmarks can reuse the
-// bridge without re-implementing it.
+// [testServerOpts.serveStore] invokes once the session has been
+// established. The signature is `testing.TB` rather than `*testing.T`
+// so benchmarks can reuse the bridge without re-implementing it.
 func bridgeSHA1Store(tb testing.TB, fixture string) bridgeServer {
 	tb.Helper()
 

@@ -54,15 +54,14 @@ func BenchmarkShellQuote(b *testing.B) {
 // BenchmarkTransport_Open measures the steady-state cost of a single
 // dial through the SSH transport: TCP connect → SSH transport-and-auth
 // handshake → `NewSession` → `Setenv` → pipe opens → `git-upload-pack`
-// exec → initial pkt-line write → advertisement drain → `Close`.
+// exec → advertisement drain → `Close`.
 //
 // The dominant component is the cryptographic handshake itself
 // (Curve25519 KEX plus ed25519 signing and verification on both
 // sides), which the in-process fixture runs against pre-generated
 // host and client keys. The remaining components — session channel
-// setup, `shellQuote`, the `WriteStreamRequest` pkt-line emission —
-// are dwarfed by it but are still part of the per-dial cost a caller
-// pays.
+// setup and `shellQuote` — are dwarfed by it but are still part of
+// the per-dial cost a caller pays.
 //
 // The tracer axis splits the production no-tracing shape from the
 // active-but-discarding shape so the per-dial observability tax is
