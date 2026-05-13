@@ -1,0 +1,94 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - bodyclose
+    - errorlint
+    - nilerr
+    - noctx
+    - contextcheck
+    - gosec
+    - prealloc
+    - gocritic
+    - tparallel
+    - paralleltest
+    - testifylint
+    - misspell
+    - modernize
+    - nolintlint
+    - whitespace
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # Optimization check; not strictly needed.
+        - shadow          # Large existing surface; address separately.
+    revive:
+      severity: warning
+      rules:
+        - name: exported
+          disabled: false
+    gocritic:
+      enabled-tags: [diagnostic, performance, style]
+      disabled-checks: [ifElseChain, hugeParam, rangeValCopy, unnamedResult]
+    gosec:
+      severity: medium
+      confidence: medium
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    presets:
+      - common-false-positives
+    rules:
+      # Test scaffolding (dumbhttp/server/testfixture/inttest)
+      # and on-disk format parsers (objfmt/objstore/reftable)
+      # legitimately use the patterns gosec flags by default:
+      # relaxed file modes mirroring canonical Git, SHA-1
+      # fixtures, format-intrinsic integer conversions, and
+      # mmap-backed reads of files inside a trusted gitdir.
+      - path: 'internal/(dumbhttp|server|testfixture|inttest|objfmt|objstore|reftable)/.*\.go$'
+        linters: [gosec]
+      # Test files: gosec false-positive surface dominates, and
+      # errcheck on deliberately-narrow test scaffolding is
+      # mostly noise.
+      - path: '_test\.go$'
+        linters: [gosec, errcheck]
+      # Files where every test is non-parallel by construction:
+      # harness teardown races (inttest/*_harness_test.go),
+      # provider-env t.Setenv chains (livetest/matrix_test.go),
+      # and dedicated allocs-per-run files (tracer_alloc_test.go).
+      - path: '(internal/inttest/.*_harness_test|internal/livetest/matrix_test|pktline/tracer_alloc_test)\.go$'
+        linters: [paralleltest]
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/hiddeco/go-ls-remote)
+      custom-order: true
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'
+    gofumpt:
+      extra-rules: true
