@@ -35,7 +35,7 @@ func TestTags(t *testing.T) {
 				p.Name, m.name, ref.Name)
 			count++
 		}
-		assert.Greaterf(t, count, 0,
+		assert.Positivef(t, count,
 			"%s/%s: expected at least one tag", p.Name, m.name)
 	})
 }

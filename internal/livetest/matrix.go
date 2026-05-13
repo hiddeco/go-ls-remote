@@ -82,7 +82,7 @@ func (p Provider) authModes(t testing.TB) []authMode {
 	}
 
 	if keyPath := os.Getenv(p.SSHKeyEnv); keyPath != "" {
-		if _, err := os.Stat(keyPath); err != nil {
+		if _, err := os.Stat(keyPath); err != nil { //nolint:gosec // keyPath is the test operator's deliberate env-var input
 			t.Logf("livetest: %s ssh-key skipped: %v", p.Name, err)
 		} else {
 			sshOpt := lsremote.WithTransports(transport.NewRegistry(
@@ -124,7 +124,7 @@ func (p Provider) authModes(t testing.TB) []authMode {
 // only public read-only endpoints — there is no credential or write
 // access at stake.
 func insecureHostKeyCallback() ssh.HostKeyCallback {
-	return ssh.InsecureIgnoreHostKey()
+	return ssh.InsecureIgnoreHostKey() //nolint:gosec // documented above: public read-only hosts whose keys rotate independently
 }
 
 // skipIfOffline performs a short TCP reachability probe against
@@ -145,7 +145,13 @@ func (p Provider) skipIfOffline(t testing.TB) {
 		t.Skipf("livetest: %s: PublicHTTPS has no host", p.Name)
 		return
 	}
-	conn, err := net.DialTimeout("tcp", host+":443", 5*time.Second)
+	// `(*net.Dialer).DialContext` is the ctx-aware path canonical
+	// Git's `connect.c` uses (poll loop with a deadline);
+	// `net.DialTimeout` is the un-ctx legacy shape that `noctx`
+	// flags. `t.Context()` cancels the dial when the test ends.
+	dialCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", host+":443")
 	if err != nil {
 		t.Skipf("livetest: offline or %s unreachable: %v", host, err)
 		return
@@ -172,11 +178,12 @@ func forEachProviderMode(t *testing.T, body func(t *testing.T, p Provider, m aut
 
 	for _, p := range Providers {
 		t.Run(p.Name, func(t *testing.T) {
+			t.Parallel()
 			p.skipIfOffline(t)
 			for _, m := range p.authModes(t) {
 				t.Run(m.name, func(t *testing.T) {
-					ctx, cancel := context.WithTimeout(
-						context.Background(), 30*time.Second)
+					t.Parallel()
+					ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 					defer cancel()
 					body(t, p, m, ctx)
 				})

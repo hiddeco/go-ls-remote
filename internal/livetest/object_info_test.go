@@ -68,7 +68,7 @@ func TestObjectInfo(t *testing.T) {
 		assert.Equalf(t, firstHash, infos[0].Hash,
 			"%s/%s: expected returned hash to match request",
 			p.Name, m.name)
-		assert.Greaterf(t, infos[0].Size, int64(0),
+		assert.Positivef(t, infos[0].Size,
 			"%s/%s: expected non-zero size for tag %s",
 			p.Name, m.name, firstHash)
 		t.Logf("%s/%s: tag %s size = %d",

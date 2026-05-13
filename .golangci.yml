@@ -3,6 +3,8 @@ version: "2"
 run:
   timeout: 5m
   go: "1.26"
+  build-tags:
+    - live
 
 linters:
   default: none
