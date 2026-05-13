@@ -68,7 +68,10 @@ jobs:
       - env:
           FUNC: ${{ matrix.func }}
           PKG: ${{ matrix.pkg }}
-        run: go test -run=^$ -fuzz="$FUNC" -fuzztime=30s "$PKG"
+        # Bound by iteration count, not wall-clock time, to avoid
+        # the Go fuzz runner's `context deadline exceeded` surface
+        # when a worker is mid-iteration at the `-fuzztime` boundary.
+        run: go test -run=^$ -fuzz="$FUNC" -fuzztime=10000x "$PKG"
 
   fuzz-deep:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
