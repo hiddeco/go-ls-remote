@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -136,6 +137,14 @@ func TestLooseObjects_FindPermissionError(t *testing.T) {
 	// rather than emit a flaky assertion.
 	if os.Geteuid() == 0 {
 		t.Skip("running as root; chmod-0000 cannot block reads")
+	}
+	// Windows file permissions are ACL-based; `os.Chmod` only sets
+	// the read-only attribute and never blocks read access, so the
+	// chmod-0000 setup below cannot produce a permission-denied open
+	// on `windows-latest`. The error path itself is platform-agnostic;
+	// the trigger is not.
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows os.Chmod cannot revoke read access; permission shape not reachable")
 	}
 
 	dir := t.TempDir()
